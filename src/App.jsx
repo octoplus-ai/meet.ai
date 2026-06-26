@@ -7,7 +7,7 @@ import {
   ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
   Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play,
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type,
-  HelpCircle, LogOut, ChevronRight,
+  HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal,
 } from "lucide-react";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -492,7 +492,12 @@ export default function App() {
         {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} />}
         {view === "support" && <SupportView onBack={() => setView("reports")} />}
         {view === "logout" && <LogoutView onCancel={() => setView("reports")} />}
-        {["folders", "calendar", "for-you", "coaching", "recommendations", "meeting-policy", "integrations"].includes(view) && (
+        {view === "folders" && <FoldersView onAsk={goAsk} />}
+        {view === "calendar" && <CalendarView onAsk={goAsk} />}
+        {view === "for-you" && <ForYouView meetings={meetings} onOpen={openMeeting} onAsk={goAsk} />}
+        {view === "coaching" && <CoachingView onAsk={goAsk} />}
+        {view === "recommendations" && <RecommendationsView onAsk={goAsk} />}
+        {["meeting-policy", "integrations"].includes(view) && (
           <Placeholder section={NAV.find((n) => n.k === view)} onReports={() => setView("reports")} t={t} />
         )}
       </main>
@@ -921,6 +926,354 @@ function CreateWorkspace({ onCancel, onDone }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ===================== shared section header (ask bar) ============ */
+function SectionTop({ title, onAsk, right }) {
+  const [ask, setAsk] = useState("");
+  return (
+    <div className="border-b border-slate-200 bg-white px-6 pt-3 pb-3">
+      <div className="mb-3 flex items-center gap-2">
+        <ChevronLeft size={18} className="text-slate-400" />
+        <h1 className="text-lg font-bold text-slate-900">{title}</h1>
+      </div>
+      <div className="flex items-center gap-3">
+        <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
+          className="flex flex-1 items-center gap-2 rounded-xl border-2 border-indigo-200 bg-white px-3 py-2 focus-within:border-indigo-400">
+          <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-slate-400"><Globe size={15} /><ChevronDown size={13} /></button>
+          <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Ask Octo anything..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
+          <button type="submit" disabled={!ask.trim()} className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40"><Send size={15} /></button>
+        </form>
+        {right}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ FOLDERS ============================= */
+function FoldersView({ onAsk }) {
+  const [q, setQ] = useState("");
+  const folders = [
+    { name: "Partnership Alignment Meeting", desc: "Discussions aimed at strengthening collaboration and ensuring mutual alignment with partners.", reports: 52, date: "Jun 26, 2026" },
+    { name: "Job Interview", desc: "Interviews evaluating candidates for open roles or positions.", reports: 23, date: "Jun 25, 2026" },
+    { name: "One-on-One", desc: "Direct, two-person meetings for feedback, mentorship, or alignment.", reports: 3, date: "Jun 25, 2026" },
+    { name: "Sales Call", desc: "Conversations with prospective customers focused on pitching or selling products and services.", reports: 112, date: "Jun 24, 2026" },
+    { name: "Sales Strategy", desc: "Internal discussions planning sales tactics, messaging, and pursuit strategies.", reports: 8, date: "Jun 22, 2026" },
+    { name: "Training", desc: "Sessions focused on developing professional skills, workplace competencies, or job-related abilities.", reports: 11, date: "Jun 22, 2026" },
+    { name: "Planning Meeting", desc: "Meetings that coordinate goals, timelines, and action plans for upcoming projects.", reports: 17, date: "Jun 18, 2026" },
+    { name: "Educational", desc: "Sessions focused on teaching or sharing knowledge on a subject.", reports: 1, date: "Jun 10, 2026" },
+  ].filter((f) => !q || f.name.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <>
+      <SectionTop title="Folders" onAsk={onAsk} />
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by folder title..." className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400" />
+            </div>
+            <FilterBtn label="Folder Types" icon={Folder} />
+          </div>
+          <button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><FolderPlus size={15} /> New Folder</button>
+        </div>
+        <div className="grid grid-cols-[1fr_120px_90px_140px_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+          <div>Folder</div><div>Members</div><div>Reports</div><div>Last Updated</div><div></div>
+        </div>
+        {folders.map((f) => (
+          <div key={f.name} className="grid grid-cols-[1fr_120px_90px_140px_40px] items-center border-b border-slate-100 px-3 py-3.5 transition hover:bg-indigo-50/40">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500"><Folder size={18} /></div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">{f.name} <Lock size={11} className="text-slate-400" /></div>
+                <div className="truncate text-[12px] text-slate-500">{f.desc}</div>
+              </div>
+            </div>
+            <div><span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</span></div>
+            <div className="text-sm text-slate-600">{f.reports}</div>
+            <div className="text-[13px] text-slate-500">{f.date}</div>
+            <div className="flex justify-center"><MoreHorizontal size={16} className="text-slate-300" /></div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* ============================ CALENDAR ============================ */
+function CalendarView({ onAsk }) {
+  const [tab, setTab] = useState("upcoming");
+  const events = [
+    { name: "Morning Meeting", ppl: 39, date: "Sun, Jun 28", time: "3:30 AM - 4:30 AM", add: false, role: null },
+    { name: "Acme Corp — Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
+    { name: "Chad Dubose & Octo", ppl: 4, date: "Mon, Jun 29", time: "11:00 AM - 12:00 PM", add: true, role: "Editor" },
+    { name: "Northwind — Demo", ppl: 3, date: "Tue, Jun 30", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
+    { name: "Miniso & Octo", ppl: 2, date: "Thu, Jul 2", time: "2:00 PM - 3:00 PM", add: true, role: "Report Owner" },
+    { name: "Vertex — 2nd Meeting", ppl: 4, date: "Fri, Jul 3", time: "12:00 PM - 1:00 PM", add: true, role: "Report Owner" },
+    { name: "Morning Meeting", ppl: 39, date: "Sun, Jul 5", time: "3:30 AM - 4:30 AM", add: false, role: null },
+  ];
+  const links = [{ m: 15 }, { m: 30 }, { m: 60 }, { m: 90 }];
+  return (
+    <>
+      <SectionTop title="Calendar" onAsk={onAsk} right={<button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><Link2 size={15} /> Scheduling Link</button>} />
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="mb-5 flex items-center gap-5 border-b border-slate-200">
+          {[{ k: "upcoming", l: "Upcoming" }, { k: "scheduling", l: "Scheduling" }].map((tb) => (
+            <button key={tb.k} onClick={() => setTab(tb.k)} className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{tb.l}</button>
+          ))}
+        </div>
+
+        {tab === "upcoming" ? (
+          <>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex gap-2"><FilterBtn label="Filter" icon={SlidersHorizontal} /><FilterBtn label="Has video conferencing" /></div>
+              <span className="flex items-center gap-2 text-[13px] text-slate-400"><RefreshCw size={13} /> 1–{events.length} of {events.length}</span>
+            </div>
+            <div className="grid grid-cols-[1.6fr_1fr_120px_120px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+              <div>Meeting</div><div>Date &amp; Time</div><div>Add Octo?</div><div>Flexible?</div>
+            </div>
+            {events.map((e, i) => (
+              <div key={i} className="grid grid-cols-[1.6fr_1fr_120px_120px] items-center border-b border-slate-100 px-3 py-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white shadow-sm"><Video size={18} className="text-emerald-500" /></div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">{e.name}</div>
+                    <div className="mt-0.5 flex items-center gap-2 text-[12px] text-slate-400"><Users size={12} /> {e.ppl}{e.role && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">{e.role}</span>}</div>
+                  </div>
+                </div>
+                <div className="leading-tight"><div className="text-[13px] text-slate-700">{e.date}</div><div className="text-[12px] text-slate-400">{e.time}</div></div>
+                <div><CalToggle on={e.add} /></div>
+                <div><CalToggle on={false} /></div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm">
+              <span className="text-slate-600">📅 Scheduling based on: <b>nicolas@octomeet.ai</b> (Google Calendar)</span>
+              <span className="flex gap-4 text-[13px] font-semibold text-indigo-600"><button>Change Calendar</button><button>Scheduling Settings</button></span>
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Default scheduling links</h3>
+              <p className="mb-4 text-sm text-slate-500">Allows others to schedule a meeting with you. <span className="text-indigo-600">cal.octomeet.ai/nicolas-82n88</span></p>
+              <div className="space-y-3">
+                {links.map((l) => (
+                  <div key={l.m} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex items-center gap-3">
+                      <CalToggle on={true} />
+                      <div><div className="text-sm font-semibold text-slate-800">{l.m}-minute Meeting</div><div className="text-[12px] text-indigo-600">cal.octomeet.ai/nicolas-82n88/{l.m}-min</div></div>
+                    </div>
+                    <Link2 size={16} className="text-slate-400" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+function CalToggle({ on }) {
+  const [v, setV] = useState(on);
+  return <button onClick={() => setV(!v)} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (v ? "bg-emerald-500" : "bg-slate-200")}><span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (v ? "left-[22px]" : "left-0.5")} /></button>;
+}
+
+/* ============================ FOR YOU ============================= */
+function ForYouView({ meetings, onOpen, onAsk }) {
+  const actions = meetings.flatMap((m) => m.actionItems.map((a) => ({ ...a, meeting: m.title, id: m.id }))).slice(0, 8);
+  return (
+    <>
+      <SectionTop title="For You" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white"><Calendar size={14} /> Jun 12 - 25, 2026</span>} />
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-5">
+            <div className="rounded-2xl border-2 border-indigo-200 bg-white p-5">
+              <h2 className="text-2xl font-bold text-indigo-700">Good afternoon, Nicolas</h2>
+              <p className="mt-1 text-sm font-medium text-slate-500">Here's what happened Jun 12 - Jun 25</p>
+              <div className="mt-3 flex gap-4">
+                <p className="flex-1 text-sm leading-relaxed text-slate-600">You focused on expanding into new markets, emphasizing growth from partner interest. The team is working with multiple brands and is optimistic about securing additional clients this year. You also discussed the importance of multilingual skills to serve a diverse customer base, and walked through the platform's internal communication advantages over traditional messaging tools.</p>
+                <VideoThumb src={VIDEOS[0]} source="Google Meet" size={120} rounded="rounded-xl" showBadge={false} />
+              </div>
+            </div>
+            <Card title="Topics" icon={MessageSquareText}>
+              <p className="mb-3 text-[13px] text-slate-400">Topic progression from meetings you own or were invited to</p>
+              <div className="rounded-xl bg-indigo-50/60 p-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-slate-800">Retail operations and growth strategies in Latin America</h4>
+                  <div className="flex -space-x-1.5">{["NB", "CR", "DD"].map((x, i) => <span key={i} className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white" style={{ background: SPEAKER_COLORS[i] }}>{x}</span>)}<span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-bold text-slate-600">+6</span></div>
+                </div>
+                <div className="mt-1 text-[12px] text-slate-400">38% of meetings · From 11 meetings · Jun 15 - Jun 25, 2026</div>
+              </div>
+            </Card>
+            <Card title="Summary" icon={Sparkles}>
+              <p className="text-sm leading-relaxed text-slate-600">In recent meetings, discussions centered on the operations and growth strategies of a retail business overseeing 200 stores across the region. The team highlighted partnerships with various brands and emphasized expansion into new markets, where they are currently piloting projects with local retailers, while also exploring opportunities in the U.S. market.</p>
+            </Card>
+          </div>
+
+          <div className="space-y-5">
+            <div className="rounded-2xl bg-indigo-900 p-5 text-white">
+              <div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-base font-bold">Daily Read <span className="rounded bg-indigo-500 px-1.5 py-0.5 text-[10px]">✨ beta</span></h3><Link2 size={15} className="text-indigo-300" /></div>
+              <p className="mt-0.5 text-sm text-indigo-200">June 26, 2026</p>
+              <div className="mt-3 h-1 w-full rounded-full bg-indigo-700"><div className="h-1 w-0 rounded-full bg-white" /></div>
+              <div className="mt-2 flex items-center gap-3"><Play size={18} fill="white" /><span className="text-[12px] text-indigo-300">--:-- / --:--</span></div>
+              <div className="mt-3 flex items-start gap-2 rounded-lg bg-indigo-800 p-2.5 text-[12px] text-indigo-200">ℹ The text-to-speech voice you are hearing is AI-generated and not a human voice.</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><CheckCircle2 size={16} className="text-indigo-500" /> Action Items</h3><div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]"><span className="rounded-md bg-indigo-600 px-2 py-0.5 font-semibold text-white">For me</span><span className="px-2 py-0.5 text-slate-500">All</span></div></div>
+              <div className="space-y-3">
+                {actions.map((a, i) => (
+                  <button key={i} onClick={() => onOpen(a.id)} className="block w-full border-b border-slate-100 pb-3 text-left last:border-0">
+                    <div className="text-[13px] text-slate-700">{a.task} <span className="font-semibold text-indigo-600">Ask Octo</span></div>
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><Calendar size={11} /> Jun 25, 2026 · <FileText size={11} /> {a.meeting}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ============================ COACHING ============================ */
+function CoachingView({ onAsk }) {
+  const moments = [{ w: 223, m: "Vertex Retail" }, { w: 225, m: "Vertex Retail" }, { w: 244, m: "Acme — Outreach" }, { w: 224, m: "Northwind" }];
+  return (
+    <>
+      <SectionTop title="Coaching" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white"><Calendar size={14} /> May 27 - Jun 26, 2026</span>} />
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+          <div className="space-y-5">
+            <div>
+              <div className="mb-2 flex items-center gap-2"><h3 className="text-base font-bold text-slate-900">Clarity</h3><span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">GOOD</span></div>
+              <div className="space-y-2">
+                <CoachMetric icon={Activity} label="Talking pace" value="130 wpm" ok active />
+                <CoachMetric icon={MessageSquareText} label="Filler words" value="1% of speech" ok />
+              </div>
+            </div>
+            <div>
+              <h3 className="mb-2 text-base font-bold text-slate-900">Inclusion</h3>
+              <CoachMetric icon={X} label="Non-inclusive terms" value="<1 per meeting" ok />
+            </div>
+            <div>
+              <div className="mb-2 flex items-center gap-2"><h3 className="text-base font-bold text-slate-900">Impact</h3><span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">GOOD</span></div>
+              <div className="space-y-2">
+                <CoachMetric icon={Target} label="Bias" value="80" ok />
+                <CoachMetric icon={Sparkles} label="Charisma" value="80" ok />
+                <CoachMetric icon={HelpCircle} label="Questions asked" value="<1 per meeting" />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <div className="flex items-center justify-between"><h3 className="text-xl font-bold text-slate-900">Talking pace</h3><span className="flex items-center gap-1 text-lg font-bold text-slate-900">130 wpm <CheckCircle2 size={16} className="text-emerald-500" /></span></div>
+              <p className="mt-1 text-sm text-slate-500">Your average rate of speech in words per minute. <b>You speak at 130 WPM, within the recommended range of 130–175 WPM. Keep it up!</b></p>
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between text-[12px] text-slate-400"><span>Range</span><span>Your pace</span></div>
+                <div className="relative mt-2 h-2 rounded-full" style={{ background: "linear-gradient(90deg,#10B981,#F59E0B,#F43F5E)" }}><span className="absolute -top-1 h-4 w-4 rounded-full border-2 border-indigo-600 bg-white" style={{ left: "0%" }} /></div>
+                <div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>130</span><span>270</span></div>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Moments</h3>
+              <p className="mb-3 text-sm text-slate-500">Review your moments with talking speed outside of the target zone.</p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {moments.map((mm, i) => (
+                  <div key={i}>
+                    <VideoThumb src={VIDEOS[i]} source="Google Meet" size={150} rounded="rounded-xl" showBadge={false} />
+                    <div className="mt-1 text-[12px] font-medium text-slate-700">Very fast ({mm.w} wpm)</div>
+                    <div className="text-[11px] text-slate-400">{mm.m}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Meetings</h3>
+              <p className="mb-2 text-sm text-slate-500">Review meeting reports where your talking speed was outside the target zone.</p>
+              <div className="grid grid-cols-[1.6fr_1fr_90px_70px_70px] border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase text-slate-400"><div>Meeting</div><div>Date &amp; Time</div><div>Talk Time</div><div>WPM</div><div>% Filler</div></div>
+              <div className="grid grid-cols-[1.6fr_1fr_90px_70px_70px] items-center border-b border-slate-100 px-3 py-3 text-[13px]">
+                <div><div className="font-semibold text-slate-800">Vertex Retail</div><div className="text-[12px] text-slate-400">2 participants</div></div>
+                <div className="text-slate-500">Tue 6/16/26<br />12:02 - 12:11 PM</div><div className="text-slate-600">23%</div><div className="flex items-center gap-1 text-slate-600">181 <AlertTriangle size={12} className="text-amber-500" /></div><div className="text-slate-600">1%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+function CoachMetric({ icon: Icon, label, value, ok, active }) {
+  return (
+    <div className={"flex items-center justify-between rounded-xl border bg-white p-3.5 " + (active ? "border-indigo-300 ring-1 ring-indigo-200" : "border-slate-200")}>
+      <span className="flex items-center gap-2 text-sm text-slate-700"><Icon size={15} className="text-indigo-400" /> {label}</span>
+      <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">{value} {ok && <CheckCircle2 size={15} className="text-emerald-500" />}</span>
+    </div>
+  );
+}
+
+/* ======================== RECOMMENDATIONS ========================= */
+function RecommendationsView({ onAsk }) {
+  const list = [
+    { name: "Acme — Growth Review", n: 4, date: "Mon 6/15 · 11:00 AM - 12:00 PM" },
+    { name: "Globex & Octo", n: 1, date: "Mon 6/15 · 1:00 PM - 2:00 PM" },
+    { name: "Northwind & Octo", n: 2, date: "Tue 6/16 · 12:00 PM - 1:00 PM" },
+    { name: "Vertex — Sync", n: 6, date: "Thu 6/18 · 3:00 PM - 4:00 PM" },
+    { name: "Initech & Octo", n: 2, date: "Fri 6/19 · 10:00 AM - 10:45 AM" },
+    { name: "Lumio — 1st Intro", n: 1, date: "Mon 6/22 · 9:00 AM - 9:30 AM" },
+  ];
+  const [sel, setSel] = useState(0);
+  const items = [
+    { text: "Nicolas Benech will send an email with the company's organizational structure and operational details to start implementation.", quote: "Yeah, the basic thing we need to start is the structure of the company with the organization.", who: "Nicolas Benech" },
+    { text: "Nicolas Benech will arrange a meeting with the customer's IT team to discuss sales and data integration.", quote: "If you want to see all the sales and everything, we can do a meeting with the IT and everything.", who: "Nicolas Benech" },
+    { text: "Tony Cola will send an email to arrange a follow-up meeting.", quote: "Send us an email and we meet up together and everything.", who: "Daniel Lopez" },
+  ];
+  return (
+    <>
+      <SectionTop title="Recommendations" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white"><Calendar size={14} /> Apr 26 - Jun 26, 2026</span>} />
+      <div className="flex flex-1 overflow-hidden">
+        <div className="w-80 shrink-0 overflow-y-auto border-r border-slate-200">
+          <div className="flex items-center gap-4 border-b border-slate-200 px-4 py-3 text-sm font-semibold">
+            <span className="text-indigo-700">New <span className="rounded-full bg-indigo-600 px-1.5 text-[11px] text-white">19</span></span>
+            <span className="text-slate-400">Reviewed</span>
+            <span className="ml-auto text-[13px] font-medium text-indigo-600">Show filters</span>
+          </div>
+          {list.map((r, i) => (
+            <button key={i} onClick={() => setSel(i)} className={"block w-full border-b border-slate-100 px-4 py-3 text-left transition " + (sel === i ? "bg-indigo-50/60" : "hover:bg-slate-50")}>
+              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-800">{r.name}</span><span className="flex items-center gap-1 text-[12px] text-slate-500"><Zap size={12} className="text-indigo-400" /> {r.n}</span></div>
+              <div className="mt-1 flex items-center gap-1 text-[12px] text-slate-400"><Calendar size={11} /> {r.date}</div>
+            </button>
+          ))}
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="mb-4 flex items-center gap-2"><h2 className="text-lg font-bold text-slate-900">{list[sel].name}</h2><span className="flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[12px] font-semibold text-indigo-700"><Zap size={12} /> {list[sel].n}</span></div>
+          <div className="space-y-4">
+            {items.map((it, i) => (
+              <div key={i} className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-slate-800"><CheckCircle2 size={16} className="text-indigo-500" /> Action item for you</span>
+                  <div className="flex gap-2">
+                    <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><ThumbsUp size={14} /> Acknowledge</button>
+                    <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-rose-600 hover:bg-rose-50"><X size={14} /> Ignore</button>
+                  </div>
+                </div>
+                <div className="flex items-start gap-4">
+                  <div className="flex-1">
+                    <p className="text-sm text-slate-700">{it.text}</p>
+                    <p className="mt-2 text-[12px] font-semibold text-slate-500">More Details</p>
+                    <p className="text-[13px] text-slate-500">{it.who}: "{it.quote}"</p>
+                  </div>
+                  <VideoThumb src={VIDEOS[i]} source="Google Meet" size={120} rounded="rounded-xl" showBadge={false} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
