@@ -453,6 +453,8 @@ export default function App() {
   const [activeId, setActiveId] = useState(null);
   const [askSeed, setAskSeed] = useState("");
   const [lang, setLangState] = useState("en");
+  const [calTab, setCalTab] = useState("upcoming");
+  const [authed, setAuthed] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -460,9 +462,12 @@ export default function App() {
       if (!m) { m = seedMeetings(); await store.set("octomeet:meetings:v1", m); }
       setMeetings(m);
       setLangState(await store.get("octomeet:lang", "en"));
+      setAuthed(await store.get("octomeet:authed", false));
     })();
   }, []);
 
+  const login = () => { setAuthed(true); store.set("octomeet:authed", true); };
+  const logout = () => { setAuthed(false); store.set("octomeet:authed", false); setView("reports"); };
   const setLang = (l) => { setLangState(l); store.set("octomeet:lang", l); };
   const t = (k) => (TR[lang] && TR[lang][k]) || TR.en[k] || k;
   const persist = async (next) => { setMeetings(next); await store.set("octomeet:meetings:v1", next); };
@@ -470,18 +475,19 @@ export default function App() {
   const openMeeting = (id) => { setActiveId(id); setView("meeting"); };
   const goAsk = (q) => { setAskSeed(q || ""); setView("ask"); };
 
-  if (!meetings) {
+  if (authed === null || !meetings) {
     return (
       <div className="rai-body flex h-screen items-center justify-center bg-slate-50 text-slate-400">
-        <Loader2 className="mr-2 animate-spin" size={18} /> Loading Octomeet.ai…
+        <StyleInject /><Loader2 className="mr-2 animate-spin" size={18} /> Loading Octomeet.ai…
       </div>
     );
   }
+  if (!authed) return <LoginView onLogin={login} />;
 
   return (
     <div dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
       <StyleInject />
-      <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} />
+      <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
       <main className="flex flex-1 flex-col overflow-hidden">
         {view === "reports" && <ReportsList meetings={meetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} t={t} />}
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={meetings} />}
@@ -491,9 +497,9 @@ export default function App() {
         {view === "plans" && <PlansView onBack={() => setView("reports")} />}
         {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} />}
         {view === "support" && <SupportView onBack={() => setView("reports")} />}
-        {view === "logout" && <LogoutView onCancel={() => setView("reports")} />}
+        {view === "logout" && <LogoutView onCancel={() => setView("reports")} onLogout={logout} />}
         {view === "folders" && <FoldersView onAsk={goAsk} />}
-        {view === "calendar" && <CalendarView onAsk={goAsk} />}
+        {view === "calendar" && <CalendarView onAsk={goAsk} initialTab={calTab} />}
         {view === "for-you" && <ForYouView meetings={meetings} onOpen={openMeeting} onAsk={goAsk} />}
         {view === "coaching" && <CoachingView onAsk={goAsk} />}
         {view === "recommendations" && <RecommendationsView onAsk={goAsk} />}
@@ -512,14 +518,22 @@ function MenuItem({ icon: Icon, label, onClick }) {
     </button>
   );
 }
-function Sidebar({ view, setView, t, lang, setLang }) {
+function Sidebar({ view, setView, t, lang, setLang, openScheduling }) {
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [durOpen, setDurOpen] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
+  const [liveUrl, setLiveUrl] = useState("");
   const copyLink = async () => {
-    try { await navigator.clipboard.writeText("https://meet-ai-three-beige.vercel.app/s/nicolas"); setCopied(true); setTimeout(() => setCopied(false), 1500); }
-    catch { setCopied(false); }
+    try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch {}
+    setCopied(true); setTimeout(() => setCopied(false), 1600);
+  };
+  const copyDur = async (d) => {
+    const slug = d === "Any duration" ? "" : "/" + d.split("-")[0] + "-min";
+    try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88" + slug); } catch {}
+    setCopied(true); setDurOpen(false); setTimeout(() => setCopied(false), 1600);
   };
 
   return (
@@ -602,24 +616,40 @@ function Sidebar({ view, setView, t, lang, setLang }) {
         {collapsed ? (
           <div className="flex flex-col items-center gap-3">
             <button title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
-            <button onClick={copyLink} title={t("smartScheduler")} className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-600 text-white hover:bg-indigo-500"><Link2 size={14} /></button>
+            <button onClick={copyLink} title={t("smartScheduler")} className={"flex h-8 w-8 items-center justify-center rounded-md text-white " + (copied ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500")}>{copied ? <Check size={14} /> : <Link2 size={14} />}</button>
             <button onClick={() => setMenuOpen((v) => !v)} title="Account" className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</button>
           </div>
         ) : (
           <>
-            <button className="mb-3 flex w-full items-center gap-2 text-[13px] font-medium text-slate-300 hover:text-white">
-              <PlusCircle size={16} /> {t("addToLive")}
-            </button>
-            <div className="mb-3">
+            {liveOpen ? (
+              <input autoFocus value={liveUrl} onChange={(e) => setLiveUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") { setLiveOpen(false); setLiveUrl(""); } }}
+                placeholder="Paste meeting URL" className="mb-3 w-full rounded-md border border-indigo-400 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-slate-500 outline-none" />
+            ) : (
+              <button onClick={() => setLiveOpen(true)} className="mb-3 flex w-full items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-[13px] font-medium text-slate-300 hover:bg-white/5 hover:text-white">
+                <PlusCircle size={16} /> {t("addToLive")}
+              </button>
+            )}
+            <div className="relative mb-3">
               <div className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 {t("smartScheduler")} <span className="text-slate-600">ⓘ</span>
               </div>
               <div className="flex gap-1.5">
-                <button onClick={copyLink} className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-indigo-600 px-2 py-1.5 text-[12px] font-semibold text-white hover:bg-indigo-500">
-                  <Link2 size={12} /> {copied ? t("copied") : t("copyLink")}
+                <button onClick={() => setDurOpen((v) => !v)} className={"flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-semibold text-white transition " + (copied ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500")}>
+                  {copied ? <><Check size={12} /> {t("copied")}</> : <><Link2 size={12} /> {t("copyLink")}</>}
                 </button>
-                <button className="rounded-md bg-white/10 px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/15">{t("manage")}</button>
+                <button onClick={openScheduling} className="rounded-md bg-white/10 px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/15">{t("manage")}</button>
               </div>
+              {durOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setDurOpen(false)} />
+                  <div className="absolute bottom-full left-0 z-50 mb-2 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl">
+                    {["Any duration", "15-minute", "30-minute", "60-minute", "90-minute"].map((d) => (
+                      <button key={d} onClick={() => copyDur(d)} className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50">{d}</button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
             <button onClick={() => setMenuOpen((v) => !v)} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-white/5">
               <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
@@ -1001,8 +1031,8 @@ function FoldersView({ onAsk }) {
 }
 
 /* ============================ CALENDAR ============================ */
-function CalendarView({ onAsk }) {
-  const [tab, setTab] = useState("upcoming");
+function CalendarView({ onAsk, initialTab }) {
+  const [tab, setTab] = useState(initialTab || "upcoming");
   const events = [
     { name: "Morning Meeting", ppl: 39, date: "Sun, Jun 28", time: "3:30 AM - 4:30 AM", add: false, role: null },
     { name: "Acme Corp — Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
@@ -1392,6 +1422,64 @@ function MeetingPolicyView({ onAsk }) {
   );
 }
 
+/* ============================ LOGIN / AUTH ======================= */
+function LoginView({ onLogin }) {
+  const [mode, setMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [tip, setTip] = useState(false);
+  const signup = mode === "signup";
+  const providers = [
+    { label: "Continue with Google", icon: "🇬" },
+    { label: "Continue with Microsoft", icon: "⊞" },
+    { label: "Continue with Apple", icon: "" },
+    { label: "Continue with SSO", icon: "🔑" },
+  ];
+  return (
+    <div className="rai-body flex min-h-screen w-full items-center justify-center bg-[#F4F5FA] px-4">
+      <StyleInject />
+      <div className="w-full max-w-sm py-10">
+        <div className="mb-6 flex flex-col items-center text-center">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-indigo-500"><span className="text-xl font-black text-white">O</span></div>
+          <h1 className="text-2xl font-bold text-slate-900">{signup ? "Create your account" : "Sign in to Octomeet"}</h1>
+          <p className="mt-1 text-sm text-slate-500">{signup ? "It's free to get started — no credit card required." : "Welcome back. Choose how to continue."}</p>
+        </div>
+        <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          {providers.map((p) => (
+            <button key={p.label} onClick={onLogin} className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+              <span className="text-base">{p.icon}</span> {p.label}
+            </button>
+          ))}
+          <div className="flex items-center gap-3 py-1 text-[12px] text-slate-400"><span className="h-px flex-1 bg-slate-200" /> or <span className="h-px flex-1 bg-slate-200" /></div>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
+          <button onClick={onLogin} className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">{signup ? "Create account" : "Continue with email"}</button>
+        </div>
+
+        <div className="mt-4 text-center text-[13px] text-slate-500">
+          {signup
+            ? <>Already have an account? <button onClick={() => setMode("signin")} className="font-semibold text-indigo-600">Sign in</button></>
+            : <>New to Octomeet? <button onClick={() => setMode("signup")} className="font-semibold text-indigo-600">Create an account</button></>}
+        </div>
+
+        <div className="relative mt-6 flex justify-center">
+          <button onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)} className="text-[13px] font-medium text-indigo-600 underline">Why does Octomeet need calendar access?</button>
+          {tip && (
+            <div className="absolute bottom-full left-1/2 z-10 mb-2 w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-2xl">
+              <div className="text-sm font-bold text-slate-800">Effortless meeting notes.</div>
+              <p className="mt-1 text-[13px] leading-relaxed text-slate-500">Octomeet syncs your calendar events so you can choose which meetings to join and summarize automatically. Works with Zoom, Microsoft Teams, and Google Meet.</p>
+            </div>
+          )}
+        </div>
+
+        {signup && (
+          <p className="mt-5 text-center text-[11px] leading-relaxed text-slate-400">
+            By creating an account, I agree to Octomeet's <a href="https://octomeet.ai/termsofservice" target="_blank" rel="noreferrer" className="text-indigo-500 underline">Terms of Service</a> and acknowledge I have read the <a href="https://octomeet.ai/privacy-policy" target="_blank" rel="noreferrer" className="text-indigo-500 underline">Privacy Policy</a>.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ============================ SUPPORT / LOGOUT ==================== */
 function SupportView({ onBack }) {
   const cards = [
@@ -1421,7 +1509,7 @@ function SupportView({ onBack }) {
     </div>
   );
 }
-function LogoutView({ onCancel }) {
+function LogoutView({ onCancel, onLogout }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-500"><LogOut size={26} /></div>
@@ -1429,7 +1517,7 @@ function LogoutView({ onCancel }) {
       <p className="mt-1 max-w-sm text-sm text-slate-500">You'll need to sign in again with Google to access your meetings and reports.</p>
       <div className="mt-5 flex gap-3">
         <button onClick={onCancel} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-        <button onClick={onCancel} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Log out</button>
+        <button onClick={onLogout} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Log out</button>
       </div>
     </div>
   );
