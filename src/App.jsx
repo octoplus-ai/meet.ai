@@ -513,13 +513,15 @@ export default function App() {
 /* ============================ SIDEBAR ============================== */
 function OctoLogo({ size = 28 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden>
       <defs><linearGradient id="octoLogo" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#A855F7" /><stop offset="100%" stopColor="#7C3AED" /></linearGradient></defs>
-      <path d="M35 15 L45 10 q2.5 -1.2 2.5 1.6 v16.8 q0 2.8 -2.5 1.6 L35 31 Z" fill="url(#octoLogo)" />
-      <circle cx="20" cy="20" r="15" fill="url(#octoLogo)" />
-      <g fill="url(#octoLogo)"><circle cx="8" cy="33" r="4.2" /><circle cx="15" cy="36" r="4.2" /><circle cx="23" cy="37" r="4.2" /><circle cx="31" cy="36" r="4.2" /><circle cx="35" cy="32" r="4.2" /></g>
-      <rect x="17.5" y="12" width="5" height="16" rx="2.5" fill="#fff" />
-      <rect x="12" y="17.5" width="16" height="5" rx="2.5" fill="#fff" />
+      {/* camera lens nub */}
+      <path d="M44 19 L58 12 Q61 10.5 61 14.5 V37.5 Q61 41.5 58 40 L44 33 Z" fill="url(#octoLogo)" />
+      {/* head + tentacles */}
+      <path d="M10 27 C10 16 19 8 28 8 C37 8 46 16 46 27 L46 40 Q43.5 46 41 46 Q38.5 46 36.5 40 Q34 46 32 46 Q29.5 46 27.5 40 Q25 46 23 46 Q20.5 46 18.5 40 Q16 46 14 46 Q11 46 10 40 Z" fill="url(#octoLogo)" />
+      {/* plus */}
+      <rect x="25" y="16" width="6" height="20" rx="3" fill="#fff" />
+      <rect x="18" y="23" width="20" height="6" rx="3" fill="#fff" />
     </svg>
   );
 }
@@ -555,10 +557,10 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling }) {
         <button onClick={() => collapsed && setCollapsed(false)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
           <OctoLogo size={24} />
         </button>
-        {!collapsed && <span className="text-[16px] font-bold text-white">OctoMeet AI</span>}
+        {!collapsed && <span className="whitespace-nowrap text-[15px] font-bold text-white">OctoMeet AI</span>}
         {!collapsed && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <button onClick={() => setLangOpen((v) => !v)} className="flex items-center gap-1 rounded px-1 text-[11px] font-semibold text-slate-300 hover:text-white"><span className="text-[13px]">文A</span>{LCODE[lang]}<ChevronDown size={11} /></button>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <button onClick={() => setLangOpen((v) => !v)} className="flex items-center gap-0.5 rounded px-1 text-[11px] font-semibold text-slate-300 hover:text-white">{LCODE[lang]}<ChevronDown size={11} /></button>
             <button onClick={() => setCollapsed(true)} title="Collapse"><PanelRightClose size={16} className="text-slate-400 hover:text-white" /></button>
           </div>
         )}
