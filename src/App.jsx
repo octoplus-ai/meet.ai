@@ -677,8 +677,19 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
           <>
             {liveOpen ? (
               <input autoFocus value={liveUrl} onChange={(e) => setLiveUrl(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") { setLiveOpen(false); setLiveUrl(""); } }}
-                placeholder="Paste meeting URL" className="mb-3 w-full rounded-md border border-indigo-400 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-slate-500 outline-none" />
+                onKeyDown={async (e) => {
+                  if (e.key === "Escape") { setLiveOpen(false); setLiveUrl(""); }
+                  if (e.key === "Enter" && liveUrl.trim()) {
+                    const url = liveUrl.trim(); setLiveOpen(false); setLiveUrl("");
+                    toast("Sending OctoMeet to the meeting…");
+                    try {
+                      const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url }) });
+                      const d = await r.json();
+                      toast(r.ok ? "OctoMeet is joining the meeting 🎥" : ("Error: " + (d.error || "failed")));
+                    } catch (er) { toast("Network error"); }
+                  }
+                }}
+                placeholder="Paste meeting URL + Enter" className="mb-3 w-full rounded-md border border-indigo-400 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-slate-500 outline-none" />
             ) : (
               <button onClick={() => setLiveOpen(true)} className="mb-3 flex w-full items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-[13px] font-medium text-slate-300 hover:bg-white/5 hover:text-white">
                 <PlusCircle size={16} /> {t("addToLive")}
@@ -1108,8 +1119,17 @@ function CalendarView({ onAsk, initialTab }) {
     catch { return { date: iso, time: "" }; }
   };
   const display = realEvents && realEvents.length
-    ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: true, role: null }; })
+    ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: false, role: null, url: e.meetingUrl }; })
     : events;
+  const startBot = async (url, title) => {
+    if (!url) { toast("This event has no meeting link"); return; }
+    toast("Sending OctoMeet to the meeting…");
+    try {
+      const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, title }) });
+      const d = await r.json();
+      toast(r.ok ? "OctoMeet is joining 🎥" : ("Error: " + (d.error || "failed")));
+    } catch (e) { toast("Network error"); }
+  };
   return (
     <>
       <SectionTop title="Calendar" onAsk={onAsk} right={<button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Scheduling link copied"); }} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><Link2 size={15} /> Scheduling Link</button>} />
@@ -1139,7 +1159,7 @@ function CalendarView({ onAsk, initialTab }) {
                   </div>
                 </div>
                 <div className="leading-tight"><div className="text-[13px] text-slate-700">{e.date}</div><div className="text-[12px] text-slate-400">{e.time}</div></div>
-                <div><CalToggle on={e.add} /></div>
+                <div><CalToggle on={e.add} onChange={(val) => { if (val) startBot(e.url, e.name); }} /></div>
                 <div><CalToggle on={false} /></div>
               </div>
             ))}
@@ -1171,9 +1191,10 @@ function CalendarView({ onAsk, initialTab }) {
     </>
   );
 }
-function CalToggle({ on }) {
+function CalToggle({ on, onChange }) {
   const [v, setV] = useState(on);
-  return <button onClick={() => setV(!v)} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (v ? "bg-emerald-500" : "bg-slate-200")}><span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (v ? "left-[22px]" : "left-0.5")} /></button>;
+  const toggle = () => { const n = !v; setV(n); if (onChange) onChange(n); };
+  return <button onClick={toggle} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (v ? "bg-emerald-500" : "bg-slate-200")}><span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (v ? "left-[22px]" : "left-0.5")} /></button>;
 }
 
 /* ============================ FOR YOU ============================= */
