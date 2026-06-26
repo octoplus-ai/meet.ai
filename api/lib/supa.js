@@ -1,6 +1,6 @@
 // Minimal Supabase REST helper (server-side, uses service-role key).
 // No external deps — uses global fetch (Node 18+ on Vercel).
-const URL = process.env.SUPABASE_URL;
+const URL = process.env.SUPABASE_URL || "https://xewahhatxhmfjlujitfa.supabase.co";
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export async function sb(path, { method = "GET", body, prefer } = {}) {
