@@ -38,6 +38,43 @@ const SEED_RECENT = [
   { bucket: "OLDER", items: ["Who participated? List names", "Northwind intro and next steps", "Pricing tiers discussed", "Pilot timeline"] },
 ];
 
+/* ------------------------------ i18n ------------------------------- */
+const LANGS = [
+  { code: "en", label: "English" }, { code: "es", label: "Español" }, { code: "pt", label: "Português" },
+  { code: "fr", label: "Français" }, { code: "hi", label: "हिन्दी" }, { code: "it", label: "Italiano" },
+  { code: "ru", label: "Русский" }, { code: "de", label: "Deutsch" }, { code: "zh", label: "中文" },
+  { code: "ja", label: "日本語" }, { code: "nl", label: "Nederlands" }, { code: "da", label: "Dansk" },
+  { code: "fi", label: "Suomi" }, { code: "sv", label: "Svenska" }, { code: "no", label: "Norsk" },
+  { code: "ca", label: "Català" }, { code: "ko", label: "한국어" }, { code: "pl", label: "Polski" },
+  { code: "uk", label: "Українська" }, { code: "he", label: "עברית", rtl: true },
+];
+const LCODE = { en: "EN", es: "ES", pt: "PT", fr: "FR", hi: "HI", it: "IT", ru: "RU", de: "DE", zh: "中", ja: "あ", nl: "NL", da: "DA", fi: "FI", sv: "SV", no: "NO", ca: "CA", ko: "한", pl: "PL", uk: "UK", he: "ע" };
+const KEYS = ["addPeople","ask","reports","folders","calendar","forYou","coaching","recommendations","meetingPolicy","integrations","enterprise","manage","addToLive","smartScheduler","copyLink","copied","askAnything","reportsTab","incompleteTab","lastRefreshed","upload","filterByTitle","allReports","anytime","type","source","folder","owner","report","dateTime","today","thisWeek","thisMonth","earlier","plansPricing"];
+const _t = {
+  en: ["Add People","Ask Octo","Reports","Folders","Calendar","For You","Coaching","Recommendations","Meeting Policy","Integrations","Enterprise","Manage","Add to live meeting","Smart Scheduler Link","Copy link","Copied!","Ask Octo anything...","Reports","Incomplete","Last refreshed at 3:00 PM","Upload","Filter by report title...","All Reports","Anytime","Type","Source","Folder","Owner","Report","Date & Time","TODAY","THIS WEEK","THIS MONTH","EARLIER","Plans & Pricing"],
+  es: ["Agregar personas","Preguntar a Octo","Reportes","Carpetas","Calendario","Para ti","Coaching","Recomendaciones","Política de reuniones","Integraciones","Enterprise","Gestionar","Agregar a reunión en vivo","Enlace Smart Scheduler","Copiar enlace","¡Copiado!","Pregúntale lo que sea a Octo...","Reportes","Incompletos","Actualizado a las 3:00 PM","Subir","Filtrar por título...","Todos los reportes","Cualquier fecha","Tipo","Origen","Carpeta","Dueño","Reporte","Fecha y hora","HOY","ESTA SEMANA","ESTE MES","ANTERIORES","Planes y precios"],
+  pt: ["Adicionar pessoas","Perguntar ao Octo","Relatórios","Pastas","Calendário","Para você","Coaching","Recomendações","Política de reuniões","Integrações","Enterprise","Gerenciar","Adicionar à reunião ao vivo","Link do Smart Scheduler","Copiar link","Copiado!","Pergunte qualquer coisa ao Octo...","Relatórios","Incompletos","Atualizado às 15:00","Enviar","Filtrar por título...","Todos os relatórios","Qualquer data","Tipo","Origem","Pasta","Dono","Relatório","Data e hora","HOJE","ESTA SEMANA","ESTE MÊS","ANTERIORES","Planos e preços"],
+  fr: ["Ajouter des personnes","Demander à Octo","Rapports","Dossiers","Calendrier","Pour vous","Coaching","Recommandations","Politique de réunion","Intégrations","Enterprise","Gérer","Ajouter à une réunion en direct","Lien Smart Scheduler","Copier le lien","Copié !","Demandez ce que vous voulez à Octo...","Rapports","Incomplets","Actualisé à 15:00","Importer","Filtrer par titre...","Tous les rapports","À tout moment","Type","Source","Dossier","Propriétaire","Rapport","Date et heure","AUJOURD'HUI","CETTE SEMAINE","CE MOIS-CI","PLUS ANCIENS","Forfaits et tarifs"],
+  hi: ["लोग जोड़ें","Octo से पूछें","रिपोर्ट्स","फ़ोल्डर","कैलेंडर","आपके लिए","कोचिंग","सुझाव","मीटिंग नीति","इंटीग्रेशन","Enterprise","प्रबंधित करें","लाइव मीटिंग में जोड़ें","Smart Scheduler लिंक","लिंक कॉपी करें","कॉपी हो गया!","Octo से कुछ भी पूछें...","रिपोर्ट्स","अधूरी","3:00 PM पर अपडेट किया","अपलोड","शीर्षक से फ़िल्टर करें...","सभी रिपोर्ट्स","कभी भी","प्रकार","स्रोत","फ़ोल्डर","मालिक","रिपोर्ट","दिनांक और समय","आज","इस सप्ताह","इस महीने","पुराने","प्लान और कीमतें"],
+  it: ["Aggiungi persone","Chiedi a Octo","Report","Cartelle","Calendario","Per te","Coaching","Raccomandazioni","Politica riunioni","Integrazioni","Enterprise","Gestisci","Aggiungi a riunione dal vivo","Link Smart Scheduler","Copia link","Copiato!","Chiedi qualsiasi cosa a Octo...","Report","Incompleti","Aggiornato alle 15:00","Carica","Filtra per titolo...","Tutti i report","Sempre","Tipo","Origine","Cartella","Proprietario","Report","Data e ora","OGGI","QUESTA SETTIMANA","QUESTO MESE","PRECEDENTI","Piani e prezzi"],
+  ru: ["Добавить людей","Спросить Octo","Отчёты","Папки","Календарь","Для вас","Коучинг","Рекомендации","Политика встреч","Интеграции","Enterprise","Управление","Добавить к встрече","Ссылка Smart Scheduler","Копировать ссылку","Скопировано!","Спросите Octo о чём угодно...","Отчёты","Незавершённые","Обновлено в 15:00","Загрузить","Фильтр по названию...","Все отчёты","Любое время","Тип","Источник","Папка","Владелец","Отчёт","Дата и время","СЕГОДНЯ","НА ЭТОЙ НЕДЕЛЕ","В ЭТОМ МЕСЯЦЕ","РАНЕЕ","Тарифы и цены"],
+  de: ["Personen hinzufügen","Octo fragen","Berichte","Ordner","Kalender","Für dich","Coaching","Empfehlungen","Meeting-Richtlinie","Integrationen","Enterprise","Verwalten","Zu Live-Meeting hinzufügen","Smart-Scheduler-Link","Link kopieren","Kopiert!","Frag Octo alles...","Berichte","Unvollständig","Aktualisiert um 15:00","Hochladen","Nach Titel filtern...","Alle Berichte","Jederzeit","Typ","Quelle","Ordner","Besitzer","Bericht","Datum & Uhrzeit","HEUTE","DIESE WOCHE","DIESEN MONAT","FRÜHER","Pläne & Preise"],
+  zh: ["添加成员","问 Octo","报告","文件夹","日历","为你推荐","辅导","建议","会议政策","集成","Enterprise","管理","添加到实时会议","Smart Scheduler 链接","复制链接","已复制！","向 Octo 提任何问题...","报告","未完成","更新于 15:00","上传","按标题筛选...","所有报告","任何时间","类型","来源","文件夹","所有者","报告","日期和时间","今天","本周","本月","更早","套餐与价格"],
+  ja: ["メンバーを追加","Octoに聞く","レポート","フォルダ","カレンダー","あなたへ","コーチング","おすすめ","会議ポリシー","連携","Enterprise","管理","ライブ会議に追加","Smart Schedulerリンク","リンクをコピー","コピーしました！","Octoに何でも聞いてください...","レポート","未完了","15:00 に更新","アップロード","タイトルで絞り込み...","すべてのレポート","いつでも","種類","ソース","フォルダ","オーナー","レポート","日時","今日","今週","今月","以前","プランと料金"],
+  nl: ["Mensen toevoegen","Vraag Octo","Rapporten","Mappen","Agenda","Voor jou","Coaching","Aanbevelingen","Vergaderbeleid","Integraties","Enterprise","Beheren","Aan live-meeting toevoegen","Smart Scheduler-link","Link kopiëren","Gekopieerd!","Vraag Octo alles...","Rapporten","Onvolledig","Bijgewerkt om 15:00","Uploaden","Filter op titel...","Alle rapporten","Altijd","Type","Bron","Map","Eigenaar","Rapport","Datum en tijd","VANDAAG","DEZE WEEK","DEZE MAAND","EERDER","Abonnementen en prijzen"],
+  da: ["Tilføj personer","Spørg Octo","Rapporter","Mapper","Kalender","Til dig","Coaching","Anbefalinger","Mødepolitik","Integrationer","Enterprise","Administrer","Føj til live-møde","Smart Scheduler-link","Kopiér link","Kopieret!","Spørg Octo om alt...","Rapporter","Ufuldstændige","Opdateret kl. 15:00","Upload","Filtrér efter titel...","Alle rapporter","Når som helst","Type","Kilde","Mappe","Ejer","Rapport","Dato og tid","I DAG","DENNE UGE","DENNE MÅNED","TIDLIGERE","Abonnementer og priser"],
+  fi: ["Lisää henkilöitä","Kysy Octolta","Raportit","Kansiot","Kalenteri","Sinulle","Valmennus","Suositukset","Kokouskäytäntö","Integraatiot","Enterprise","Hallitse","Lisää live-kokoukseen","Smart Scheduler -linkki","Kopioi linkki","Kopioitu!","Kysy Octolta mitä vain...","Raportit","Keskeneräiset","Päivitetty klo 15:00","Lataa","Suodata otsikolla...","Kaikki raportit","Milloin tahansa","Tyyppi","Lähde","Kansio","Omistaja","Raportti","Päivä ja aika","TÄNÄÄN","TÄLLÄ VIIKOLLA","TÄSSÄ KUUSSA","AIEMMIN","Paketit ja hinnat"],
+  sv: ["Lägg till personer","Fråga Octo","Rapporter","Mappar","Kalender","För dig","Coachning","Rekommendationer","Mötespolicy","Integrationer","Enterprise","Hantera","Lägg till i livemöte","Smart Scheduler-länk","Kopiera länk","Kopierad!","Fråga Octo vad som helst...","Rapporter","Ofullständiga","Uppdaterad 15:00","Ladda upp","Filtrera efter titel...","Alla rapporter","När som helst","Typ","Källa","Mapp","Ägare","Rapport","Datum och tid","IDAG","DENNA VECKA","DENNA MÅNAD","TIDIGARE","Planer och priser"],
+  no: ["Legg til personer","Spør Octo","Rapporter","Mapper","Kalender","For deg","Coaching","Anbefalinger","Møtepolicy","Integrasjoner","Enterprise","Administrer","Legg til i direktemøte","Smart Scheduler-lenke","Kopier lenke","Kopiert!","Spør Octo om hva som helst...","Rapporter","Ufullstendige","Oppdatert 15:00","Last opp","Filtrer etter tittel...","Alle rapporter","Når som helst","Type","Kilde","Mappe","Eier","Rapport","Dato og tid","I DAG","DENNE UKEN","DENNE MÅNEDEN","TIDLIGERE","Planer og priser"],
+  ca: ["Afegeix persones","Pregunta a Octo","Informes","Carpetes","Calendari","Per a tu","Coaching","Recomanacions","Política de reunions","Integracions","Enterprise","Gestiona","Afegeix a reunió en directe","Enllaç Smart Scheduler","Copia l'enllaç","Copiat!","Pregunta qualsevol cosa a Octo...","Informes","Incomplets","Actualitzat a les 15:00","Puja","Filtra per títol...","Tots els informes","Sempre","Tipus","Font","Carpeta","Propietari","Informe","Data i hora","AVUI","AQUESTA SETMANA","AQUEST MES","ANTERIORS","Plans i preus"],
+  ko: ["사람 추가","Octo에게 질문","리포트","폴더","캘린더","회원님을 위한","코칭","추천","회의 정책","연동","Enterprise","관리","실시간 회의에 추가","Smart Scheduler 링크","링크 복사","복사됨!","Octo에게 무엇이든 물어보세요...","리포트","미완료","오후 3:00에 업데이트됨","업로드","제목으로 필터...","모든 리포트","언제든지","유형","소스","폴더","소유자","리포트","날짜 및 시간","오늘","이번 주","이번 달","이전","요금제 및 가격"],
+  pl: ["Dodaj osoby","Zapytaj Octo","Raporty","Foldery","Kalendarz","Dla Ciebie","Coaching","Rekomendacje","Zasady spotkań","Integracje","Enterprise","Zarządzaj","Dodaj do spotkania na żywo","Link Smart Scheduler","Kopiuj link","Skopiowano!","Zapytaj Octo o cokolwiek...","Raporty","Niekompletne","Zaktualizowano o 15:00","Prześlij","Filtruj po tytule...","Wszystkie raporty","Kiedykolwiek","Typ","Źródło","Folder","Właściciel","Raport","Data i godzina","DZIŚ","W TYM TYGODNIU","W TYM MIESIĄCU","WCZEŚNIEJ","Plany i ceny"],
+  uk: ["Додати людей","Запитати Octo","Звіти","Папки","Календар","Для вас","Коучинг","Рекомендації","Політика зустрічей","Інтеграції","Enterprise","Керувати","Додати до онлайн-зустрічі","Посилання Smart Scheduler","Копіювати посилання","Скопійовано!","Запитайте Octo про що завгодно...","Звіти","Незавершені","Оновлено о 15:00","Завантажити","Фільтр за назвою...","Усі звіти","Будь-коли","Тип","Джерело","Папка","Власник","Звіт","Дата й час","СЬОГОДНІ","ЦЬОГО ТИЖНЯ","ЦЬОГО МІСЯЦЯ","РАНІШЕ","Плани та ціни"],
+  he: ["הוסף אנשים","שאל את Octo","דוחות","תיקיות","יומן","בשבילך","אימון","המלצות","מדיניות פגישות","אינטגרציות","Enterprise","ניהול","הוסף לפגישה חיה","קישור Smart Scheduler","העתק קישור","הועתק!","שאל את Octo כל דבר...","דוחות","לא הושלמו","עודכן ב-15:00","העלה","סנן לפי כותרת...","כל הדוחות","בכל זמן","סוג","מקור","תיקייה","בעלים","דוח","תאריך ושעה","היום","השבוע","החודש","קודם","תוכניות ומחירים"],
+};
+const TR = Object.fromEntries(Object.entries(_t).map(([lng, arr]) => [lng, Object.fromEntries(KEYS.map((k, i) => [k, arr[i]]))]));
+const isRTL = (code) => !!(LANGS.find((l) => l.code === code) || {}).rtl;
+
 /* ---------------------------- storage shim ------------------------- */
 const mem = {};
 const store = {
@@ -396,32 +433,37 @@ function ScorePill({ label, value }) {
 
 /* ============================ MAIN APP ============================== */
 const NAV = [
-  { k: "add-people", label: "Add People", icon: Users },
-  { k: "ask", label: "Ask Octo", icon: Sparkles },
-  { k: "reports", label: "Reports", icon: ClipboardList },
-  { k: "folders", label: "Folders", icon: Folder, plus: true },
-  { k: "calendar", label: "Calendar", icon: Calendar },
-  { k: "for-you", label: "For You", icon: Star, gap: true },
-  { k: "coaching", label: "Coaching", icon: Presentation },
-  { k: "recommendations", label: "Recommendations", icon: Lightbulb },
-  { k: "meeting-policy", label: "Meeting Policy", icon: ShieldCheck },
-  { k: "integrations", label: "Integrations", icon: LayoutGrid, gap: true },
+  { k: "add-people", tkey: "addPeople", icon: Users },
+  { k: "ask", tkey: "ask", icon: Sparkles },
+  { k: "reports", tkey: "reports", icon: ClipboardList },
+  { k: "folders", tkey: "folders", icon: Folder, plus: true },
+  { k: "calendar", tkey: "calendar", icon: Calendar },
+  { k: "for-you", tkey: "forYou", icon: Star, gap: true },
+  { k: "coaching", tkey: "coaching", icon: Presentation },
+  { k: "recommendations", tkey: "recommendations", icon: Lightbulb },
+  { k: "meeting-policy", tkey: "meetingPolicy", icon: ShieldCheck },
+  { k: "integrations", tkey: "integrations", icon: LayoutGrid, gap: true },
 ];
+const BUCKET_TKEY = { TODAY: "today", "THIS WEEK": "thisWeek", "THIS MONTH": "thisMonth", EARLIER: "earlier" };
 
 export default function App() {
   const [meetings, setMeetings] = useState(null);
   const [view, setView] = useState("reports");
   const [activeId, setActiveId] = useState(null);
   const [askSeed, setAskSeed] = useState("");
+  const [lang, setLangState] = useState("en");
 
   useEffect(() => {
     (async () => {
       let m = await store.get("octomeet:meetings:v1", null);
       if (!m) { m = seedMeetings(); await store.set("octomeet:meetings:v1", m); }
       setMeetings(m);
+      setLangState(await store.get("octomeet:lang", "en"));
     })();
   }, []);
 
+  const setLang = (l) => { setLangState(l); store.set("octomeet:lang", l); };
+  const t = (k) => (TR[lang] && TR[lang][k]) || TR.en[k] || k;
   const persist = async (next) => { setMeetings(next); await store.set("octomeet:meetings:v1", next); };
   const active = useMemo(() => (meetings || []).find((m) => m.id === activeId), [meetings, activeId]);
   const openMeeting = (id) => { setActiveId(id); setView("meeting"); };
@@ -436,17 +478,18 @@ export default function App() {
   }
 
   return (
-    <div className="rai-body flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
+    <div dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
       <StyleInject />
-      <Sidebar view={view} setView={setView} />
+      <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} />
       <main className="flex flex-1 flex-col overflow-hidden">
-        {view === "reports" && <ReportsList meetings={meetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} />}
+        {view === "reports" && <ReportsList meetings={meetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} t={t} />}
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={meetings} />}
         {view === "ask" && <ChatView meetings={meetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "upload" && <UploadView onSave={async (m) => { await persist([m, ...meetings]); openMeeting(m.id); }} onCancel={() => setView("reports")} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
+        {view === "plans" && <PlansView onBack={() => setView("reports")} />}
         {["folders", "calendar", "for-you", "coaching", "recommendations", "meeting-policy", "integrations"].includes(view) && (
-          <Placeholder section={NAV.find((n) => n.k === view)} onReports={() => setView("reports")} />
+          <Placeholder section={NAV.find((n) => n.k === view)} onReports={() => setView("reports")} t={t} />
         )}
       </main>
     </div>
@@ -454,63 +497,109 @@ export default function App() {
 }
 
 /* ============================ SIDEBAR ============================== */
-function Sidebar({ view, setView }) {
+function Sidebar({ view, setView, t, lang, setLang }) {
   const [copied, setCopied] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
   const copyLink = async () => {
     try { await navigator.clipboard.writeText("https://meet-ai-three-beige.vercel.app/s/nicolas"); setCopied(true); setTimeout(() => setCopied(false), 1500); }
     catch { setCopied(false); }
   };
+
   return (
-    <aside className="flex w-60 shrink-0 flex-col rai-sidebar text-slate-300">
-      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-indigo-500">
+    <aside className={"relative flex shrink-0 flex-col rai-sidebar text-slate-300 transition-all duration-200 " + (collapsed ? "w-[68px]" : "w-60")}>
+      {/* header */}
+      <div className={"flex items-center px-3 pt-4 pb-3 " + (collapsed ? "justify-center" : "gap-2")}>
+        <button onClick={() => collapsed && setCollapsed(false)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-indigo-500">
           <span className="text-sm font-black text-white">O</span>
-        </div>
-        <span className="text-[16px] font-bold text-white">Octomeet.ai</span>
-        <span className="ml-auto text-[11px] font-medium text-slate-500">EN</span>
+        </button>
+        {!collapsed && <span className="text-[16px] font-bold text-white">Octomeet.ai</span>}
+        {!collapsed && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <button onClick={() => setLangOpen((v) => !v)} className="flex items-center gap-1 rounded px-1 text-[11px] font-semibold text-slate-300 hover:text-white"><span className="text-[13px]">文A</span>{LCODE[lang]}<ChevronDown size={11} /></button>
+            <button onClick={() => setCollapsed(true)} title="Collapse"><PanelRightClose size={16} className="text-slate-400 hover:text-white" /></button>
+          </div>
+        )}
       </div>
-      <div className="mx-3 mb-3 flex items-center justify-between rounded-lg px-1">
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-white"><Rocket size={13} className="text-indigo-300" /> Enterprise</span>
-        <button className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200">Manage</button>
+      {collapsed && (
+        <button onClick={() => setCollapsed(false)} title="Expand" className="mx-auto mb-2 text-slate-400 hover:text-white"><PanelRightClose size={16} className="rotate-180" /></button>
+      )}
+
+      {/* language dropdown */}
+      {langOpen && !collapsed && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setLangOpen(false)} />
+          <div className="absolute left-3 top-14 z-50 max-h-[70vh] w-52 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl">
+            {LANGS.map((l) => (
+              <button key={l.code} onClick={() => { setLang(l.code); setLangOpen(false); }}
+                className="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
+                <span>{l.label}</span>{lang === l.code && <Check size={15} className="text-indigo-600" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* enterprise */}
+      <div className={"mx-3 mb-3 flex items-center rounded-lg px-1 " + (collapsed ? "justify-center" : "justify-between")}>
+        {collapsed ? (
+          <button onClick={() => setView("plans")} title={t("enterprise")}><Rocket size={16} className="text-indigo-300 hover:text-indigo-200" /></button>
+        ) : (
+          <>
+            <button onClick={() => setView("plans")} className="flex items-center gap-1.5 text-xs font-semibold text-white hover:text-indigo-200"><Rocket size={13} className="text-indigo-300" /> {t("enterprise")}</button>
+            <button onClick={() => setView("plans")} className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200">{t("manage")}</button>
+          </>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2">
         {NAV.map((n) => (
           <React.Fragment key={n.k}>
             {n.gap && <div className="my-2 border-t border-white/5" />}
-            <button onClick={() => setView(n.k)}
-              className={"group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition " +
+            <button onClick={() => setView(n.k)} title={t(n.tkey)}
+              className={"group mb-0.5 flex w-full items-center rounded-lg px-3 py-2 text-[13px] font-medium transition " +
+                (collapsed ? "justify-center" : "gap-2.5") + " " +
                 (view === n.k ? "bg-indigo-600 text-white shadow" : "text-slate-300 hover:bg-white/5 hover:text-white")}>
               <n.icon size={16} className="shrink-0" />
-              <span className="flex-1 text-left">{n.label}</span>
-              {n.plus && <FolderPlus size={14} className="text-slate-500 group-hover:text-slate-300" />}
+              {!collapsed && <span className="flex-1 text-left">{t(n.tkey)}</span>}
+              {!collapsed && n.plus && <FolderPlus size={14} className="text-slate-500 group-hover:text-slate-300" />}
             </button>
           </React.Fragment>
         ))}
       </nav>
 
       <div className="border-t border-white/5 px-3 py-3">
-        <button className="mb-3 flex w-full items-center gap-2 text-[13px] font-medium text-slate-300 hover:text-white">
-          <PlusCircle size={16} /> Add to live meeting
-        </button>
-        <div className="mb-3">
-          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Smart Scheduler Link <span className="text-slate-600">ⓘ</span>
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-3">
+            <button title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
+            <button onClick={copyLink} title={t("smartScheduler")} className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-600 text-white hover:bg-indigo-500"><Link2 size={14} /></button>
+            <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
           </div>
-          <div className="flex gap-1.5">
-            <button onClick={copyLink} className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-indigo-600 px-2 py-1.5 text-[12px] font-semibold text-white hover:bg-indigo-500">
-              <Link2 size={12} /> {copied ? "Copied!" : "Copy link"}
+        ) : (
+          <>
+            <button className="mb-3 flex w-full items-center gap-2 text-[13px] font-medium text-slate-300 hover:text-white">
+              <PlusCircle size={16} /> {t("addToLive")}
             </button>
-            <button className="rounded-md bg-white/10 px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/15">Manage</button>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 rounded-lg px-1 py-1">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-[13px] font-medium text-white">Nicolas Benech</div>
-            <div className="truncate text-[11px] text-slate-500">nicolas@octomeet.ai</div>
-          </div>
-        </div>
+            <div className="mb-3">
+              <div className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {t("smartScheduler")} <span className="text-slate-600">ⓘ</span>
+              </div>
+              <div className="flex gap-1.5">
+                <button onClick={copyLink} className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-indigo-600 px-2 py-1.5 text-[12px] font-semibold text-white hover:bg-indigo-500">
+                  <Link2 size={12} /> {copied ? t("copied") : t("copyLink")}
+                </button>
+                <button className="rounded-md bg-white/10 px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/15">{t("manage")}</button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg px-1 py-1">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
+              <div className="min-w-0 leading-tight">
+                <div className="truncate text-[13px] font-medium text-white">Nicolas Benech</div>
+                <div className="truncate text-[11px] text-slate-500">nicolas@octomeet.ai</div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </aside>
   );
@@ -525,7 +614,7 @@ function FilterBtn({ label, icon: Icon }) {
   );
 }
 
-function ReportsList({ meetings, onOpen, onUpload, onAsk }) {
+function ReportsList({ meetings, onOpen, onUpload, onAsk, t }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
   const [tab, setTab] = useState("reports");
@@ -548,12 +637,12 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk }) {
       <div className="border-b border-slate-200 bg-white px-6 pt-3">
         <div className="mb-3 flex items-center gap-2">
           <ChevronLeft size={18} className="text-slate-400" />
-          <h1 className="text-lg font-bold text-slate-900">Reports</h1>
+          <h1 className="text-lg font-bold text-slate-900">{t("reports")}</h1>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
           className="mb-3 flex items-center gap-2 rounded-xl border-2 border-indigo-200 bg-white px-3 py-2 focus-within:border-indigo-400">
           <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-slate-400"><Globe size={15} /><ChevronDown size={13} /></button>
-          <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Ask Octo anything..."
+          <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder={t("askAnything")}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
           <button type="submit" className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40" disabled={!ask.trim()}>
             <Send size={15} />
@@ -561,17 +650,17 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk }) {
         </form>
         <div className="flex items-center justify-between">
           <div className="flex gap-5">
-            {[{ k: "reports", l: "Reports" }, { k: "incomplete", l: "Incomplete" }].map((t) => (
-              <button key={t.k} onClick={() => setTab(t.k)}
-                className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === t.k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
-                {t.l}
+            {[{ k: "reports", key: "reportsTab" }, { k: "incomplete", key: "incompleteTab" }].map((tb) => (
+              <button key={tb.k} onClick={() => setTab(tb.k)}
+                className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
+                {t(tb.key)}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-3 pb-1.5">
-            <span className="flex items-center gap-1.5 text-[13px] text-slate-400"><RefreshCw size={13} /> Last refreshed at 3:00 PM</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-slate-400"><RefreshCw size={13} /> {t("lastRefreshed")}</span>
             <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-500">
-              <Upload size={15} /> Upload
+              <Upload size={15} /> {t("upload")}
             </button>
           </div>
         </div>
@@ -599,29 +688,29 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk }) {
             <div className="mb-1 flex flex-wrap items-center gap-2">
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by report title..."
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("filterByTitle")}
                   className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400" />
               </div>
-              <FilterBtn label="All Reports" icon={ClipboardList} />
-              <FilterBtn label="Anytime" icon={Calendar} />
-              <FilterBtn label="Type" />
-              <FilterBtn label="Source" />
-              <FilterBtn label="Folder" />
+              <FilterBtn label={t("allReports")} icon={ClipboardList} />
+              <FilterBtn label={t("anytime")} icon={Calendar} />
+              <FilterBtn label={t("type")} />
+              <FilterBtn label={t("source")} />
+              <FilterBtn label={t("folder")} />
               <button className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-400 hover:bg-slate-50"><PanelRightClose size={16} /></button>
             </div>
 
             <div className="mt-4 overflow-hidden">
               <div className="grid grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
-                <div className="flex items-center gap-6"><span>Source</span><span>Report</span></div>
-                <div className="flex items-center gap-1">Date &amp; Time <ArrowDown size={12} /></div>
-                <div>Folders</div>
-                <div>Owner</div>
+                <div className="flex items-center gap-6"><span>{t("source")}</span><span>{t("report")}</span></div>
+                <div className="flex items-center gap-1">{t("dateTime")} <ArrowDown size={12} /></div>
+                <div>{t("folders")}</div>
+                <div>{t("owner")}</div>
                 <div></div>
               </div>
 
               {groups.map((g) => (
                 <div key={g.label}>
-                  <div className="bg-slate-50/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.label}</div>
+                  <div className="bg-slate-50/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t(BUCKET_TKEY[g.label] || "today")}</div>
                   {g.items.map((m) => (
                     <button key={m.id} onClick={() => onOpen(m.id)}
                       className="grid w-full grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-indigo-50/40">
@@ -664,12 +753,12 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk }) {
 }
 
 /* ============================ PLACEHOLDER ========================== */
-function Placeholder({ section, onReports }) {
+function Placeholder({ section, onReports, t }) {
   const Icon = section?.icon || ClipboardList;
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500"><Icon size={26} /></div>
-      <h2 className="text-xl font-bold text-slate-800">{section?.label}</h2>
+      <h2 className="text-xl font-bold text-slate-800">{section ? t(section.tkey) : ""}</h2>
       <p className="mt-1 max-w-md text-sm text-slate-500">
         Esta sección llega en una fase próxima. Por ahora, la pantalla de <b>Reports</b> ya está funcionando.
       </p>
@@ -802,6 +891,78 @@ function CreateWorkspace({ onCancel, onDone }) {
             {step >= total ? "Finish" : "Next Step"}
           </button>
           <button onClick={onCancel} className="rounded-lg px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ PLANS / PRICING ===================== */
+function PlansView({ onBack }) {
+  const [annual, setAnnual] = useState(true);
+  const plans = [
+    {
+      name: "Free", monthly: "$0", annual: "$0", note: "Always free, no credit card",
+      current: false, popular: false, cta: "Included", disabled: true,
+      features: ["5 meeting transcripts / month", "30 meetings measured / month", "1-hour max meetings", "Summary, transcription & action items", "Meeting Coach", "Ask Octo (AI search)", "Recommendations & Meeting Policy", "Basic integrations", "16+ languages", "Mobile & desktop apps"],
+    },
+    {
+      name: "Pro", monthly: "$19.75", annual: "$15", note: "per user / month",
+      current: false, popular: false, cta: "Switch to Pro", disabled: false,
+      features: ["Everything in Free", "Unlimited meeting transcripts", "100 upload credits / month", "4-hour max meetings", "LLM access (Claude / GPT)", "Workspaces", "Premium integrations", "For You insights", "Custom assistant branding"],
+    },
+    {
+      name: "Enterprise", monthly: "$29.75", annual: "$22.50", note: "per user / month",
+      current: true, popular: true, cta: "Current plan", disabled: true,
+      features: ["Everything in Pro", "Audio & video playback", "200 upload credits / month", "Dedicated support"],
+    },
+    {
+      name: "Enterprise+", monthly: "$39.75", annual: "$29.75", note: "per user / month · 5+ licenses",
+      current: false, popular: false, cta: "Contact sales", disabled: false,
+      features: ["Everything in Enterprise", "300 upload credits / month", "8-hour max meetings", "Enterprise SSO + SAML", "SCIM provisioning", "Custom data retention", "HIPAA compliance", "Domain capture", "Workspace onboarding"],
+    },
+  ];
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
+        <button onClick={onBack}><ChevronLeft size={18} className="text-slate-400" /></button>
+        <h1 className="text-lg font-bold text-slate-900">Plans &amp; Pricing</h1>
+      </div>
+      <div className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mb-7 flex flex-col items-center text-center">
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-[12px] font-semibold text-indigo-700">Your current plan: Enterprise</span>
+          <h2 className="mt-3 text-2xl font-bold text-slate-900">Choose the plan that fits your team</h2>
+          <div className="mt-4 inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 text-sm">
+            <button onClick={() => setAnnual(true)} className={"rounded-md px-3 py-1.5 font-medium transition " + (annual ? "bg-indigo-600 text-white" : "text-slate-500")}>Annual <span className="text-[11px] opacity-80">-25%</span></button>
+            <button onClick={() => setAnnual(false)} className={"rounded-md px-3 py-1.5 font-medium transition " + (!annual ? "bg-indigo-600 text-white" : "text-slate-500")}>Monthly</button>
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {plans.map((p) => (
+            <div key={p.name} className={"relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm " + (p.popular ? "border-indigo-400 ring-2 ring-indigo-200" : "border-slate-200")}>
+              {p.popular && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Most Popular</span>}
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-slate-900">{p.name}</h3>
+                {p.current && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Current</span>}
+              </div>
+              <div className="mt-3 flex items-end gap-1">
+                <span className="text-3xl font-extrabold text-slate-900">{annual ? p.annual : p.monthly}</span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">{p.note}{annual && p.name !== "Free" ? " · billed annually" : ""}</p>
+              <button disabled={p.disabled} className={"mt-4 rounded-lg py-2.5 text-sm font-semibold transition " +
+                (p.disabled ? "cursor-default bg-slate-100 text-slate-400" : "bg-indigo-600 text-white hover:bg-indigo-500")}>{p.cta}</button>
+              <ul className="mt-5 space-y-2">
+                {p.features.map((f, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[12.5px] text-slate-600">
+                    <Check size={14} className="mt-0.5 shrink-0 text-emerald-500" /> {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4 text-[12px] text-slate-500">
+          <span className="font-semibold text-slate-600">Volume discounts (annual):</span> 100+ licenses −10% · 500+ −15% · 1,000+ −20%. Education pricing available. All workspace licenses must be the same tier.
         </div>
       </div>
     </div>
