@@ -497,9 +497,8 @@ export default function App() {
         {view === "for-you" && <ForYouView meetings={meetings} onOpen={openMeeting} onAsk={goAsk} />}
         {view === "coaching" && <CoachingView onAsk={goAsk} />}
         {view === "recommendations" && <RecommendationsView onAsk={goAsk} />}
-        {["meeting-policy", "integrations"].includes(view) && (
-          <Placeholder section={NAV.find((n) => n.k === view)} onReports={() => setView("reports")} t={t} />
-        )}
+        {view === "integrations" && <IntegrationsView onAsk={goAsk} />}
+        {view === "meeting-policy" && <MeetingPolicyView onAsk={goAsk} />}
       </main>
     </div>
   );
@@ -589,8 +588,8 @@ function Sidebar({ view, setView, t, lang, setLang }) {
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-            <div className="absolute bottom-full left-3 z-50 mb-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-2xl">
-              <MenuItem icon={Settings} label="Account Settings" onClick={() => { setView("account"); setMenuOpen(false); }} />
+            <div className="absolute bottom-1 left-full z-50 ml-2 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-2xl">
+              <MenuItem icon={SlidersHorizontal} label="Account Settings" onClick={() => { setView("account"); setMenuOpen(false); }} />
               <MenuItem icon={Rocket} label="Plan & Billing" onClick={() => { setView("plans"); setMenuOpen(false); }} />
               <MenuItem icon={Users} label="Add People" onClick={() => { setView("add-people"); setMenuOpen(false); }} />
               <div className="my-1 border-t border-slate-100" />
@@ -1271,6 +1270,122 @@ function RecommendationsView({ onAsk }) {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ============================ INTEGRATIONS ======================= */
+function IntegrationsView({ onAsk }) {
+  const [conn, setConn] = useState({ "Google Calendar": true, "Google Meet": true, "Octomeet Web Extension": true });
+  const toggle = (name) => setConn((c) => ({ ...c, [name]: !c[name] }));
+  const Group = ({ title, desc, items }) => (
+    <div>
+      <div className="text-sm font-bold text-slate-800">{title}</div>
+      {desc && <p className="mb-2 text-[13px] text-slate-500">{desc}</p>}
+      <div className="mt-2 rounded-xl border border-slate-200 bg-white">
+        {items.map((it) => (
+          <div key={it.name} className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 last:border-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-base">{it.icon}</div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">{it.name}</div>
+                {conn[it.name] ? <div className="text-[12px] text-emerald-600">nicolas@octomeet.ai is connected</div> : <div className="text-[12px] text-slate-400">{it.desc}</div>}
+              </div>
+            </div>
+            {conn[it.name]
+              ? <button onClick={() => toggle(it.name)} className="rounded-lg border border-indigo-300 px-4 py-1.5 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-50">Manage</button>
+              : <button onClick={() => toggle(it.name)} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500">Connect</button>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <>
+      <SectionTop title="Integrations" onAsk={onAsk} />
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto max-w-3xl space-y-6">
+          <SecHead icon={LayoutGrid} title="Integrations" desc="Manage and connect external tools and services to Octomeet." />
+          <Group title="Calendar & Meetings" desc="Allow Octomeet to join your meetings and automatically generate summaries." items={[
+            { name: "Google Calendar", icon: "📅", desc: "Connect your calendar" },
+            { name: "Google Meet", icon: "🎥", desc: "Auto-join Meet calls" },
+            { name: "Outlook Calendar", icon: "📧", desc: "Connect your calendar" },
+            { name: "Zoom", icon: "🎦", desc: "Auto-join Zoom calls" },
+          ]} />
+          <Group title="Apps" desc="Integrate Octomeet across your tools." items={[
+            { name: "Octomeet Web Extension", icon: "🧩", desc: "Chrome extension" },
+            { name: "Slack", icon: "💬", desc: "Push notes to channels" },
+            { name: "Notion", icon: "📝", desc: "Send reports to Notion" },
+            { name: "Asana", icon: "✅", desc: "Create tasks from action items" },
+            { name: "Zapier", icon: "⚡", desc: "Automate workflows" },
+            { name: "Webhook", icon: "🔗", desc: "Send events to any URL" },
+          ]} />
+          <Group title="CRM" desc="Sync meeting context to your CRM." items={[
+            { name: "HubSpot", icon: "🟠", desc: "Sync deals & contacts" },
+            { name: "Salesforce", icon: "☁️", desc: "Sync opportunities" },
+          ]} />
+          <Group title="AI" desc="Programmatically access meeting context." items={[
+            { name: "Anthropic Claude", icon: "🅰️", desc: "Connect Claude" },
+            { name: "OpenAI ChatGPT", icon: "🤖", desc: "Connect ChatGPT" },
+            { name: "MCP Server", icon: "🔌", desc: "Model Context Protocol" },
+            { name: "API", icon: "{ }", desc: "Build with the Octomeet API" },
+          ]} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ============================ MEETING POLICY ===================== */
+function MeetingPolicyView({ onAsk }) {
+  const [p, setP] = useState({ autoJoin: true, recording: true, consent: true, affective: true, externalShare: false, lockMembers: false });
+  const [which, setWhich] = useState("all");
+  const [who, setWho] = useState("any");
+  const [retention, setRetention] = useState("90");
+  const set1 = (k, v) => setP((s) => ({ ...s, [k]: v }));
+  return (
+    <>
+      <SectionTop title="Meeting Policy" onAsk={onAsk} />
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto max-w-2xl space-y-5">
+          <SecHead icon={ShieldCheck} title="Meeting Policy" desc="Set organization-wide rules for how Octomeet joins, records, and shares meetings." />
+          <div className="rounded-lg bg-indigo-50 p-3 text-[13px] text-indigo-700">These defaults apply to everyone in your workspace (octomeet.ai). Members can be allowed to override them below.</div>
+
+          <div className="text-sm font-bold text-slate-800">Auto-Join</div>
+          <ToggleRow title="Auto-Join meetings" desc="Octomeet automatically joins scheduled meetings from connected calendars." on={p.autoJoin} onChange={(v) => set1("autoJoin", v)}>
+            {p.autoJoin && (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <div className="mb-1 text-[13px] font-semibold text-slate-700">Which meetings</div>
+                  <Radio label="All calendar events" desc="Join every meeting on members' calendars" def checked={which === "all"} onClick={() => setWhich("all")} />
+                  <Radio label="Events the member is hosting" desc="Only join meetings the member created or owns" checked={which === "host"} onClick={() => setWhich("host")} />
+                </div>
+                <div>
+                  <div className="mb-1 text-[13px] font-semibold text-slate-700">Who's invited</div>
+                  <Radio label="Any participants" desc="Join regardless of who is invited" def checked={who === "any"} onClick={() => setWho("any")} />
+                  <Radio label="Internal only" desc="Only when all invitees are @octomeet.ai" checked={who === "internal"} onClick={() => setWho("internal")} />
+                </div>
+              </div>
+            )}
+          </ToggleRow>
+
+          <div className="text-sm font-bold text-slate-800">Recording & Data</div>
+          <ToggleRow title="Allow recording & transcription" desc="Let Octomeet record and transcribe meetings for reports." on={p.recording} onChange={(v) => set1("recording", v)} />
+          <ToggleRow title="Require participant consent" desc="Announce and require consent before recording starts." on={p.consent} onChange={(v) => set1("consent", v)} />
+          <ToggleRow title="Affective metrics" desc="Allow engagement, sentiment, charisma and bias scoring across the org." on={p.affective} onChange={(v) => set1("affective", v)} />
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-800">Data retention</div>
+            <p className="mb-2 text-[13px] text-slate-500">How long meeting data is kept before automatic deletion.</p>
+            <select value={retention} onChange={(e) => setRetention(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
+              <option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="forever">Keep forever</option>
+            </select>
+          </div>
+
+          <div className="text-sm font-bold text-slate-800">Permissions</div>
+          <ToggleRow title="Allow external report sharing" desc="Members can share reports with people outside octomeet.ai." on={p.externalShare} onChange={(v) => set1("externalShare", v)} />
+          <ToggleRow title="Lock settings for members" desc="Members cannot override these workspace defaults." on={p.lockMembers} onChange={(v) => set1("lockMembers", v)} />
         </div>
       </div>
     </>
