@@ -478,7 +478,7 @@ export default function App() {
   if (authed === null || !meetings) {
     return (
       <div className="rai-body flex h-screen items-center justify-center bg-slate-50 text-slate-400">
-        <StyleInject /><Loader2 className="mr-2 animate-spin" size={18} /> Loading Octomeet.ai…
+        <StyleInject /><Loader2 className="mr-2 animate-spin" size={18} /> Loading OctoMeet AI…
       </div>
     );
   }
@@ -511,6 +511,18 @@ export default function App() {
 }
 
 /* ============================ SIDEBAR ============================== */
+function OctoLogo({ size = 28 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+      <defs><linearGradient id="octoLogo" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#A855F7" /><stop offset="100%" stopColor="#7C3AED" /></linearGradient></defs>
+      <path d="M35 15 L45 10 q2.5 -1.2 2.5 1.6 v16.8 q0 2.8 -2.5 1.6 L35 31 Z" fill="url(#octoLogo)" />
+      <circle cx="20" cy="20" r="15" fill="url(#octoLogo)" />
+      <g fill="url(#octoLogo)"><circle cx="8" cy="33" r="4.2" /><circle cx="15" cy="36" r="4.2" /><circle cx="23" cy="37" r="4.2" /><circle cx="31" cy="36" r="4.2" /><circle cx="35" cy="32" r="4.2" /></g>
+      <rect x="17.5" y="12" width="5" height="16" rx="2.5" fill="#fff" />
+      <rect x="12" y="17.5" width="16" height="5" rx="2.5" fill="#fff" />
+    </svg>
+  );
+}
 function MenuItem({ icon: Icon, label, onClick }) {
   return (
     <button onClick={onClick} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
@@ -540,10 +552,10 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling }) {
     <aside className={"relative flex shrink-0 flex-col rai-sidebar text-slate-300 transition-all duration-200 " + (collapsed ? "w-[68px]" : "w-60")}>
       {/* header */}
       <div className={"flex items-center px-3 pt-4 pb-3 " + (collapsed ? "justify-center" : "gap-2")}>
-        <button onClick={() => collapsed && setCollapsed(false)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-indigo-500">
-          <span className="text-sm font-black text-white">O</span>
+        <button onClick={() => collapsed && setCollapsed(false)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
+          <OctoLogo size={24} />
         </button>
-        {!collapsed && <span className="text-[16px] font-bold text-white">Octomeet.ai</span>}
+        {!collapsed && <span className="text-[16px] font-bold text-white">OctoMeet AI</span>}
         {!collapsed && (
           <div className="ml-auto flex items-center gap-1.5">
             <button onClick={() => setLangOpen((v) => !v)} className="flex items-center gap-1 rounded px-1 text-[11px] font-semibold text-slate-300 hover:text-white"><span className="text-[13px]">文A</span>{LCODE[lang]}<ChevronDown size={11} /></button>
@@ -1464,8 +1476,8 @@ function LoginView({ onLogin }) {
       <StyleInject />
       <div className="w-full max-w-sm py-10">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-indigo-500"><span className="text-xl font-black text-white">O</span></div>
-          <h1 className="text-2xl font-bold text-slate-900">{signup ? "Create your account" : "Sign in to Octomeet"}</h1>
+          <div className="mb-3"><OctoLogo size={56} /></div>
+          <h1 className="text-2xl font-bold text-slate-900">{signup ? "Create your OctoMeet AI account" : "Sign in to OctoMeet AI"}</h1>
           <p className="mt-1 text-sm text-slate-500">{signup ? "It's free to get started — no credit card required." : "Welcome back. Choose how to continue."}</p>
         </div>
         <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
