@@ -7,7 +7,7 @@ import {
   ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
   Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play,
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type,
-  HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal,
+  HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, KeyRound,
 } from "lucide-react";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -1423,16 +1423,41 @@ function MeetingPolicyView({ onAsk }) {
 }
 
 /* ============================ LOGIN / AUTH ======================= */
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" />
+      <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" />
+      <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" />
+      <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" />
+    </svg>
+  );
+}
+function MicrosoftIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 21 21" aria-hidden>
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" /><rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" /><rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+  );
+}
+function AppleIcon() {
+  return (
+    <svg width="16" height="18" viewBox="0 0 24 24" fill="#000" aria-hidden>
+      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+    </svg>
+  );
+}
 function LoginView({ onLogin }) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
   const [tip, setTip] = useState(false);
   const signup = mode === "signup";
   const providers = [
-    { label: "Continue with Google", icon: "🇬" },
-    { label: "Continue with Microsoft", icon: "⊞" },
-    { label: "Continue with Apple", icon: "" },
-    { label: "Continue with SSO", icon: "🔑" },
+    { label: "Continue with Google", icon: <GoogleIcon /> },
+    { label: "Continue with Microsoft", icon: <MicrosoftIcon /> },
+    { label: "Continue with Apple", icon: <AppleIcon /> },
+    { label: "Continue with SSO", icon: <KeyRound size={17} className="text-slate-500" /> },
   ];
   return (
     <div className="rai-body flex min-h-screen w-full items-center justify-center bg-[#F4F5FA] px-4">
@@ -1445,8 +1470,8 @@ function LoginView({ onLogin }) {
         </div>
         <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           {providers.map((p) => (
-            <button key={p.label} onClick={onLogin} className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-              <span className="text-base">{p.icon}</span> {p.label}
+            <button key={p.label} onClick={onLogin} className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:shadow-sm">
+              <span className="flex w-5 justify-center">{p.icon}</span> {p.label}
             </button>
           ))}
           <div className="flex items-center gap-3 py-1 text-[12px] text-slate-400"><span className="h-px flex-1 bg-slate-200" /> or <span className="h-px flex-1 bg-slate-200" /></div>
