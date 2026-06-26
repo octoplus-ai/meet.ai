@@ -6,6 +6,7 @@ import {
   ArrowLeft, Send, Loader2, CheckCircle2, Circle, Clock, Video, Hash, Target,
   ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
   Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play,
+  Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose,
 } from "lucide-react";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -16,9 +17,8 @@ import {
 /* ------------------------------------------------------------------ */
 
 const SPEAKER_COLORS = ["#6366F1", "#0EA5E9", "#10B981", "#F59E0B", "#F43F5E", "#14B8A6", "#8B5CF6", "#EC4899"];
-const REF_TODAY = "2026-06-26"; // ancla para agrupar reportes igual que la captura
+const REF_TODAY = "2026-06-26";
 
-// Videos de muestra (inventados, solo para preview de las llamadas)
 const VIDEOS = [
   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
@@ -30,6 +30,12 @@ const VIDEOS = [
   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4",
   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+];
+
+const SEED_RECENT = [
+  { bucket: "LAST WEEK", items: ["Which brands do they currently use?", "How is the sales vertical structured?", "Feedback recap — Acme & Vertex"] },
+  { bucket: "LAST 30 DAYS", items: ["Which AI tools does he use?", "What are the two brands mentioned?", "What is the status of this deal?", "Maria Lopez"] },
+  { bucket: "OLDER", items: ["Who participated? List names", "Northwind intro and next steps", "Pricing tiers discussed", "Pilot timeline"] },
 ];
 
 /* ---------------------------- storage shim ------------------------- */
@@ -330,7 +336,6 @@ function PlatformBadge({ source }) {
   );
 }
 
-// Preview de video con play-on-hover (inventado)
 function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true }) {
   const ref = useRef(null);
   const onEnter = () => { const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
@@ -439,7 +444,8 @@ export default function App() {
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={meetings} />}
         {view === "ask" && <ChatView meetings={meetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "upload" && <UploadView onSave={async (m) => { await persist([m, ...meetings]); openMeeting(m.id); }} onCancel={() => setView("reports")} />}
-        {["add-people", "folders", "calendar", "for-you", "coaching", "recommendations", "meeting-policy", "integrations"].includes(view) && (
+        {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
+        {["folders", "calendar", "for-you", "coaching", "recommendations", "meeting-policy", "integrations"].includes(view) && (
           <Placeholder section={NAV.find((n) => n.k === view)} onReports={() => setView("reports")} />
         )}
       </main>
@@ -563,7 +569,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk }) {
             ))}
           </div>
           <div className="flex items-center gap-3 pb-1.5">
-            <span className="flex items-center gap-1.5 text-[13px] text-slate-400"><RefreshCw size={13} /> Last refreshed at 2:52 PM</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-slate-400"><RefreshCw size={13} /> Last refreshed at 3:00 PM</span>
             <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-500">
               <Upload size={15} /> Upload
             </button>
@@ -601,6 +607,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk }) {
               <FilterBtn label="Type" />
               <FilterBtn label="Source" />
               <FilterBtn label="Folder" />
+              <button className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-400 hover:bg-slate-50"><PanelRightClose size={16} /></button>
             </div>
 
             <div className="mt-4 overflow-hidden">
@@ -671,6 +678,136 @@ function Placeholder({ section, onReports }) {
   );
 }
 
+/* ===================== CREATE WORKSPACE (Add People) =============== */
+function Toggle({ on, onChange }) {
+  return (
+    <button type="button" onClick={() => onChange(!on)} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (on ? "bg-indigo-600" : "bg-slate-200")}>
+      <span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (on ? "left-[22px]" : "left-0.5")} />
+    </button>
+  );
+}
+
+function CreateWorkspace({ onCancel, onDone }) {
+  const [step, setStep] = useState(1);
+  const [name, setName] = useState("");
+  const [agreed, setAgreed] = useState(false);
+  const [invites, setInvites] = useState([{ email: "", role: "Member" }]);
+  const [perms, setPerms] = useState({ viewMetrics: true, shareDefault: false, approveJoin: true });
+  const total = 5;
+  const canNext = step === 1 ? !!(name.trim() && agreed) : true;
+  const back = () => (step === 1 ? onCancel() : setStep(step - 1));
+  const next = () => (step >= total ? onDone() : setStep(step + 1));
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3">
+        <button onClick={onCancel}><ChevronLeft size={18} className="text-slate-400" /></button>
+        <h1 className="text-lg font-bold text-slate-900">Create Workspace</h1>
+      </div>
+
+      <div className="mx-auto max-w-2xl px-6 py-10">
+        <div className="mb-6 flex items-center gap-3 text-sm text-slate-500">
+          <button onClick={back} className="text-slate-400 hover:text-slate-700"><ArrowLeft size={18} /></button>
+          <span className="h-4 w-px bg-slate-200" /> Step {step} of {total}
+        </div>
+
+        {step === 1 && (
+          <>
+            <h2 className="text-3xl font-bold text-slate-900">Create a Workspace</h2>
+            <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-slate-500">Workspaces allow companies to build holistic views of meeting metrics, and allow for custom permissions across teams and individuals.</p>
+            <label className="mt-7 block text-sm font-medium text-slate-600">Name your new organization</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your workspace name, e.g., Acme Inc..."
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400" />
+            <button onClick={() => setAgreed(!agreed)} className="mt-5 flex items-center gap-2.5 text-left text-sm text-slate-600">
+              <span className={"flex h-5 w-5 shrink-0 items-center justify-center rounded border " + (agreed ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white")}>{agreed && <Check size={13} />}</span>
+              <span>I have read and agree to the <span className="font-medium text-indigo-600">Data Processing Agreement</span></span>
+            </button>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <h2 className="text-3xl font-bold text-slate-900">Invite your team</h2>
+            <p className="mt-3 text-[15px] text-slate-500">Add the people you want in this workspace. You can skip and do this later.</p>
+            <div className="mt-6 space-y-3">
+              {invites.map((iv, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <input value={iv.email} onChange={(e) => setInvites(invites.map((x, j) => j === i ? { ...x, email: e.target.value } : x))} placeholder="name@company.com"
+                      className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-400" />
+                  </div>
+                  <select value={iv.role} onChange={(e) => setInvites(invites.map((x, j) => j === i ? { ...x, role: e.target.value } : x))}
+                    className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-600 outline-none">
+                    <option>Member</option><option>Admin</option><option>Viewer</option>
+                  </select>
+                  {invites.length > 1 && <button onClick={() => setInvites(invites.filter((_, j) => j !== i))} className="text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setInvites([...invites, { email: "", role: "Member" }])} className="mt-3 flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800"><Plus size={15} /> Add another</button>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <h2 className="text-3xl font-bold text-slate-900">Set permissions</h2>
+            <p className="mt-3 text-[15px] text-slate-500">Choose the defaults for this workspace. You can change these anytime.</p>
+            <div className="mt-6 space-y-3">
+              {[
+                { k: "viewMetrics", label: "Allow members to view team metrics", desc: "Everyone can see aggregated meeting metrics." },
+                { k: "shareDefault", label: "Share reports by default", desc: "New reports are shared with the workspace automatically." },
+                { k: "approveJoin", label: "Require approval to join", desc: "Admins must approve new members." },
+              ].map((p) => (
+                <div key={p.k} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="pr-4"><div className="text-sm font-medium text-slate-700">{p.label}</div><div className="text-xs text-slate-400">{p.desc}</div></div>
+                  <Toggle on={perms[p.k]} onChange={(v) => setPerms({ ...perms, [p.k]: v })} />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <h2 className="text-3xl font-bold text-slate-900">Connect a calendar</h2>
+            <p className="mt-3 text-[15px] text-slate-500">Connect a calendar so Octomeet can auto-join your meetings. Optional.</p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {["Google Calendar", "Outlook Calendar"].map((c) => (
+                <button key={c} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-500"><CalendarCheck size={18} /></div>
+                  <div><div className="text-sm font-medium text-slate-700">{c}</div><div className="text-xs text-slate-400">Connect</div></div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {step === 5 && (
+          <>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-500"><Check size={24} /></div>
+            <h2 className="mt-4 text-3xl font-bold text-slate-900">You're all set</h2>
+            <p className="mt-3 text-[15px] text-slate-500">Review your workspace before finishing.</p>
+            <div className="mt-6 space-y-2 rounded-xl border border-slate-200 bg-white p-5 text-sm">
+              <div className="flex justify-between"><span className="text-slate-400">Workspace</span><span className="font-medium text-slate-700">{name || "—"}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Invites</span><span className="font-medium text-slate-700">{invites.filter((i) => i.email.trim()).length}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Share by default</span><span className="font-medium text-slate-700">{perms.shareDefault ? "On" : "Off"}</span></div>
+            </div>
+          </>
+        )}
+
+        <div className="mt-8 flex items-center gap-3">
+          <button onClick={next} disabled={!canNext}
+            className={"rounded-lg px-5 py-2.5 text-sm font-semibold transition " + (canNext ? "bg-indigo-600 text-white hover:bg-indigo-500" : "cursor-not-allowed bg-slate-200 text-slate-400")}>
+            {step >= total ? "Finish" : "Next Step"}
+          </button>
+          <button onClick={onCancel} className="rounded-lg px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ========================= MEETING DETAIL ========================== */
 function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   const [tab, setTab] = useState("notes");
@@ -714,9 +851,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
       </div>
 
       <div className="mx-auto max-w-5xl px-6 py-5">
-        {/* video player */}
         <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
-          <video key={meeting.id} src={meeting.video} poster="" controls preload="metadata" className="aspect-video w-full bg-black" />
+          <video key={meeting.id} src={meeting.video} controls preload="metadata" className="aspect-video w-full bg-black" />
         </div>
 
         <div className="mb-5 grid grid-cols-3 gap-3">
@@ -932,14 +1068,46 @@ function Card({ title, icon: Icon, children }) {
 }
 
 /* ============================ ASK OCTO (chat) ===================== */
+function RecentSearches({ groups, onPick }) {
+  return (
+    <aside className="hidden w-72 shrink-0 flex-col border-l border-slate-200 bg-white xl:flex">
+      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3.5">
+        <ClipboardList size={16} className="text-indigo-500" />
+        <h2 className="text-sm font-bold text-slate-800">Recent Searches</h2>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {groups.map((g) => (
+          <div key={g.bucket}>
+            <div className="bg-slate-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.bucket}</div>
+            {g.items.map((qq, i) => (
+              <button key={i} onClick={() => onPick(qq)} className="block w-full truncate px-4 py-2.5 text-left text-[13px] text-slate-600 transition hover:bg-indigo-50/50">{qq}</button>
+            ))}
+          </div>
+        ))}
+      </div>
+      <button className="flex items-center justify-center gap-2 border-t border-slate-200 py-3 text-[13px] font-semibold text-indigo-600 hover:bg-indigo-50/50"><Clock size={14} /> All Search History</button>
+    </aside>
+  );
+}
+
 function ChatView({ meetings, onOpen, seed }) {
-  const [msgs, setMsgs] = useState([{ role: "assistant", text: "Hi — I've read every meeting in your workspace. Ask me anything across all your reports: action items, what someone said, risks, decisions, who committed to what.", refs: [] }]);
+  const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [recent, setRecent] = useState(SEED_RECENT);
   const endRef = useRef(null);
   const sentSeed = useRef(false);
+  const started = msgs.length > 0;
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+
+  const addRecent = (qstr) => setRecent((r) => {
+    const copy = r.map((g) => ({ ...g, items: [...g.items] }));
+    let lw = copy.find((g) => g.bucket === "LAST WEEK");
+    if (!lw) { lw = { bucket: "LAST WEEK", items: [] }; copy.unshift(lw); }
+    lw.items = [qstr, ...lw.items.filter((x) => x !== qstr)].slice(0, 8);
+    return copy;
+  });
 
   const buildContext = (question) => {
     const kw = question.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
@@ -959,7 +1127,7 @@ function ChatView({ meetings, onOpen, seed }) {
   const send = async (textArg) => {
     const question = (textArg ?? input).trim();
     if (!question || busy) return;
-    setInput("");
+    setInput(""); addRecent(question);
     const history = [...msgs, { role: "user", text: question }];
     setMsgs(history); setBusy(true);
     try {
@@ -976,43 +1144,82 @@ function ChatView({ meetings, onOpen, seed }) {
 
   useEffect(() => { if (seed && !sentSeed.current) { sentSeed.current = true; send(seed); } /* eslint-disable-next-line */ }, [seed]);
 
-  const suggestions = ["What are all my open action items?", "Summarize the Vertex Retail meeting", "Who am I meeting about partnerships?", "When is the product demo scheduled?"];
+  const suggestions = [
+    "What are the major takeaways from last week's meetings?",
+    "What is the {team name} team working on right now?",
+    "What are my next steps on the {project name} project?",
+    "What tasks are currently at risk or overdue?",
+  ];
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-6 py-6">
-      <div className="mb-4 flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-500"><Sparkles size={17} className="text-white" /></div>
-        <div><h1 className="text-lg font-bold text-slate-900">Ask Octo</h1><p className="text-[11px] uppercase tracking-wide text-slate-400">Across {meetings.length} reports</p></div>
-      </div>
-      <div className="flex-1 space-y-4 overflow-y-auto pb-4">
-        {msgs.map((m, i) => (
-          <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
-            <div className={"max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed " + (m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-700 shadow-sm")}>
-              <div className="whitespace-pre-wrap">{m.text}</div>
-              {m.refs && m.refs.length > 0 && (
-                <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
-                  {m.refs.map((id) => { const mt = meetings.find((x) => x.id === id); return mt ? (
-                    <button key={id} onClick={() => onOpen(id)} className="flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100"><FileText size={11} /> {mt.title}</button>
-                  ) : null; })}
+    <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
+          <ChevronLeft size={18} className="text-slate-400" />
+          <Sparkles size={16} className="text-indigo-500" />
+          <h1 className="text-lg font-bold text-slate-900">Ask Octo</h1>
+        </div>
+
+        {!started ? (
+          <div className="flex flex-1 flex-col items-center overflow-y-auto px-6 py-10">
+            <div className="mt-8 w-full max-w-3xl">
+              <h2 className="mb-7 text-center text-3xl font-bold text-slate-900">What can I help you discover?</h2>
+              <form onSubmit={(e) => { e.preventDefault(); send(); }}
+                className="flex items-center gap-2 rounded-2xl border-2 border-indigo-200 bg-white px-3 py-2.5 shadow-sm focus-within:border-indigo-400">
+                <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-400"><Globe size={16} /><ChevronDown size={13} /></button>
+                <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask Octo anything..." className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-slate-400" />
+                <button type="submit" disabled={!input.trim()} className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40"><Send size={16} /></button>
+              </form>
+              <div className="mt-5 flex flex-wrap justify-center gap-3">
+                {suggestions.map((s) => (
+                  <button key={s} onClick={() => send(s)} className="flex items-center gap-2 rounded-xl bg-indigo-50/70 px-4 py-2.5 text-sm text-indigo-700 transition hover:bg-indigo-100">
+                    <Sparkles size={14} className="text-indigo-400" /> {s}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-12 text-center">
+                <div className="mb-2.5 text-xs font-bold text-slate-500">Your sources</div>
+                <div className="flex items-center justify-center gap-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm"><Calendar size={18} className="text-sky-500" /></div>
+                  <div className="h-10 w-10 rounded-lg border border-dashed border-slate-200 bg-white" />
+                  <div className="h-10 w-10 rounded-lg border border-dashed border-slate-200 bg-white" />
+                  <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-50"><Plus size={18} /></button>
                 </div>
-              )}
+              </div>
             </div>
           </div>
-        ))}
-        {busy && <div className="flex justify-start"><div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-400 shadow-sm"><Loader2 size={14} className="animate-spin text-indigo-500" /> Reading your meetings…</div></div>}
-        <div ref={endRef} />
+        ) : (
+          <>
+            <div className="mx-auto w-full max-w-3xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
+              {msgs.map((m, i) => (
+                <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
+                  <div className={"max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed " + (m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-700 shadow-sm")}>
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+                    {m.refs && m.refs.length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
+                        {m.refs.map((id) => { const mt = meetings.find((x) => x.id === id); return mt ? (
+                          <button key={id} onClick={() => onOpen(id)} className="flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100"><FileText size={11} /> {mt.title}</button>
+                        ) : null; })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {busy && <div className="flex justify-start"><div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-400 shadow-sm"><Loader2 size={14} className="animate-spin text-indigo-500" /> Reading your meetings…</div></div>}
+              <div ref={endRef} />
+            </div>
+            <div className="border-t border-slate-200 bg-white px-6 py-3">
+              <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+                <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                  placeholder="Ask Octo anything…" className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none" />
+                <button onClick={() => send()} disabled={busy || !input.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white transition disabled:opacity-40"><Send size={16} /></button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
-      {msgs.length <= 1 && !busy && (
-        <div className="mb-3 flex flex-wrap gap-2">
-          {suggestions.map((s) => (<button key={s} onClick={() => send(s)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition hover:border-indigo-300 hover:text-indigo-700">{s}</button>))}
-        </div>
-      )}
-      <div className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="Ask Octo anything…" className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none" />
-        <button onClick={() => send()} disabled={busy || !input.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white transition disabled:opacity-40"><Send size={16} /></button>
-      </div>
+      <RecentSearches groups={recent} onPick={(qq) => send(qq)} />
     </div>
   );
 }
@@ -1047,7 +1254,7 @@ function UploadView({ onSave, onCancel }) {
       const meeting = mk({
         id: "m" + Date.now(), title: title || "Untitled meeting", date, source, folder,
         timeStart: "—", timeEnd: "—", owner: "NB", readScore: parsed.scores?.overall ?? 80,
-        video: VIDEOS[Math.floor(Math.random() * VIDEOS.length)],
+        video: VIDEOS[Math.floor((title || "x").length) % VIDEOS.length],
         participantsCount: (parsed.participants || []).length || 2,
         summary: parsed.summary || "", topics: parsed.topics || [], keyQuestions: parsed.keyQuestions || [],
         actionItems: (parsed.actionItems || []).map((a) => ({ ...a, done: false })), nextSteps: parsed.nextSteps || [],
