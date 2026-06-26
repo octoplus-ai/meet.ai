@@ -1,21 +1,22 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  LayoutDashboard, MessageSquareText, Plus, Settings, Search, Calendar, Clock,
-  Users, CheckCircle2, Circle, ArrowLeft, Sparkles, Activity, FileText, ListChecks,
-  BarChart3, Send, Loader2, Video, AlertTriangle, Target, Trash2, RotateCcw,
-  Hash, X, Zap, Mic, ChevronRight, Quote
+  Users, Sparkles, ClipboardList, FolderPlus, Folder, Calendar, Star,
+  Presentation, Lightbulb, ShieldCheck, LayoutGrid, PlusCircle, Link2, Globe,
+  Search, ChevronDown, RefreshCw, Upload, Lock, MoreHorizontal, ArrowDown,
+  ArrowLeft, Send, Loader2, CheckCircle2, Circle, Clock, Video, Hash, Target,
+  ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
+  RotateCcw, Trash2, Zap, Activity, Rocket, ChevronLeft, Download, Share2,
 } from "lucide-react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  AreaChart, Area
+  Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
 
 /* ------------------------------------------------------------------ */
-/*  Cadence — Meeting Intelligence  (Read.ai-style workflow clone)     */
-/*  Record → Transcribe → Summarize → Score → Next steps + Ask chat    */
+/*  Meet AI — Meeting Intelligence (Read.ai-style clone — Phase 0)     */
 /* ------------------------------------------------------------------ */
 
-const SPEAKER_COLORS = ["#7C3AED", "#4F46E5", "#0EA5E9", "#10B981", "#F59E0B", "#F43F5E", "#14B8A6", "#8B5CF6"];
+const SPEAKER_COLORS = ["#6366F1", "#0EA5E9", "#10B981", "#F59E0B", "#F43F5E", "#14B8A6", "#8B5CF6", "#EC4899"];
+const REF_TODAY = "2026-06-26"; // ancla para agrupar reportes igual que la captura
 
 /* ---------------------------- storage shim ------------------------- */
 const mem = {};
@@ -44,26 +45,16 @@ async function callClaude(messages, system) {
   const res = await fetch("/api/anthropic", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      system,
-      messages,
-    }),
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system, messages }),
   });
   if (!res.ok) throw new Error("API request failed (" + res.status + ")");
   const data = await res.json();
-  return (data.content || [])
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("\n");
+  return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
 }
-
 function extractJSON(text) {
   let t = (text || "").trim();
   t = t.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
-  const s = t.indexOf("{");
-  const e = t.lastIndexOf("}");
+  const s = t.indexOf("{"), e = t.lastIndexOf("}");
   if (s !== -1 && e !== -1) t = t.slice(s, e + 1);
   return JSON.parse(t);
 }
@@ -73,10 +64,8 @@ function parseTranscript(raw) {
   const lines = (raw || "").split("\n").map((l) => l.trim()).filter(Boolean);
   const turns = [];
   for (const line of lines) {
-    // optional [00:42] timestamp + "Speaker: text"
     const tm = line.match(/^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*(.*)$/);
-    let t = "";
-    let rest = line;
+    let t = "", rest = line;
     if (tm) { t = tm[1]; rest = tm[2]; }
     const sm = rest.match(/^([A-Za-zÀ-ÿ'.\- ]{1,32}):\s*(.+)$/);
     if (sm) turns.push({ t, speaker: sm[1].trim(), text: sm[2].trim() });
@@ -87,186 +76,281 @@ function parseTranscript(raw) {
 }
 
 /* ------------------------------ seed ------------------------------- */
+function mk(o) {
+  const rs = o.readScore ?? 85;
+  return {
+    durationMin: 30, source: "Google Meet", folder: "Sales Call", folderLocked: true,
+    owner: "NB", topics: [], keyQuestions: [], actionItems: [], nextSteps: [],
+    summary: "", sentimentLabel: "Positive",
+    sentimentTimeline: [0.2, 0.4, 0.5, 0.4, 0.6, 0.7, 0.7, 0.8],
+    scores: { overall: rs, engagement: Math.min(99, rs + 7), sentiment: Math.max(40, rs - 7), balance: 80, clarity: 82 },
+    participants: [], transcript: [],
+    ...o,
+  };
+}
+
 function seedMeetings() {
   return [
-    {
-      id: "m1",
-      title: "Discovery Call — Northwind Logistics",
-      date: "2026-06-18",
-      durationMin: 34,
-      platform: "Google Meet",
+    mk({
+      id: "m_matt", title: "Matt & STOREE", date: "2026-06-25",
+      timeStart: "2:06 PM", timeEnd: "2:25 PM", durationMin: 19, source: "Google Meet",
+      folder: "Partnership Alignment", owner: "NB", readScore: 89, participantsCount: 3,
+      scores: { overall: 89, engagement: 96, sentiment: 82, balance: 78, clarity: 86 },
+      sentimentLabel: "Positive", sentimentTimeline: [0.3, 0.4, 0.5, 0.55, 0.6, 0.7, 0.75, 0.8],
       summary:
-        "Northwind processes ~4,000 supplier invoices per month manually across three staff, with frequent PO-matching errors. They want an AI system to read invoices, match them to purchase orders in SAP, and flag exceptions. Budget and timeline appetite are strong, and the next step is a tailored proposal plus a short demo on a sample batch.",
-      topics: ["Invoice processing pain points", "PO matching in SAP", "Exception handling", "ROI & headcount", "Implementation timeline"],
+        "The meeting reviewed Storee, an AI-driven retail operations platform, and explored a partner-led model for U.S. expansion with a retail operations contact. Storee centralizes internal communication, task management, visual merchandising (VM) image audits, inventory, KPIs and data insights across mobile and desktop, with seven years of history and deployments in 113 chain stores across Israel, Europe and Latin America. The proposed U.S. expansion is partner-led: local partners introduce prospects and open doors while Storee handles demos, POCs and closing, with partners receiving 50% of the monthly subscription revenue for deals they introduce. A 30-minute demo was scheduled for Tuesday at 9:00 a.m. Eastern.",
+      topics: ["Storee product & capabilities", "Market presence & traction", "Partner model & economics", "Target account fit", "Next steps & demo"],
       keyQuestions: [
-        "Can the system reach 95%+ matching accuracy on Northwind's invoice formats?",
-        "How does it integrate with their existing SAP instance?",
-        "What does a realistic pilot timeline look like?",
+        "Where did Storee originate and which markets is it strongest in?",
+        "What would my role be in the U.S. expansion and how will responsibilities be divided?",
+        "When can we schedule a demo?",
       ],
       actionItems: [
-        { owner: "Ana Reyes", task: "Send tailored automation proposal with pricing tiers", due: "Jun 23", done: false },
-        { owner: "Ana Reyes", task: "Prepare demo on a 50-invoice sample batch", due: "Jun 25", done: false },
-        { owner: "David Cho", task: "Share anonymised invoice + PO samples", due: "This week", done: true },
-        { owner: "Mei Lin", task: "Confirm finance sign-off process for pilot budget", due: "Jul 1", done: false },
+        { owner: "Matthew Raimo", task: "Present identified U.S. opportunities to Storee's CEO if moving forward after the demo", due: "After demo", done: false },
+        { owner: "Nicolas Benech", task: "Book a 30-minute Storee demo for Tuesday at 9:00 a.m. Eastern", due: "Tue", done: false },
+        { owner: "Matthew Raimo", task: "Prepare a short list of potential U.S. retailer contacts to discuss during the demo", due: "Before demo", done: false },
       ],
-      nextSteps: [
-        "Deliver proposal and book a 30-min demo review",
-        "Scope a 4-week paid pilot on one supplier category",
+      nextSteps: ["Run the 30-minute demo Tuesday 9:00 a.m. ET", "Matthew prepares U.S. retailer target list"],
+      participants: [
+        { name: "Nicolas Benech", role: "Storee (You)", talkPct: 84, sentiment: "Positive" },
+        { name: "Matthew Raimo", role: "Retail Ops Partner", talkPct: 12, sentiment: "Positive" },
+        { name: "matthew raimo", role: "Guest", talkPct: 4, sentiment: "Neutral" },
       ],
-      scores: { overall: 88, engagement: 84, sentiment: 90, balance: 76, clarity: 86 },
+      transcript: parseTranscript(
+`[00:09] Nicolas Benech: Hi, Matthew. How are you? Good.
+[00:13] Nicolas Benech: Thanks for rescheduling.
+[00:19] Nicolas Benech: Where are you located right now?
+[00:21] Matthew Raimo: So I'm in Florida. I'm in Tampa, Florida.
+[00:24] Nicolas Benech: Amazing. So I'm in Brazil. So we are more or less similar time zone.
+[01:22] Nicolas Benech: Yes. So that's actually kind of what we are doing. We are helping all over the world, taking the operations stores were doing ten years ago and using AI to improve all these ways of doing things — internal communication managed by AI, organizing messages by priority, task management, auditing tasks, pictures for visual merchandising, inventory, data insights, KPIs.
+[02:38] Matthew Raimo: I apologize. Something must have happened. I cut out for a minute.
+[02:55] Nicolas Benech: No worries. The system is helping retailers do that. We are working with more than a hundred chain stores globally, with brands like HM, Lululemon, Luxitan de Paris, CERN, Mankind and Journ — mostly in Israel, Europe and Latin America.
+[08:20] Matthew Raimo: And what would my role be, how would responsibilities be divided?
+[08:24] Nicolas Benech: Local partners open doors and make introductions; Storee provides pitching, POCs, integrations and closes deals, and partners receive 50% of the subscription revenue for deals they introduce.
+[17:28] Matthew Raimo: When can we schedule a demo?
+[17:58] Nicolas Benech: Let's do a 30-minute demo Tuesday at 9 a.m. Eastern. I'll book it.
+[18:52] Nicolas Benech: Great. So, Matthew, thanks a lot for the time and for connecting.`
+      ),
+    }),
+    mk({
+      id: "m_miguel", title: "Miguel Alves & STOREE", date: "2026-06-26",
+      timeStart: "12:00 PM", timeEnd: "12:37 PM", durationMin: 37, source: "Google Meet",
+      folder: "Partnership Alignment", owner: "AS", readScore: 88, participantsCount: 3,
+      summary: "Intro call with Miguel Alves exploring a partnership to bring Storee's AI retail operations platform to new accounts. Covered product capabilities, ideal customer profile, and the partner revenue-share model. Agreed to align on a target list and a follow-up demo.",
+      topics: ["Intro & context", "Product overview", "Ideal customer profile", "Partner economics"],
+      keyQuestions: ["Which retail segments are the best fit?", "How does onboarding work for new partners?"],
+      actionItems: [
+        { owner: "Miguel Alves", task: "Share 3-5 target retail accounts", due: "This week", done: false },
+        { owner: "Nicolas Benech", task: "Send partner one-pager and demo link", due: "Jun 27", done: false },
+      ],
+      nextSteps: ["Align on target accounts", "Schedule product demo"],
+      participants: [
+        { name: "Nicolas Benech", role: "Storee (You)", talkPct: 58, sentiment: "Positive" },
+        { name: "Miguel Alves", role: "Partner Prospect", talkPct: 34, sentiment: "Positive" },
+        { name: "Guest", role: "Guest", talkPct: 8, sentiment: "Neutral" },
+      ],
+      transcript: parseTranscript(
+`[00:10] Nicolas Benech: Thanks for joining, Miguel. Let me give you a quick overview of what Storee does and how the partnership works.
+[00:40] Miguel Alves: Sounds great. I work with several retail groups here, so I'm curious about the fit.
+[01:20] Nicolas Benech: Perfect — we centralize store operations with AI: communication, tasks, VM audits, inventory and KPIs. Partners open doors and we close.`
+      ),
+    }),
+    mk({
+      id: "m_michelle", title: "Michelle & STOREE - Demo", date: "2026-06-26",
+      timeStart: "10:00 AM", timeEnd: "10:58 AM", durationMin: 58, source: "Google Meet",
+      folder: "Partnership Alignment", owner: "NB", readScore: 89, participantsCount: 2,
+      summary: "Full product demo for Michelle covering the Storee mobile and desktop experience: AI-prioritized communication, task auditing, visual merchandising image audits, and KPI dashboards. Strong interest; discussed a pilot scope and pricing.",
+      topics: ["Live demo", "VM image audits", "KPI dashboards", "Pilot scope", "Pricing"],
+      keyQuestions: ["What does a pilot rollout look like?", "How is pricing structured per store?"],
+      actionItems: [
+        { owner: "Nicolas Benech", task: "Send pilot proposal and pricing", due: "Jun 27", done: false },
+        { owner: "Michelle", task: "Confirm pilot store group internally", due: "Jul 1", done: false },
+      ],
+      nextSteps: ["Send pilot proposal", "Confirm pilot stores"],
+      participants: [
+        { name: "Nicolas Benech", role: "Storee (You)", talkPct: 63, sentiment: "Positive" },
+        { name: "Michelle", role: "Retail Ops Lead", talkPct: 37, sentiment: "Positive" },
+      ],
+      transcript: parseTranscript(
+`[00:12] Nicolas Benech: Let me share my screen and walk you through Storee end to end.
+[00:45] Michelle: Please do — I'm most interested in the visual merchandising audits.
+[01:10] Nicolas Benech: Great, that's one of our strongest features. Store managers submit photos and AI scores compliance automatically.`
+      ),
+    }),
+    mk({
+      id: "m_daniela", title: "Daniela & Asaf", date: "2026-06-25",
+      timeStart: "10:30 AM", timeEnd: "11:10 AM", durationMin: 40, source: "Google Meet",
+      folder: "Job Interview", owner: "NB", readScore: 87, participantsCount: 3,
       sentimentLabel: "Positive",
-      sentimentTimeline: [0.2, 0.4, 0.5, 0.3, 0.6, 0.7, 0.8, 0.7],
+      summary: "Interview conversation between Daniela and Asaf covering background, experience and role expectations. Positive rapport; next round to be scheduled.",
+      topics: ["Background", "Experience", "Role expectations", "Next steps"],
+      keyQuestions: ["What is the candidate's availability?", "Which strengths fit the role best?"],
+      actionItems: [{ owner: "Asaf", task: "Schedule second-round interview", due: "This week", done: false }],
+      nextSteps: ["Schedule next round"],
       participants: [
-        { name: "Ana Reyes", role: "AI Consultant (You)", talkPct: 38, sentiment: "Positive" },
-        { name: "David Cho", role: "Ops Director, Northwind", talkPct: 41, sentiment: "Positive" },
-        { name: "Mei Lin", role: "Finance, Northwind", talkPct: 21, sentiment: "Neutral" },
+        { name: "Daniela", role: "Interviewer", talkPct: 52, sentiment: "Positive" },
+        { name: "Asaf", role: "Candidate", talkPct: 48, sentiment: "Positive" },
       ],
       transcript: parseTranscript(
-`[00:12] Ana Reyes: Thanks for the time today. To start, can you walk me through how invoices flow in right now?
-[00:31] David Cho: Sure. We get around four thousand supplier invoices a month, all by email or PDF. Three people key them in and match them against purchase orders in SAP by hand.
-[01:05] Mei Lin: And honestly that's where it breaks. The matching is manual, so we get errors, duplicate payments a few times a quarter, and month-end is brutal.
-[01:40] Ana Reyes: That's exactly the kind of process we automate. We'd have an AI read each invoice, pull line items, and auto-match to the PO. Anything ambiguous gets flagged for a human instead of stopping the line.
-[02:20] David Cho: What kind of accuracy are we talking about? Our formats are all over the place.
-[02:35] Ana Reyes: On messy real-world formats we typically land mid-nineties after a short tuning period, and exceptions route to your team with the reason attached.
-[03:10] Mei Lin: If we cut the manual matching we could redeploy at least two people to higher-value work.
-[03:38] David Cho: SAP integration is the part I worry about. We can't rip anything out.
-[03:55] Ana Reyes: Understood — we sit alongside SAP and write back through its API, no replacement. I'd suggest a four-week paid pilot on one supplier category to prove it on your data.
-[04:30] David Cho: I like that. Send us a proposal and let's see a demo on a real batch.
-[05:02] Mei Lin: I'll need to confirm the sign-off path on our side for the pilot budget.
-[05:20] Ana Reyes: Perfect. If you share an anonymised batch of invoices and POs, I'll have a demo ready next week.`
+`[00:08] Daniela: Thanks for coming in, Asaf. Tell me a bit about your background.
+[00:30] Asaf: Sure — I've spent the last few years in retail operations and analytics.`
       ),
-    },
-    {
-      id: "m2",
-      title: "Sprint Planning — Automation Platform v2",
-      date: "2026-06-22",
-      durationMin: 47,
-      platform: "Microsoft Teams",
-      summary:
-        "The team planned the v2 sprint for the internal automation platform. OCR accuracy on handwritten fields is the top risk, webhook retries need a dead-letter queue, and the cross-meeting chat (RAG) feature is greenlit for this cycle. Scope was agreed but the OCR spike could push the timeline if accuracy stays below target.",
-      topics: ["OCR accuracy spike", "Webhook retry / dead-letter queue", "Chat-RAG feature", "Sprint scope & capacity", "Release timeline"],
-      keyQuestions: [
-        "Can OCR handle handwritten amounts well enough to ship, or is a vendor swap needed?",
-        "Do we have capacity for both the DLQ and the RAG feature this sprint?",
-        "What is the hard release date for v2?",
+    }),
+    mk({
+      id: "m_daniel", title: "Daniel & STOREE", date: "2026-06-25",
+      timeStart: "10:00 AM", timeEnd: "10:07 AM", durationMin: 7, source: "Google Meet",
+      folder: "One-on-One", owner: "NB", readScore: 89, participantsCount: 2,
+      summary: "Quick one-on-one sync with Daniel to align on the week's priorities and outstanding follow-ups.",
+      topics: ["Weekly priorities", "Follow-ups"],
+      keyQuestions: ["What are the top priorities this week?"],
+      actionItems: [{ owner: "Daniel", task: "Send updated account list", due: "Today", done: false }],
+      nextSteps: ["Sync again Friday"],
+      participants: [
+        { name: "Nicolas Benech", role: "Storee (You)", talkPct: 55, sentiment: "Positive" },
+        { name: "Daniel", role: "Teammate", talkPct: 45, sentiment: "Positive" },
       ],
+      transcript: parseTranscript(`[00:05] Nicolas Benech: Quick sync — what's top of your list this week?`),
+    }),
+    mk({
+      id: "m_leroy", title: "Storee <> Leroy", date: "2026-06-24",
+      timeStart: "4:30 PM", timeEnd: "5:27 PM", durationMin: 57, source: "Google Meet",
+      folder: "Sales Call", owner: "AS", readScore: 85, participantsCount: 4,
+      summary: "Sales conversation with the Leroy team covering store operations challenges and how Storee's AI platform addresses communication, task management and merchandising compliance at scale.",
+      topics: ["Operations challenges", "Task management", "Merchandising compliance", "Scale & rollout"],
+      keyQuestions: ["How does Storee scale across hundreds of stores?", "What is the rollout timeline?"],
       actionItems: [
-        { owner: "Tomás", task: "Run a 2-day OCR accuracy spike on handwritten samples", due: "Jun 24", done: false },
-        { owner: "Priya", task: "Design dead-letter queue for failed webhooks", due: "Jun 26", done: false },
-        { owner: "Leo", task: "Build chat UI shell for the RAG feature", due: "Jun 30", done: false },
-        { owner: "Tomás", task: "Confirm v2 release date with stakeholders", due: "Jun 24", done: false },
+        { owner: "Anita S.", task: "Send recap and next-steps email", due: "Jun 25", done: false },
+        { owner: "Leroy team", task: "Identify pilot region", due: "Jul 1", done: false },
       ],
-      nextSteps: [
-        "Decide go/no-go on current OCR vendor after the spike",
-        "Lock sprint scope once OCR risk is quantified",
-      ],
-      scores: { overall: 79, engagement: 81, sentiment: 68, balance: 88, clarity: 74 },
-      sentimentLabel: "Neutral",
-      sentimentTimeline: [0.3, 0.1, -0.1, 0.0, -0.2, 0.1, 0.2, 0.3],
+      nextSteps: ["Recap email", "Identify pilot region"],
       participants: [
-        { name: "Ana Reyes", role: "AI Consultant (You)", talkPct: 22, sentiment: "Neutral" },
-        { name: "Tomás", role: "Engineering Lead", talkPct: 34, sentiment: "Neutral" },
-        { name: "Priya", role: "Backend Engineer", talkPct: 26, sentiment: "Neutral" },
-        { name: "Leo", role: "Frontend Engineer", talkPct: 18, sentiment: "Positive" },
+        { name: "Anita S.", role: "Storee", talkPct: 40, sentiment: "Positive" },
+        { name: "Leroy Ops", role: "Prospect", talkPct: 35, sentiment: "Neutral" },
+        { name: "Leroy IT", role: "Prospect", talkPct: 15, sentiment: "Neutral" },
+        { name: "Guest", role: "Guest", talkPct: 10, sentiment: "Neutral" },
       ],
-      transcript: parseTranscript(
-`[00:08] Tomás: Main risk this sprint is OCR. Handwritten amounts on some invoices are still misreading and it's hurting match rates.
-[00:30] Priya: We also have webhooks silently failing. We need a dead-letter queue so nothing gets dropped.
-[00:52] Ana Reyes: Both matter, but if OCR accuracy is below target nothing downstream is trustworthy. Can we time-box a spike before committing?
-[01:18] Tomás: Yes. Two days on a handwritten sample set, then we decide whether to tune or swap vendors.
-[01:45] Leo: Where does the chat feature land? I can start the UI shell regardless of the backend.
-[02:05] Ana Reyes: Good — the cross-meeting chat is greenlit. Build the shell now, wire it to retrieval once the index is ready.
-[02:35] Priya: I'll take the dead-letter queue design. It's contained.
-[03:00] Tomás: Capacity is tight for all three. The OCR spike result decides what we cut.
-[03:25] Ana Reyes: Agreed. Let's not lock scope until we know the OCR number. Tomás, can you also confirm the hard release date?
-[03:48] Tomás: I'll get the v2 date from stakeholders by tomorrow.`
-      ),
-    },
-    {
-      id: "m3",
-      title: "Client Check-in — Lumio Retail (Chatbot rollout)",
-      date: "2026-06-24",
-      durationMin: 28,
-      platform: "Zoom",
-      summary:
-        "Lumio's support chatbot is deflecting fewer tickets than the 60% target — currently around 44% — and CX is frustrated by escalations on returns and order-status questions. Root cause looks like thin intent coverage and missing live order data. There is real churn risk if numbers don't move within two weeks; a focused retraining sprint and an order-status integration were agreed.",
-      topics: ["Deflection below target", "Escalation hotspots (returns, order status)", "Intent coverage gaps", "Live order-data integration", "Two-week recovery plan"],
-      keyQuestions: [
-        "Why is deflection stuck at ~44% versus the 60% target?",
-        "Which intents drive the most escalations?",
-        "Can we connect live order status to cut order-related tickets?",
-      ],
-      actionItems: [
-        { owner: "Ana Reyes", task: "Retrain top 10 failing intents from last 30 days of chats", due: "Jun 30", done: false },
-        { owner: "Ana Reyes", task: "Scope order-status API integration with Lumio eng", due: "Jun 27", done: false },
-        { owner: "Sara", task: "Send export of escalated conversations", due: "Jun 26", done: false },
-        { owner: "Mark", task: "Grant sandbox access to order-status endpoint", due: "Jun 27", done: false },
-      ],
-      nextSteps: [
-        "Ship retrained intents and re-measure deflection in 2 weeks",
-        "Flag account as at-risk internally and schedule a recovery review",
-      ],
-      scores: { overall: 71, engagement: 77, sentiment: 52, balance: 80, clarity: 78 },
-      sentimentLabel: "Neutral",
-      sentimentTimeline: [-0.1, -0.3, -0.4, -0.2, 0.0, 0.1, 0.3, 0.4],
+      transcript: parseTranscript(`[00:10] Anita S.: Thanks everyone — let's start with your biggest operational headaches today.`),
+    }),
+    mk({
+      id: "m_gilbert", title: "Gilbert & STOREE", date: "2026-06-24",
+      timeStart: "3:00 PM", timeEnd: "3:23 PM", durationMin: 23, source: "Read",
+      folder: "Partnership Alignment", owner: "SL", readScore: 84, participantsCount: 2,
+      summary: "Partnership discussion with Gilbert about introducing Storee to his retail network and the revenue-share model for introduced deals.",
+      topics: ["Partnership model", "Network introductions", "Revenue share"],
+      keyQuestions: ["Which accounts can be introduced first?"],
+      actionItems: [{ owner: "Gilbert", task: "Shortlist initial introductions", due: "This week", done: false }],
+      nextSteps: ["Shortlist introductions"],
       participants: [
-        { name: "Ana Reyes", role: "AI Consultant (You)", talkPct: 30, sentiment: "Neutral" },
-        { name: "Sara", role: "CX Lead, Lumio", talkPct: 45, sentiment: "Negative" },
-        { name: "Mark", role: "CTO, Lumio", talkPct: 25, sentiment: "Neutral" },
+        { name: "Sol L.", role: "Storee", talkPct: 60, sentiment: "Positive" },
+        { name: "Gilbert", role: "Partner Prospect", talkPct: 40, sentiment: "Positive" },
       ],
-      transcript: parseTranscript(
-`[00:10] Sara: I'll be honest, we're disappointed. Deflection is sitting around forty-four percent and we were promised sixty.
-[00:32] Ana Reyes: That's a fair concern and I want to fix it fast. Where are the escalations concentrated?
-[00:50] Sara: Returns and order status. Customers ask "where is my order" and the bot just can't answer, so it bounces to a human.
-[01:18] Mark: Part of that is on us — the bot doesn't have live access to order data yet.
-[01:40] Ana Reyes: Right, that's a big lever. If we connect the order-status endpoint, a huge chunk of those tickets resolve themselves.
-[02:05] Sara: And the returns flow keeps misunderstanding people. It feels like the intents are too thin.
-[02:28] Ana Reyes: Agreed. I'll retrain the top ten failing intents from your last thirty days of real chats. That plus order data should move the number.
-[02:55] Mark: We can give you sandbox access to the order endpoint this week.
-[03:15] Sara: I need to see real improvement in two weeks, not promises.
-[03:30] Ana Reyes: Understood. We ship the retraining and integration, then re-measure deflection in two weeks. I'll own that.`
-      ),
-    },
+      transcript: parseTranscript(`[00:08] Sol L.: Gilbert, great to connect — let me explain how our partner program works.`),
+    }),
+    mk({
+      id: "m_neliana", title: "Neliana & STOREE", date: "2026-06-24",
+      timeStart: "2:00 PM", timeEnd: "2:31 PM", durationMin: 31, source: "Read",
+      folder: "Partnership Alignment", owner: "SL", readScore: 86, participantsCount: 2,
+      summary: "Intro and alignment call with Neliana about Storee's platform and a potential partnership across her retail contacts.",
+      topics: ["Intro", "Platform overview", "Partnership fit"],
+      keyQuestions: ["What support do partners get during deals?"],
+      actionItems: [{ owner: "Nicolas Benech", task: "Send partnership deck", due: "Jun 25", done: false }],
+      nextSteps: ["Send deck", "Book follow-up"],
+      participants: [
+        { name: "Sol L.", role: "Storee", talkPct: 57, sentiment: "Positive" },
+        { name: "Neliana", role: "Partner Prospect", talkPct: 43, sentiment: "Positive" },
+      ],
+      transcript: parseTranscript(`[00:06] Sol L.: Hi Neliana, thanks for the time — let me walk you through Storee.`),
+    }),
+    mk({
+      id: "m_samara", title: "Samara & STOREE - Interview with CEO", date: "2026-06-24",
+      timeStart: "1:30 PM", timeEnd: "1:39 PM", durationMin: 9, source: "Google Meet",
+      folder: "Job Interview", owner: "NB", readScore: 91, participantsCount: 2,
+      summary: "Short interview between Samara and the CEO covering motivation, fit and expectations for the role. Very positive tone.",
+      topics: ["Motivation", "Role fit", "Expectations"],
+      keyQuestions: ["Why does the candidate want this role?"],
+      actionItems: [{ owner: "CEO", task: "Share decision by end of week", due: "Fri", done: false }],
+      nextSteps: ["Decision by Friday"],
+      participants: [
+        { name: "CEO", role: "Interviewer", talkPct: 45, sentiment: "Positive" },
+        { name: "Samara", role: "Candidate", talkPct: 55, sentiment: "Positive" },
+      ],
+      transcript: parseTranscript(`[00:05] CEO: Samara, thanks for joining — tell me what drew you to Storee.`),
+    }),
   ];
 }
 
 /* ----------------------------- helpers ----------------------------- */
-const fmtDate = (iso) => {
-  try {
-    return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  } catch { return iso; }
+const daysAgo = (iso) => {
+  const a = new Date(iso + "T00:00:00"), b = new Date(REF_TODAY + "T00:00:00");
+  return Math.round((b - a) / 86400000);
 };
+const bucketOf = (iso) => {
+  const d = daysAgo(iso);
+  if (d <= 0) return "TODAY";
+  if (d <= 7) return "THIS WEEK";
+  if (d <= 31) return "THIS MONTH";
+  return "EARLIER";
+};
+const fmtDateFull = (iso) => {
+  try { return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }); }
+  catch { return iso; }
+};
+const fmtDateShort = (iso) => {
+  try { return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
+  catch { return iso; }
+};
+const initialsOf = (name) => (name || "?").split(" ").filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+const scoreColor = (n) => (n >= 80 ? "#10B981" : n >= 70 ? "#F59E0B" : "#F43F5E");
+const OWNER_COLORS = { NB: "#F472B6", AS: "#FB923C", SL: "#34D399" };
+const ownerColor = (o) => OWNER_COLORS[o] || "#94A3B8";
 const sentimentTone = (label) => {
   if (label === "Positive") return { c: "#10B981", bg: "bg-emerald-50", t: "text-emerald-700", b: "border-emerald-200" };
   if (label === "Negative") return { c: "#F43F5E", bg: "bg-rose-50", t: "text-rose-700", b: "border-rose-200" };
   return { c: "#64748B", bg: "bg-slate-100", t: "text-slate-600", b: "border-slate-200" };
 };
-const scoreColor = (n) => (n >= 80 ? "#10B981" : n >= 65 ? "#F59E0B" : "#F43F5E");
 
 /* --------------------------- small UI bits ------------------------- */
+// Pequeño badge de plataforma (esquina del avatar)
+function PlatformBadge({ source }) {
+  const map = {
+    "Google Meet": { c: "#00AC47", letter: "M" },
+    "Zoom": { c: "#2D8CFF", letter: "Z" },
+    "Microsoft Teams": { c: "#6264A7", letter: "T" },
+    "Read": { c: "#6366F1", letter: "●" },
+  };
+  const p = map[source] || map["Read"];
+  return (
+    <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-[5px] border border-white bg-white shadow-sm">
+      <span className="flex h-full w-full items-center justify-center rounded-[4px] text-[8px] font-bold text-white" style={{ background: p.c }}>{p.letter}</span>
+    </span>
+  );
+}
+
+// Read Score chip de la lista (pequeño círculo con número)
+function ScoreChip({ value }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5">
+      <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+        <svg width="14" height="14" viewBox="0 0 14 14">
+          <circle cx="7" cy="7" r="6" fill="none" stroke="#E2E8F0" strokeWidth="2" />
+          <circle cx="7" cy="7" r="6" fill="none" stroke={scoreColor(value)} strokeWidth="2"
+            strokeDasharray={2 * Math.PI * 6} strokeDashoffset={(1 - value / 100) * 2 * Math.PI * 6}
+            strokeLinecap="round" transform="rotate(-90 7 7)" />
+        </svg>
+      </span>
+      <span className="text-[11px] font-semibold text-slate-600">{value}</span>
+    </span>
+  );
+}
+
 function ScoreRing({ value, size = 64, stroke = 6 }) {
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const off = c - (value / 100) * c;
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, off = c - (value / 100) * c;
   return (
     <svg width={size} height={size} className="shrink-0">
-      <defs>
-        <linearGradient id={"ring" + value} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#7C3AED" />
-          <stop offset="100%" stopColor="#4F46E5" />
-        </linearGradient>
-      </defs>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EEF2F7" strokeWidth={stroke} />
-      <circle
-        cx={size / 2} cy={size / 2} r={r} fill="none"
-        stroke={`url(#ring${value})`} strokeWidth={stroke} strokeLinecap="round"
-        strokeDasharray={c} strokeDashoffset={off}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-      />
-      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central"
-        className="cad-display" style={{ fontSize: size * 0.3, fontWeight: 700, fill: "#1A1A24" }}>
-        {value}
-      </text>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={scoreColor(value)} strokeWidth={stroke}
+        strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" style={{ fontSize: size * 0.3, fontWeight: 700, fill: "#1A1A24" }}>{value}</text>
     </svg>
   );
 }
@@ -284,10 +368,10 @@ function TalkRibbon({ participants }) {
 function ScorePill({ label, value }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-      <div className="cad-mono cad-t10 uppercase tracking-wider text-slate-400">{label}</div>
+      <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
       <div className="mt-1 flex items-end gap-1.5">
-        <span className="cad-display text-xl font-bold" style={{ color: scoreColor(value) }}>{value}</span>
-        <span className="cad-mono mb-0.5 cad-t10 text-slate-300">/100</span>
+        <span className="text-xl font-bold" style={{ color: scoreColor(value) }}>{value}</span>
+        <span className="mb-0.5 text-[10px] text-slate-300">/100</span>
       </div>
       <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
         <div className="h-full rounded-full" style={{ width: value + "%", background: scoreColor(value) }} />
@@ -297,439 +381,545 @@ function ScorePill({ label, value }) {
 }
 
 /* ============================ MAIN APP ============================== */
+const NAV = [
+  { k: "add-people", label: "Add People", icon: Users },
+  { k: "ask", label: "Ask Read", icon: Sparkles },
+  { k: "reports", label: "Reports", icon: ClipboardList },
+  { k: "folders", label: "Folders", icon: Folder, plus: true },
+  { k: "calendar", label: "Calendar", icon: Calendar },
+  { k: "for-you", label: "For You", icon: Star, gap: true },
+  { k: "coaching", label: "Coaching", icon: Presentation },
+  { k: "recommendations", label: "Recommendations", icon: Lightbulb },
+  { k: "meeting-policy", label: "Meeting Policy", icon: ShieldCheck },
+  { k: "integrations", label: "Integrations", icon: LayoutGrid, gap: true },
+];
+
 export default function App() {
   const [meetings, setMeetings] = useState(null);
-  const [view, setView] = useState("dashboard"); // dashboard | meeting | chat | add | settings
+  const [view, setView] = useState("reports");
   const [activeId, setActiveId] = useState(null);
+  const [askSeed, setAskSeed] = useState("");
 
   useEffect(() => {
     (async () => {
-      let m = await store.get("cadence:meetings", null);
-      if (!m) { m = seedMeetings(); await store.set("cadence:meetings", m); }
+      let m = await store.get("meetai:meetings:v2", null);
+      if (!m) { m = seedMeetings(); await store.set("meetai:meetings:v2", m); }
       setMeetings(m);
     })();
   }, []);
 
-  const persist = async (next) => { setMeetings(next); await store.set("cadence:meetings", next); };
+  const persist = async (next) => { setMeetings(next); await store.set("meetai:meetings:v2", next); };
   const active = useMemo(() => (meetings || []).find((m) => m.id === activeId), [meetings, activeId]);
-
   const openMeeting = (id) => { setActiveId(id); setView("meeting"); };
+  const goAsk = (q) => { setAskSeed(q || ""); setView("ask"); };
 
   if (!meetings) {
     return (
-      <div className="cad-body flex h-screen items-center justify-center bg-slate-50 text-slate-400">
-        <Loader2 className="mr-2 animate-spin" size={18} /> Loading Cadence…
+      <div className="rai-body flex h-screen items-center justify-center bg-slate-50 text-slate-400">
+        <Loader2 className="mr-2 animate-spin" size={18} /> Loading Meet AI…
       </div>
     );
   }
 
   return (
-    <div className="cad-body flex h-screen w-full overflow-hidden bg-slate-50 text-slate-800">
+    <div className="rai-body flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
       <StyleInject />
-      {/* ---------------- sidebar ---------------- */}
-      <aside className="flex w-16 shrink-0 flex-col items-center justify-between cad-ink py-5 sm:w-56 sm:items-stretch sm:px-3">
-        <div>
-          <div className="mb-8 flex items-center gap-2.5 px-0 sm:px-2">
-            <div className="brand-grad flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
-              <Mic size={18} className="text-white" />
-            </div>
-            <div className="hidden sm:block">
-              <div className="cad-display cad-t15 font-bold leading-none text-white">Cadence</div>
-              <div className="cad-mono mt-1 cad-t9 uppercase tracking-widest text-slate-500">Meeting Intelligence</div>
-            </div>
-          </div>
-          <nav className="flex flex-col gap-1">
-            <NavItem icon={LayoutDashboard} label="Dashboard" active={view === "dashboard"} onClick={() => setView("dashboard")} />
-            <NavItem icon={MessageSquareText} label="Ask Cadence" active={view === "chat"} onClick={() => setView("chat")} />
-            <NavItem icon={Plus} label="Add meeting" active={view === "add"} onClick={() => setView("add")} />
-            <NavItem icon={Settings} label="Settings" active={view === "settings"} onClick={() => setView("settings")} />
-          </nav>
-        </div>
-        <div className="hidden rounded-xl bg-white/5 p-3 sm:block">
-          <div className="flex items-center gap-2 text-slate-300">
-            <div className="brand-grad flex h-7 w-7 items-center justify-center rounded-full cad-t11 font-bold text-white">AR</div>
-            <div className="text-xs">
-              <div className="font-medium text-slate-200">Ana Reyes</div>
-              <div className="cad-mono cad-t9 text-slate-500">AI Consultant</div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* ---------------- main ---------------- */}
-      <main className="flex-1 overflow-y-auto">
-        {view === "dashboard" && <Dashboard meetings={meetings} onOpen={openMeeting} onAdd={() => setView("add")} onChat={() => setView("chat")} />}
-        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("dashboard")} onUpdate={persist} meetings={meetings} />}
-        {view === "chat" && <ChatView meetings={meetings} onOpen={openMeeting} />}
-        {view === "add" && <AddMeeting onSave={async (m) => { await persist([m, ...meetings]); openMeeting(m.id); }} onCancel={() => setView("dashboard")} />}
-        {view === "settings" && <SettingsView meetings={meetings} onReset={async () => { const s = seedMeetings(); await persist(s); }} onClear={async () => { await persist([]); }} />}
+      <Sidebar view={view} setView={setView} />
+      <main className="flex flex-1 flex-col overflow-hidden">
+        {view === "reports" && <ReportsList meetings={meetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} />}
+        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={meetings} />}
+        {view === "ask" && <ChatView meetings={meetings} onOpen={openMeeting} seed={askSeed} />}
+        {view === "upload" && <UploadView onSave={async (m) => { await persist([m, ...meetings]); openMeeting(m.id); }} onCancel={() => setView("reports")} />}
+        {["add-people", "folders", "calendar", "for-you", "coaching", "recommendations", "meeting-policy", "integrations"].includes(view) && (
+          <Placeholder section={NAV.find((n) => n.k === view)} onReports={() => setView("reports")} />
+        )}
       </main>
     </div>
   );
 }
 
-function NavItem({ icon: Icon, label, active, onClick }) {
+/* ============================ SIDEBAR ============================== */
+function Sidebar({ view, setView }) {
+  const [copied, setCopied] = useState(false);
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText("https://meet-ai-three-beige.vercel.app/s/nicolas"); setCopied(true); setTimeout(() => setCopied(false), 1500); }
+    catch { setCopied(false); }
+  };
   return (
-    <button
-      onClick={onClick}
-      className={
-        "flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm transition-colors sm:px-3 " +
-        (active ? "brand-grad text-white shadow-lg" : "text-slate-400 hover:bg-white/5 hover:text-slate-200")
-      }
-    >
-      <Icon size={18} className="shrink-0" />
-      <span className="hidden sm:inline">{label}</span>
+    <aside className="flex w-60 shrink-0 flex-col rai-sidebar text-slate-300">
+      {/* logo */}
+      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-indigo-500">
+          <span className="text-sm font-black text-white">M</span>
+        </div>
+        <span className="text-[17px] font-bold text-white">Meet AI</span>
+        <span className="ml-auto text-[11px] font-medium text-slate-500">EN</span>
+      </div>
+      {/* enterprise */}
+      <div className="mx-3 mb-3 flex items-center justify-between rounded-lg px-1">
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-white"><Rocket size={13} className="text-indigo-300" /> Enterprise</span>
+        <button className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200">Manage</button>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-2">
+        {NAV.map((n) => (
+          <React.Fragment key={n.k}>
+            {n.gap && <div className="my-2 border-t border-white/5" />}
+            <button onClick={() => setView(n.k)}
+              className={"group mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition " +
+                (view === n.k ? "bg-indigo-600 text-white shadow" : "text-slate-300 hover:bg-white/5 hover:text-white")}>
+              <n.icon size={16} className="shrink-0" />
+              <span className="flex-1 text-left">{n.label}</span>
+              {n.plus && <FolderPlus size={14} className="text-slate-500 group-hover:text-slate-300" />}
+            </button>
+          </React.Fragment>
+        ))}
+      </nav>
+
+      {/* bottom */}
+      <div className="border-t border-white/5 px-3 py-3">
+        <button className="mb-3 flex w-full items-center gap-2 text-[13px] font-medium text-slate-300 hover:text-white">
+          <PlusCircle size={16} /> Add to live meeting
+        </button>
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Smart Scheduler Link <span className="text-slate-600">ⓘ</span>
+          </div>
+          <div className="flex gap-1.5">
+            <button onClick={copyLink} className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-indigo-600 px-2 py-1.5 text-[12px] font-semibold text-white hover:bg-indigo-500">
+              <Link2 size={12} /> {copied ? "Copied!" : "Copy link"}
+            </button>
+            <button className="rounded-md bg-white/10 px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/15">Manage</button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg px-1 py-1">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
+          <div className="min-w-0 leading-tight">
+            <div className="truncate text-[13px] font-medium text-white">Nicolas Benech</div>
+            <div className="truncate text-[11px] text-slate-500">nicolas@storee.ai</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ============================ REPORTS LIST ========================= */
+function FilterBtn({ label, icon: Icon }) {
+  return (
+    <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
+      {Icon && <Icon size={14} className="text-slate-400" />}{label}<ChevronDown size={14} className="text-slate-400" />
     </button>
   );
 }
 
-/* ============================ DASHBOARD ============================= */
-function Dashboard({ meetings, onOpen, onAdd, onChat }) {
-  const stats = useMemo(() => {
-    const count = meetings.length;
-    const avg = count ? Math.round(meetings.reduce((a, m) => a + m.scores.overall, 0) / count) : 0;
-    const hours = (meetings.reduce((a, m) => a + m.durationMin, 0) / 60).toFixed(1);
-    const open = meetings.reduce((a, m) => a + m.actionItems.filter((i) => !i.done).length, 0);
-    return { count, avg, hours, open };
-  }, [meetings]);
+function ReportsList({ meetings, onOpen, onUpload, onAsk }) {
+  const [q, setQ] = useState("");
+  const [ask, setAsk] = useState("");
+  const [tab, setTab] = useState("reports");
+  const [showCrm, setShowCrm] = useState(true);
 
-  const pulse = useMemo(
-    () => [...meetings].sort((a, b) => a.date.localeCompare(b.date)).map((m) => ({
-      name: m.title.split("—")[0].trim().slice(0, 14),
-      score: m.scores.overall, engagement: m.scores.engagement,
-    })),
-    [meetings]
+  const filtered = useMemo(
+    () => [...meetings].filter((m) => !q || m.title.toLowerCase().includes(q.toLowerCase()))
+      .sort((a, b) => (b.date + b.timeStart).localeCompare(a.date + a.timeStart)),
+    [meetings, q]
   );
+  const groups = useMemo(() => {
+    const order = ["TODAY", "THIS WEEK", "THIS MONTH", "EARLIER"];
+    const by = {};
+    filtered.forEach((m) => { const b = bucketOf(m.date); (by[b] = by[b] || []).push(m); });
+    return order.filter((o) => by[o]).map((o) => ({ label: o, items: by[o] }));
+  }, [filtered]);
 
   return (
-    <div className="mx-auto max-w-6xl px-5 py-7 sm:px-8">
-      <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="cad-mono cad-t11 uppercase tracking-widest text-violet-500">Tuesday · Good morning</div>
-          <h1 className="cad-display mt-1 text-3xl font-bold text-slate-900">Your meetings, decoded</h1>
+    <>
+      {/* top bar */}
+      <div className="border-b border-slate-200 bg-white px-6 pt-3">
+        <div className="mb-3 flex items-center gap-2">
+          <ChevronLeft size={18} className="text-slate-400" />
+          <h1 className="text-lg font-bold text-slate-900">Reports</h1>
         </div>
-        <div className="flex gap-2">
-          <button onClick={onChat} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300">
-            <Sparkles size={15} className="text-violet-500" /> Ask Cadence
+        <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
+          className="mb-3 flex items-center gap-2 rounded-xl border-2 border-indigo-200 bg-white px-3 py-2 focus-within:border-indigo-400">
+          <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-slate-400"><Globe size={15} /><ChevronDown size={13} /></button>
+          <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Ask Read anything..."
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
+          <button type="submit" className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40" disabled={!ask.trim()}>
+            <Send size={15} />
           </button>
-          <button onClick={onAdd} className="brand-grad flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:opacity-95">
-            <Plus size={16} /> Add meeting
-          </button>
-        </div>
-      </header>
-
-      {/* KPI row */}
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi icon={Video} label="Meetings tracked" value={stats.count} tint="violet" />
-        <Kpi icon={Target} label="Avg meeting score" value={stats.avg} tint="indigo" suffix="/100" />
-        <Kpi icon={Clock} label="Hours captured" value={stats.hours} tint="sky" />
-        <Kpi icon={ListChecks} label="Open action items" value={stats.open} tint="amber" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* pulse chart */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
-          <div className="mb-1 flex items-center gap-2">
-            <Activity size={16} className="text-violet-500" />
-            <h2 className="cad-display text-sm font-bold text-slate-900">Conversation pulse</h2>
-          </div>
-          <p className="mb-4 text-xs text-slate-400">Overall score & engagement across recent meetings</p>
-          <ResponsiveContainer width="100%" height={210}>
-            <AreaChart data={pulse} margin={{ left: -18, right: 6, top: 6 }}>
-              <defs>
-                <linearGradient id="gScore" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#7C3AED" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#7C3AED" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#CBD5E1" }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12 }} />
-              <Area type="monotone" dataKey="score" stroke="#7C3AED" strokeWidth={2.5} fill="url(#gScore)" />
-              <Line type="monotone" dataKey="engagement" stroke="#0EA5E9" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* sentiment split */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="cad-display mb-4 text-sm font-bold text-slate-900">Sentiment mix</h2>
-          {["Positive", "Neutral", "Negative"].map((s) => {
-            const n = meetings.filter((m) => m.sentimentLabel === s).length;
-            const pct = meetings.length ? Math.round((n / meetings.length) * 100) : 0;
-            const tone = sentimentTone(s);
-            return (
-              <div key={s} className="mb-3">
-                <div className="mb-1 flex justify-between text-xs">
-                  <span className="font-medium text-slate-600">{s}</span>
-                  <span className="cad-mono text-slate-400">{n}</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full" style={{ width: pct + "%", background: tone.c }} />
-                </div>
-              </div>
-            );
-          })}
-          <div className="mt-5 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-            <AlertTriangle size={13} className="mb-1 text-amber-500" />
-            {meetings.filter((m) => m.nextSteps.some((n) => /risk|at-risk/i.test(n))).length} account(s) flagged at-risk in next steps.
-          </div>
-        </div>
-      </div>
-
-      {/* meeting list */}
-      <div className="mt-7">
-        <h2 className="cad-display mb-3 text-sm font-bold uppercase tracking-wide text-slate-400">Recent meetings</h2>
-        <div className="space-y-3">
-          {[...meetings].sort((a, b) => b.date.localeCompare(a.date)).map((m) => {
-            const tone = sentimentTone(m.sentimentLabel);
-            return (
-              <button key={m.id} onClick={() => onOpen(m.id)}
-                className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-violet-300 hover:shadow-md">
-                <ScoreRing value={m.scores.overall} size={56} stroke={5} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="cad-display truncate cad-t15 font-semibold text-slate-900">{m.title}</h3>
-                    <span className={"shrink-0 rounded-full border px-2 py-0.5 cad-t10 font-medium " + tone.bg + " " + tone.t + " " + tone.b}>{m.sentimentLabel}</span>
-                  </div>
-                  <div className="cad-mono mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 cad-t11 text-slate-400">
-                    <span className="flex items-center gap-1"><Calendar size={11} /> {fmtDate(m.date)}</span>
-                    <span className="flex items-center gap-1"><Clock size={11} /> {m.durationMin}m</span>
-                    <span className="flex items-center gap-1"><Video size={11} /> {m.platform}</span>
-                    <span className="flex items-center gap-1"><Users size={11} /> {m.participants.length}</span>
-                  </div>
-                  <div className="mt-2.5 max-w-md"><TalkRibbon participants={m.participants} /></div>
-                </div>
-                <ChevronRight size={18} className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-violet-500" />
+        </form>
+        <div className="flex items-center justify-between">
+          <div className="flex gap-5">
+            {[{ k: "reports", l: "Reports" }, { k: "incomplete", l: "Incomplete" }].map((t) => (
+              <button key={t.k} onClick={() => setTab(t.k)}
+                className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === t.k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
+                {t.l}
               </button>
-            );
-          })}
+            ))}
+          </div>
+          <div className="flex items-center gap-3 pb-1.5">
+            <span className="flex items-center gap-1.5 text-[13px] text-slate-400"><RefreshCw size={13} /> Last refreshed at 2:52 PM</span>
+            <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-500">
+              <Upload size={15} /> Upload
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* body */}
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {tab === "incomplete" ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center text-slate-400">
+            <ClipboardList size={36} className="mb-3 text-slate-300" />
+            <p className="text-sm font-medium text-slate-500">No incomplete reports</p>
+            <p className="text-xs">Meetings still processing will show up here.</p>
+          </div>
+        ) : (
+          <>
+            {showCrm && (
+              <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-indigo-50 px-4 py-3">
+                <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">✨ NEW!</span>
+                <span className="flex-1 text-sm text-slate-700">Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.</span>
+                <button className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="text-orange-400">◆</span> Add Hubspot</button>
+                <button className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="text-sky-400">☁</span> Add Salesforce</button>
+                <button onClick={() => setShowCrm(false)} className="text-[13px] font-medium text-slate-500 hover:text-slate-700">Dismiss</button>
+              </div>
+            )}
+
+            {/* filters */}
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by report title..."
+                  className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400" />
+              </div>
+              <FilterBtn label="All Reports" icon={ClipboardList} />
+              <FilterBtn label="Anytime" icon={Calendar} />
+              <FilterBtn label="Type" />
+              <FilterBtn label="Source" />
+              <FilterBtn label="Folder" />
+            </div>
+
+            {/* table */}
+            <div className="mt-4 overflow-hidden">
+              <div className="grid grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+                <div className="flex items-center gap-6"><span>Source</span><span>Report</span></div>
+                <div className="flex items-center gap-1">Date &amp; Time <ArrowDown size={12} /></div>
+                <div>Folders</div>
+                <div>Owner</div>
+                <div></div>
+              </div>
+
+              {groups.map((g) => (
+                <div key={g.label}>
+                  <div className="bg-slate-50/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.label}</div>
+                  {g.items.map((m) => (
+                    <button key={m.id} onClick={() => onOpen(m.id)}
+                      className="grid w-full grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-indigo-50/40">
+                      {/* source + report */}
+                      <div className="flex min-w-0 items-center gap-4">
+                        <div className="relative shrink-0">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg text-xs font-bold text-white" style={{ background: SPEAKER_COLORS[m.title.length % SPEAKER_COLORS.length] }}>
+                            {initialsOf(m.title.replace(/&|<>|STOREE|Demo|-/g, " "))}
+                          </div>
+                          <PlatformBadge source={m.source} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-slate-800">{m.title}</div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="flex items-center gap-1 text-[12px] text-slate-400"><Users size={12} /> {m.participantsCount ?? m.participants.length}</span>
+                            <ScoreChip value={m.scores.overall} />
+                          </div>
+                        </div>
+                      </div>
+                      {/* date */}
+                      <div className="leading-tight">
+                        <div className="text-[13px] text-slate-700">{fmtDateFull(m.date)}</div>
+                        <div className="text-[12px] text-slate-400">{m.timeStart} - {m.timeEnd}</div>
+                      </div>
+                      {/* folder */}
+                      <div>
+                        <span className="inline-flex max-w-[90%] items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600">
+                          <Folder size={12} className="shrink-0 text-indigo-400" />
+                          <span className="truncate">{m.folder}</span>
+                          {m.folderLocked && <Lock size={10} className="shrink-0 text-slate-400" />}
+                        </span>
+                      </div>
+                      {/* owner */}
+                      <div>
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(m.owner) }}>{m.owner}</span>
+                      </div>
+                      <div className="flex justify-center"><MoreHorizontal size={16} className="text-slate-300" /></div>
+                    </button>
+                  ))}
+                </div>
+              ))}
+              {!filtered.length && <div className="py-16 text-center text-sm text-slate-400">No reports match “{q}”.</div>}
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
-function Kpi({ icon: Icon, label, value, tint, suffix }) {
-  const tints = {
-    violet: "bg-violet-50 text-violet-600", indigo: "bg-indigo-50 text-indigo-600",
-    sky: "bg-sky-50 text-sky-600", amber: "bg-amber-50 text-amber-600",
-  };
+/* ============================ PLACEHOLDER ========================== */
+function Placeholder({ section, onReports }) {
+  const Icon = section?.icon || ClipboardList;
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className={"mb-3 flex h-9 w-9 items-center justify-center rounded-lg " + tints[tint]}>
-        <Icon size={17} />
-      </div>
-      <div className="cad-display text-2xl font-bold text-slate-900">
-        {value}<span className="cad-mono text-xs font-normal text-slate-300">{suffix}</span>
-      </div>
-      <div className="mt-0.5 text-xs text-slate-400">{label}</div>
+    <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500"><Icon size={26} /></div>
+      <h2 className="text-xl font-bold text-slate-800">{section?.label}</h2>
+      <p className="mt-1 max-w-md text-sm text-slate-500">
+        Esta sección es parte del clon de Read AI y llega en una fase próxima. Por ahora, la pantalla de <b>Reports</b> ya está funcionando.
+      </p>
+      <button onClick={onReports} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Ir a Reports</button>
     </div>
   );
 }
 
 /* ========================= MEETING DETAIL ========================== */
 function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("notes");
   const [q, setQ] = useState("");
   const tone = sentimentTone(meeting.sentimentLabel);
 
   const toggleItem = (idx) => {
-    const next = meetings.map((m) =>
-      m.id === meeting.id ? { ...m, actionItems: m.actionItems.map((it, i) => (i === idx ? { ...it, done: !it.done } : it)) } : m
-    );
+    const next = meetings.map((m) => m.id === meeting.id
+      ? { ...m, actionItems: m.actionItems.map((it, i) => (i === idx ? { ...it, done: !it.done } : it)) } : m);
     onUpdate(next);
   };
-
   const filteredTurns = meeting.transcript.filter((t) => !q || (t.text + " " + t.speaker).toLowerCase().includes(q.toLowerCase()));
   const speakerIdx = {};
   meeting.participants.forEach((p, i) => (speakerIdx[p.name] = i));
 
+  const TABS = [
+    { k: "notes", label: "Notes", icon: FileText },
+    { k: "transcript", label: "Transcript", icon: MessageSquareText },
+    { k: "deepdive", label: "Deep Dive", icon: BarChart3 },
+    { k: "coaching", label: "Coaching", icon: Presentation },
+    { k: "highlights", label: "Highlights", icon: Sparkles },
+    { k: "chapters", label: "Chapters", icon: ListChecks },
+  ];
+
   return (
-    <div className="mx-auto max-w-5xl px-5 py-7 sm:px-8">
-      <button onClick={onBack} className="mb-5 flex items-center gap-1.5 text-sm text-slate-400 transition hover:text-slate-700">
-        <ArrowLeft size={15} /> All meetings
-      </button>
-
+    <div className="flex-1 overflow-y-auto">
       {/* header */}
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="min-w-0 flex-1">
-          <h1 className="cad-display text-2xl font-bold text-slate-900">{meeting.title}</h1>
-          <div className="cad-mono mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 cad-t11 text-slate-400">
-            <span className="flex items-center gap-1"><Calendar size={12} /> {fmtDate(meeting.date)}</span>
-            <span className="flex items-center gap-1"><Clock size={12} /> {meeting.durationMin} min</span>
-            <span className="flex items-center gap-1"><Video size={12} /> {meeting.platform}</span>
-            <span className={"rounded-full border px-2 py-0.5 " + tone.bg + " " + tone.t + " " + tone.b}>{meeting.sentimentLabel}</span>
+      <div className="border-b border-slate-200 bg-white px-6 py-3">
+        <div className="flex items-center justify-between">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>
+          <div className="flex items-center gap-2">
+            <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download</button>
+            <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Share2 size={14} /> Push to…</button>
+            <button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500"><Share2 size={14} /> Share</button>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {meeting.participants.map((p, i) => (
-              <div key={i} className="flex items-center gap-1.5 rounded-full bg-slate-50 py-1 pl-1 pr-2.5">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full cad-t10 font-bold text-white" style={{ background: SPEAKER_COLORS[i % SPEAKER_COLORS.length] }}>
-                  {p.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
-                </span>
-                <span className="text-xs text-slate-600">{p.name}</span>
-                <span className="cad-mono cad-t10 text-slate-300">{p.talkPct}%</span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-400">
+          <span className="flex items-center gap-1"><Calendar size={12} /> {fmtDateShort(meeting.date)}</span>
+          <span className="flex items-center gap-1"><Clock size={12} /> {meeting.timeStart} - {meeting.timeEnd}</span>
+          <span className="flex items-center gap-1"><Video size={12} /> {meeting.source}</span>
+          <span className="flex items-center gap-1"><Users size={12} /> {meeting.participants.map((p) => p.name).join(", ")}</span>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-5xl px-6 py-5">
+        {/* scores */}
+        <div className="mb-5 grid grid-cols-3 gap-3">
+          {[{ l: "Read Score", v: meeting.scores.overall }, { l: "Engagement", v: meeting.scores.engagement }, { l: "Sentiment", v: meeting.scores.sentiment }].map((s) => (
+            <div key={s.l} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.l}</div>
+              <div className="mt-0.5 flex items-end gap-2">
+                <span className="text-2xl font-bold text-slate-900">{s.v}</span>
+                <span className="mb-1 text-[11px] font-semibold uppercase" style={{ color: scoreColor(s.v) }}>{s.v >= 80 ? "Good" : s.v >= 70 ? "Avg" : "Low"}</span>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
-        <div className="flex flex-col items-center">
-          <ScoreRing value={meeting.scores.overall} size={76} stroke={7} />
-          <span className="cad-mono mt-1 cad-t10 uppercase tracking-wider text-slate-400">Meeting score</span>
+
+        {/* tabs */}
+        <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">
+          {TABS.map((t) => (
+            <button key={t.k} onClick={() => setTab(t.k)}
+              className={"flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition " +
+                (tab === t.k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
+              <t.icon size={14} /> {t.label}
+            </button>
+          ))}
         </div>
-      </div>
 
-      {/* tabs */}
-      <div className="mb-5 flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
-        {[
-          { k: "overview", label: "Overview", icon: FileText },
-          { k: "transcript", label: "Transcript", icon: MessageSquareText },
-          { k: "actions", label: "Action items", icon: ListChecks },
-          { k: "analytics", label: "Analytics", icon: BarChart3 },
-        ].map((t) => (
-          <button key={t.k} onClick={() => setTab(t.k)}
-            className={"flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition " +
-              (tab === t.k ? "bg-white text-violet-700 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
-            <t.icon size={14} /> {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* overview */}
-      {tab === "overview" && (
-        <div className="space-y-5">
-          <Card title="Summary" icon={Sparkles}>
-            <p className="text-sm leading-relaxed text-slate-600">{meeting.summary}</p>
-          </Card>
-          <div className="grid gap-5 md:grid-cols-2">
-            <Card title="Topics discussed" icon={Hash}>
-              <div className="flex flex-wrap gap-2">
-                {meeting.topics.map((t, i) => (
-                  <span key={i} className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">{t}</span>
+        {/* NOTES */}
+        {tab === "notes" && (
+          <div className="space-y-5">
+            <Card title="Summary" icon={Sparkles}><p className="text-sm leading-relaxed text-slate-600">{meeting.summary}</p></Card>
+            <Card title="Action Items" icon={ListChecks}>
+              <div className="space-y-2">
+                {meeting.actionItems.map((it, i) => (
+                  <div key={i} className={"flex items-center gap-3 rounded-xl border p-3 " + (it.done ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white")}>
+                    <button onClick={() => toggleItem(i)} className="shrink-0">
+                      {it.done ? <CheckCircle2 size={20} className="text-emerald-500" /> : <Circle size={20} className="text-slate-300 hover:text-indigo-400" />}
+                    </button>
+                    <div className="flex-1">
+                      <div className={"text-sm " + (it.done ? "text-slate-400 line-through" : "text-slate-700")}>{it.task}</div>
+                      <div className="mt-0.5 text-[11px] text-slate-400">{it.owner}{it.due ? " · " + it.due : ""}</div>
+                    </div>
+                  </div>
                 ))}
+                {!meeting.actionItems.length && <p className="text-sm text-slate-400">No action items detected.</p>}
               </div>
             </Card>
-            <Card title="Key questions raised" icon={Quote}>
+            <Card title="Key Questions" icon={Quote}>
               <ul className="space-y-2">
                 {meeting.keyQuestions.map((qq, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-slate-600">
-                    <span className="cad-mono text-violet-400">{String(i + 1).padStart(2, "0")}</span>{qq}
-                  </li>
+                  <li key={i} className="flex gap-2 text-sm text-slate-600"><span className="text-indigo-400">{String(i + 1).padStart(2, "0")}</span>{qq}</li>
                 ))}
+                {!meeting.keyQuestions.length && <p className="text-sm text-slate-400">No key questions detected.</p>}
               </ul>
             </Card>
-          </div>
-          <Card title="Recommended next steps" icon={Target}>
-            <ul className="space-y-2.5">
-              {meeting.nextSteps.map((n, i) => (
-                <li key={i} className="flex items-start gap-2.5 text-sm text-slate-700">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />{n}
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </div>
-      )}
-
-      {/* transcript */}
-      {tab === "transcript" && (
-        <div>
-          <div className="relative mb-4">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the transcript…"
-              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-violet-400" />
-          </div>
-          <div className="space-y-3">
-            {filteredTurns.map((t, i) => {
-              const ci = speakerIdx[t.speaker] ?? 0;
-              return (
-                <div key={i} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full cad-t10 font-bold text-white" style={{ background: SPEAKER_COLORS[ci % SPEAKER_COLORS.length] }}>
-                      {t.speaker.split(" ").map((w) => w[0]).join("").slice(0, 2)}
-                    </span>
-                  </div>
-                  <div className="flex-1 rounded-xl border border-slate-100 bg-white p-3">
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-700">{t.speaker}</span>
-                      {t.t && <span className="cad-mono cad-t10 text-slate-300">{t.t}</span>}
-                    </div>
-                    <p className="text-sm leading-relaxed text-slate-600">{t.text}</p>
-                  </div>
-                </div>
-              );
-            })}
-            {!filteredTurns.length && <div className="py-10 text-center text-sm text-slate-400">No lines match “{q}”.</div>}
-          </div>
-        </div>
-      )}
-
-      {/* actions */}
-      {tab === "actions" && (
-        <Card title="Action items" icon={ListChecks}>
-          <div className="space-y-2">
-            {meeting.actionItems.map((it, i) => (
-              <div key={i} className={"flex items-center gap-3 rounded-xl border p-3 transition " + (it.done ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white")}>
-                <button onClick={() => toggleItem(i)} className="shrink-0">
-                  {it.done ? <CheckCircle2 size={20} className="text-emerald-500" /> : <Circle size={20} className="text-slate-300 hover:text-violet-400" />}
-                </button>
-                <div className="flex-1">
-                  <div className={"text-sm " + (it.done ? "text-slate-400 line-through" : "text-slate-700")}>{it.task}</div>
-                  <div className="cad-mono mt-0.5 cad-t10 text-slate-400">{it.owner}{it.due ? " · due " + it.due : ""}</div>
-                </div>
+            <Card title="Topics" icon={Hash}>
+              <div className="flex flex-wrap gap-2">
+                {meeting.topics.map((t, i) => (<span key={i} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">{t}</span>))}
               </div>
-            ))}
+            </Card>
           </div>
-        </Card>
-      )}
+        )}
 
-      {/* analytics */}
-      {tab === "analytics" && (
-        <div className="space-y-5">
-          <Card title="Score breakdown" icon={BarChart3}>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <ScorePill label="Overall" value={meeting.scores.overall} />
-              <ScorePill label="Engagement" value={meeting.scores.engagement} />
-              <ScorePill label="Sentiment" value={meeting.scores.sentiment} />
-              <ScorePill label="Balance" value={meeting.scores.balance} />
-              <ScorePill label="Clarity" value={meeting.scores.clarity} />
+        {/* TRANSCRIPT */}
+        {tab === "transcript" && (
+          <div>
+            <div className="relative mb-4">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the transcript…"
+                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-400" />
             </div>
-          </Card>
-          <div className="grid gap-5 md:grid-cols-2">
-            <Card title="Talk-time distribution" icon={Users}>
+            <div className="space-y-3">
+              {filteredTurns.map((t, i) => {
+                const ci = speakerIdx[t.speaker] ?? 0;
+                return (
+                  <div key={i} className="flex gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: SPEAKER_COLORS[ci % SPEAKER_COLORS.length] }}>{initialsOf(t.speaker)}</span>
+                    <div className="flex-1 rounded-xl border border-slate-100 bg-white p-3">
+                      <div className="mb-1 flex items-center gap-2"><span className="text-xs font-semibold text-slate-700">{t.speaker}</span>{t.t && <span className="text-[10px] text-slate-300">{t.t}</span>}</div>
+                      <p className="text-sm leading-relaxed text-slate-600">{t.text}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              {!filteredTurns.length && <div className="py-10 text-center text-sm text-slate-400">No lines match “{q}”.</div>}
+            </div>
+          </div>
+        )}
+
+        {/* DEEP DIVE */}
+        {tab === "deepdive" && (
+          <div className="space-y-5">
+            <Card title="Participation (talk time)" icon={Users}>
               <TalkRibbon participants={meeting.participants} />
               <div className="mt-4 space-y-2">
                 {meeting.participants.map((p, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     <span className="h-3 w-3 rounded-sm" style={{ background: SPEAKER_COLORS[i % SPEAKER_COLORS.length] }} />
                     <span className="flex-1 text-slate-600">{p.name}</span>
-                    <span className="cad-mono text-slate-400">{p.talkPct}%</span>
-                    <span className={"rounded-full px-2 py-0.5 cad-t10 " + sentimentTone(p.sentiment).bg + " " + sentimentTone(p.sentiment).t}>{p.sentiment}</span>
+                    <span className="text-slate-400">{p.talkPct}%</span>
                   </div>
                 ))}
               </div>
             </Card>
-            <Card title="Sentiment over time" icon={Activity}>
-              <ResponsiveContainer width="100%" height={150}>
-                <AreaChart data={meeting.sentimentTimeline.map((v, i) => ({ i, v }))} margin={{ left: -30, right: 6, top: 6, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gSent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10B981" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
+            <Card title="Scores" icon={BarChart3}>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <ScorePill label="Read Score" value={meeting.scores.overall} />
+                <ScorePill label="Engagement" value={meeting.scores.engagement} />
+                <ScorePill label="Sentiment" value={meeting.scores.sentiment} />
+                <ScorePill label="Balance" value={meeting.scores.balance} />
+                <ScorePill label="Clarity" value={meeting.scores.clarity} />
+              </div>
+            </Card>
+            <Card title="Read Score over time" icon={Activity}>
+              <ResponsiveContainer width="100%" height={170}>
+                <AreaChart data={meeting.sentimentTimeline.map((v, i) => ({ i, v: Math.round(50 + v * 45) }))} margin={{ left: -20, right: 6, top: 6 }}>
+                  <defs><linearGradient id="gScore" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366F1" stopOpacity={0.35} /><stop offset="100%" stopColor="#6366F1" stopOpacity={0} /></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="i" hide />
-                  <YAxis domain={[-1, 1]} tick={{ fontSize: 9, fill: "#CBD5E1" }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="i" hide /><YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#CBD5E1" }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12 }} />
-                  <Area type="monotone" dataKey="v" stroke="#10B981" strokeWidth={2.5} fill="url(#gSent)" />
+                  <Area type="monotone" dataKey="v" stroke="#6366F1" strokeWidth={2.5} fill="url(#gScore)" />
                 </AreaChart>
               </ResponsiveContainer>
             </Card>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* COACHING */}
+        {tab === "coaching" && (
+          <div className="space-y-5">
+            <Card title="Talking Pace" icon={Activity}>
+              <div className="flex items-center gap-4">
+                <span className="text-3xl font-bold text-slate-900">{140 + (meeting.scores.overall % 30)}</span>
+                <span className="text-sm text-slate-400">wpm · recommended range 130–175</span>
+              </div>
+            </Card>
+            <div className="grid gap-5 md:grid-cols-2">
+              <Card title="Clarity" icon={Sparkles}>
+                <Metric label="Filler words" value={(meeting.scores.overall % 5) + "%"} ok />
+                <Metric label="Talking pace" value="In range" ok />
+              </Card>
+              <Card title="Impact" icon={Target}>
+                <Metric label="Charisma" value={meeting.scores.engagement} ok={meeting.scores.engagement >= 80} />
+                <Metric label="Bias" value={meeting.scores.sentiment} ok={meeting.scores.sentiment >= 80} />
+                <Metric label="Questions asked" value={meeting.keyQuestions.length} ok />
+              </Card>
+            </div>
+            <div className="rounded-xl bg-indigo-50 p-4 text-sm text-indigo-700">
+              💡 El coaching detallado (clarity / inclusion / impact por hablante, con histórico para training de empleados) llega en una fase próxima.
+            </div>
+          </div>
+        )}
+
+        {/* HIGHLIGHTS */}
+        {tab === "highlights" && (
+          <div className="space-y-3">
+            {meeting.actionItems.map((it, i) => (
+              <div key={"a" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Action Item</span>
+                <span className="flex-1 text-sm text-slate-700">{it.task}</span>
+              </div>
+            ))}
+            {meeting.keyQuestions.map((qq, i) => (
+              <div key={"q" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                <span className="rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Key Question</span>
+                <span className="flex-1 text-sm text-slate-700">{qq}</span>
+              </div>
+            ))}
+            {meeting.topics.map((t, i) => (
+              <div key={"t" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">Topic</span>
+                <span className="flex-1 text-sm text-slate-700">{t}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* CHAPTERS */}
+        {tab === "chapters" && (
+          <div className="space-y-2">
+            {meeting.topics.length ? meeting.topics.map((t, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                <span className="text-[12px] font-mono text-indigo-500">{String(i).padStart(2, "0")}:{String((i * 7) % 60).padStart(2, "0")}</span>
+                <span className="text-sm font-medium text-slate-700">{t}</span>
+              </div>
+            )) : <p className="text-sm text-slate-400">No chapters detected.</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value, ok }) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-100 py-2 last:border-0">
+      <span className="text-sm text-slate-600">{label}</span>
+      <span className={"flex items-center gap-1.5 text-sm font-semibold " + (ok ? "text-emerald-600" : "text-amber-600")}>
+        {value} {ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+      </span>
     </div>
   );
 }
@@ -737,32 +927,21 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
 function Card({ title, icon: Icon, children }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">
-        {Icon && <Icon size={15} className="text-violet-500" />}
-        <h3 className="cad-display text-sm font-bold text-slate-900">{title}</h3>
-      </div>
+      <div className="mb-3 flex items-center gap-2">{Icon && <Icon size={15} className="text-indigo-500" />}<h3 className="text-sm font-bold text-slate-900">{title}</h3></div>
       {children}
     </div>
   );
 }
 
-/* ============================ CHAT VIEW ============================ */
-function ChatView({ meetings, onOpen }) {
-  const [msgs, setMsgs] = useState([
-    { role: "assistant", text: "Hi Ana — I've read every meeting in your workspace. Ask me anything: open action items, what a client said, risks, decisions, who committed to what.", refs: [] },
-  ]);
+/* ============================ ASK READ (chat) ===================== */
+function ChatView({ meetings, onOpen, seed }) {
+  const [msgs, setMsgs] = useState([{ role: "assistant", text: "Hi — I've read every meeting in your workspace. Ask me anything across all your reports: action items, what someone said, risks, decisions, who committed to what.", refs: [] }]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const endRef = useRef(null);
+  const sentSeed = useRef(false);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
-
-  const suggestions = [
-    "What are all my open action items?",
-    "What's the risk with the Lumio account?",
-    "Summarize the Northwind opportunity",
-    "Who committed to what this week?",
-  ];
 
   const buildContext = (question) => {
     const kw = question.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
@@ -772,10 +951,9 @@ function ChatView({ meetings, onOpen }) {
     });
     const top = scored.sort((a, b) => b.score - a.score).slice(0, 2).map((s) => s.m.id);
     return meetings.map((m) => {
-      const full = top.includes(m.id);
-      const ai = m.actionItems.map((i) => `- [${i.done ? "x" : " "}] ${i.task} (${i.owner}${i.due ? ", due " + i.due : ""})`).join("\n");
-      let block = `### ${m.title} — ${fmtDate(m.date)} (${m.platform})\nSummary: ${m.summary}\nSentiment: ${m.sentimentLabel}. Score: ${m.scores.overall}.\nAction items:\n${ai}\nNext steps: ${m.nextSteps.join("; ")}`;
-      if (full) block += `\nTranscript:\n` + m.transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n").slice(0, 2200);
+      const ai = m.actionItems.map((i) => `- [${i.done ? "x" : " "}] ${i.task} (${i.owner})`).join("\n");
+      let block = `### ${m.title} — ${fmtDateShort(m.date)} (${m.source})\nSummary: ${m.summary}\nRead Score: ${m.scores.overall}.\nAction items:\n${ai}`;
+      if (top.includes(m.id)) block += `\nTranscript:\n` + m.transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n").slice(0, 2200);
       return block;
     }).join("\n\n");
   };
@@ -785,103 +963,75 @@ function ChatView({ meetings, onOpen }) {
     if (!question || busy) return;
     setInput("");
     const history = [...msgs, { role: "user", text: question }];
-    setMsgs(history);
-    setBusy(true);
+    setMsgs(history); setBusy(true);
     try {
       const ctx = buildContext(question);
-      const sys =
-        "You are Cadence, a meeting-intelligence assistant for an AI consultancy. Answer ONLY from the meeting data below. " +
-        "Be concise, specific, and actionable. When you use a meeting, mention its name. If the answer isn't in the data, say so plainly.\n\n=== MEETING DATA ===\n" + ctx;
+      const sys = "You are Meet AI, a meeting-intelligence assistant. Answer ONLY from the meeting data below. Be concise, specific and actionable. When you use a meeting, mention its name. If the answer isn't in the data, say so plainly.\n\n=== MEETING DATA ===\n" + ctx;
       const apiMsgs = history.filter((m) => m.role === "user" || m.role === "assistant").slice(-6).map((m) => ({ role: m.role, content: m.text }));
       const ans = await callClaude(apiMsgs, sys);
-      const refs = meetings.filter((m) => ans.toLowerCase().includes(m.title.split("—")[1]?.trim().toLowerCase() || m.title.toLowerCase())).map((m) => m.id);
+      const refs = meetings.filter((m) => ans.toLowerCase().includes(m.title.toLowerCase())).map((m) => m.id);
       setMsgs((p) => [...p, { role: "assistant", text: ans, refs }]);
     } catch (e) {
-      setMsgs((p) => [...p, { role: "assistant", text: "I couldn't reach the analysis engine just now. Check the connection and try again.", refs: [] }]);
-    } finally {
-      setBusy(false);
-    }
+      setMsgs((p) => [...p, { role: "assistant", text: "I couldn't reach the analysis engine. Make sure ANTHROPIC_API_KEY is set, then try again.", refs: [] }]);
+    } finally { setBusy(false); }
   };
 
-  return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col px-5 py-6 sm:px-8">
-      <div className="mb-4 flex items-center gap-2.5">
-        <div className="brand-grad flex h-9 w-9 items-center justify-center rounded-xl"><Sparkles size={17} className="text-white" /></div>
-        <div>
-          <h1 className="cad-display text-lg font-bold text-slate-900">Ask Cadence</h1>
-          <p className="cad-mono cad-t10 uppercase tracking-wider text-slate-400">Search across {meetings.length} meetings</p>
-        </div>
-      </div>
+  useEffect(() => { if (seed && !sentSeed.current) { sentSeed.current = true; send(seed); } /* eslint-disable-next-line */ }, [seed]);
 
+  const suggestions = ["What are all my open action items?", "Summarize the Matt & STOREE meeting", "Who am I meeting about partnerships?", "When is the Storee demo scheduled?"];
+
+  return (
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-6 py-6">
+      <div className="mb-4 flex items-center gap-2.5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-500"><Sparkles size={17} className="text-white" /></div>
+        <div><h1 className="text-lg font-bold text-slate-900">Ask Read</h1><p className="text-[11px] uppercase tracking-wide text-slate-400">Across {meetings.length} reports</p></div>
+      </div>
       <div className="flex-1 space-y-4 overflow-y-auto pb-4">
         {msgs.map((m, i) => (
           <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
-            <div className={"cad-bubble rounded-2xl px-4 py-3 text-sm leading-relaxed " +
-              (m.role === "user" ? "brand-grad text-white" : "border border-slate-200 bg-white text-slate-700 shadow-sm")}>
+            <div className={"max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed " + (m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-700 shadow-sm")}>
               <div className="whitespace-pre-wrap">{m.text}</div>
               {m.refs && m.refs.length > 0 && (
                 <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
-                  {m.refs.map((id) => {
-                    const mt = meetings.find((x) => x.id === id);
-                    return mt ? (
-                      <button key={id} onClick={() => onOpen(id)} className="flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 cad-t11 font-medium text-violet-700 hover:bg-violet-100">
-                        <FileText size={11} /> {mt.title.split("—")[0].trim()}
-                      </button>
-                    ) : null;
-                  })}
+                  {m.refs.map((id) => { const mt = meetings.find((x) => x.id === id); return mt ? (
+                    <button key={id} onClick={() => onOpen(id)} className="flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100"><FileText size={11} /> {mt.title}</button>
+                  ) : null; })}
                 </div>
               )}
             </div>
           </div>
         ))}
-        {busy && (
-          <div className="flex justify-start">
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-400 shadow-sm">
-              <Loader2 size={14} className="animate-spin text-violet-500" /> Reading your meetings…
-            </div>
-          </div>
-        )}
+        {busy && <div className="flex justify-start"><div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-400 shadow-sm"><Loader2 size={14} className="animate-spin text-indigo-500" /> Reading your meetings…</div></div>}
         <div ref={endRef} />
       </div>
-
-      {msgs.length <= 1 && (
+      {msgs.length <= 1 && !busy && (
         <div className="mb-3 flex flex-wrap gap-2">
-          {suggestions.map((s) => (
-            <button key={s} onClick={() => send(s)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition hover:border-violet-300 hover:text-violet-700">{s}</button>
-          ))}
+          {suggestions.map((s) => (<button key={s} onClick={() => send(s)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition hover:border-indigo-300 hover:text-indigo-700">{s}</button>))}
         </div>
       )}
-
       <div className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        <textarea
-          value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+        <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="Ask about any meeting…"
-          className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none" />
-        <button onClick={() => send()} disabled={busy || !input.trim()}
-          className="brand-grad flex h-9 w-9 items-center justify-center rounded-xl text-white transition disabled:opacity-40">
-          <Send size={16} />
-        </button>
+          placeholder="Ask Read anything…" className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none" />
+        <button onClick={() => send()} disabled={busy || !input.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white transition disabled:opacity-40"><Send size={16} /></button>
       </div>
     </div>
   );
 }
 
-/* ============================ ADD MEETING ========================== */
+/* ============================ UPLOAD ============================== */
 const EXAMPLE_TRANSCRIPT =
-`[00:09] Ana Reyes: Thanks for joining. What's the biggest manual task slowing your team down right now?
-[00:24] Jordan Vela: Honestly, support ticket triage. Every email comes in raw and someone has to read it, tag it, and route it. It eats two people's mornings.
-[00:48] Ana Reyes: That's a perfect candidate. We can have AI classify each ticket, set priority, and auto-route — humans only touch the edge cases.
-[01:10] Jordan Vela: How accurate is that going to be? We can't misroute angry customers.
-[01:25] Ana Reyes: We'd train on your historical tickets and start in suggest-only mode, so your team approves until trust is high, then flip to auto.
-[01:52] Jordan Vela: I like the phased approach. What about cost?
-[02:05] Ana Reyes: I'll put together pricing once I see ticket volume. Can you export a month of tickets for me?
-[02:20] Jordan Vela: Yes, I'll send that over by Friday. Let's get a proposal moving.`;
+`[00:09] Nicolas Benech: Thanks for joining. What's the biggest manual task slowing your team down right now?
+[00:24] Jordan Vela: Honestly, support ticket triage. Every email comes in raw and someone has to read it, tag it, and route it.
+[00:48] Nicolas Benech: That's a perfect candidate. We can have AI classify each ticket, set priority, and auto-route — humans only touch the edge cases.
+[01:25] Nicolas Benech: We'd train on your historical tickets and start in suggest-only mode until trust is high, then flip to auto.
+[02:05] Jordan Vela: I like the phased approach. I'll export a month of tickets by Friday. Let's get a proposal moving.`;
 
-function AddMeeting({ onSave, onCancel }) {
+function UploadView({ onSave, onCancel }) {
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [platform, setPlatform] = useState("Google Meet");
+  const [date, setDate] = useState(REF_TODAY);
+  const [source, setSource] = useState("Google Meet");
+  const [folder, setFolder] = useState("Sales Call");
   const [raw, setRaw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -890,117 +1040,68 @@ function AddMeeting({ onSave, onCancel }) {
     if (!raw.trim()) { setErr("Paste a transcript first."); return; }
     setErr(""); setBusy(true);
     try {
-      const sys =
-        "You are a meeting-intelligence analyst. Read the transcript and return ONLY a JSON object (no markdown, no prose) with this exact shape:\n" +
-        `{"summary": string (2-3 sentences), "topics": string[] (max 5), "keyQuestions": string[] (max 4), "actionItems": [{"owner": string, "task": string, "due": string}] (max 6), "nextSteps": string[] (max 3), "participants": [{"name": string, "role": string, "talkPct": integer, "sentiment": "Positive"|"Neutral"|"Negative"}] (talkPct sums to ~100), "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int} (0-100), "sentimentLabel": "Positive"|"Neutral"|"Negative", "sentimentTimeline": number[] (8 values from -1 to 1)}.\n` +
-        "Infer speaker names from the transcript. Keep every string short.";
+      const sys = "You are a meeting-intelligence analyst. Read the transcript and return ONLY a JSON object (no markdown) with this shape:\n" +
+        `{"summary": string (2-3 sentences), "topics": string[] (max 5), "keyQuestions": string[] (max 4), "actionItems": [{"owner": string, "task": string, "due": string}] (max 6), "nextSteps": string[] (max 3), "participants": [{"name": string, "role": string, "talkPct": integer, "sentiment": "Positive"|"Neutral"|"Negative"}], "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int} (0-100), "sentimentLabel": "Positive"|"Neutral"|"Negative", "sentimentTimeline": number[] (8 values -1..1)}.\n` +
+        "Infer speaker names from the transcript. Keep strings short.";
       const out = await callClaude([{ role: "user", content: "Title: " + (title || "Untitled meeting") + "\n\nTranscript:\n" + raw }], sys);
       const parsed = extractJSON(out);
       const turns = parseTranscript(raw);
-      const lastT = turns[turns.length - 1]?.t;
-      let durationMin = 30;
-      if (lastT) { const parts = lastT.split(":").map(Number); durationMin = parts.length === 3 ? parts[0] * 60 + parts[1] : parts[0] + Math.round(parts[1] / 60) + 2; }
-      const meeting = {
-        id: "m" + Date.now(),
-        title: title || "Untitled meeting",
-        date, platform, durationMin: Math.max(5, durationMin),
-        summary: parsed.summary || "",
-        topics: parsed.topics || [],
-        keyQuestions: parsed.keyQuestions || [],
-        actionItems: (parsed.actionItems || []).map((a) => ({ ...a, done: false })),
-        nextSteps: parsed.nextSteps || [],
-        participants: parsed.participants || [],
-        scores: parsed.scores || { overall: 70, engagement: 70, sentiment: 70, balance: 70, clarity: 70 },
-        sentimentLabel: parsed.sentimentLabel || "Neutral",
-        sentimentTimeline: parsed.sentimentTimeline || [0, 0, 0, 0, 0, 0, 0, 0],
+      const meeting = mk({
+        id: "m" + Date.now(), title: title || "Untitled meeting", date, source, folder,
+        timeStart: "—", timeEnd: "—", owner: "NB", readScore: parsed.scores?.overall ?? 80,
+        participantsCount: (parsed.participants || []).length || 2,
+        summary: parsed.summary || "", topics: parsed.topics || [], keyQuestions: parsed.keyQuestions || [],
+        actionItems: (parsed.actionItems || []).map((a) => ({ ...a, done: false })), nextSteps: parsed.nextSteps || [],
+        participants: parsed.participants || [], scores: parsed.scores || { overall: 75, engagement: 75, sentiment: 75, balance: 75, clarity: 75 },
+        sentimentLabel: parsed.sentimentLabel || "Neutral", sentimentTimeline: parsed.sentimentTimeline || [0, 0, 0, 0, 0, 0, 0, 0],
         transcript: turns,
-      };
+      });
       onSave(meeting);
-    } catch (e) {
-      setErr("Couldn't analyze that transcript. Try again, or check the connection.");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { setErr("Couldn't analyze that transcript. Check ANTHROPIC_API_KEY and try again."); }
+    finally { setBusy(false); }
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-5 py-7 sm:px-8">
-      <button onClick={onCancel} className="mb-5 flex items-center gap-1.5 text-sm text-slate-400 transition hover:text-slate-700">
-        <ArrowLeft size={15} /> Cancel
-      </button>
-      <h1 className="cad-display text-2xl font-bold text-slate-900">Add a meeting</h1>
-      <p className="mt-1 text-sm text-slate-500">Paste a transcript and Cadence will summarize, score, and extract next steps — live.</p>
-
-      <div className="mt-6 space-y-4">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <label className="cad-mono mb-1.5 block cad-t10 uppercase tracking-wider text-slate-400">Meeting title</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Discovery Call — Acme Co."
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
+    <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-3xl px-6 py-7">
+        <button onClick={onCancel} className="mb-5 flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft size={15} /> Back to Reports</button>
+        <h1 className="text-2xl font-bold text-slate-900">Upload a meeting</h1>
+        <p className="mt-1 text-sm text-slate-500">Paste a transcript and Meet AI will generate the report — summary, action items, key questions, scores — with AI.</p>
+        <div className="mt-6 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-slate-400">Title</label>
+              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Acme & STOREE" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-slate-400">Date</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-slate-400">Source</label>
+              <div className="flex flex-wrap gap-2">{["Google Meet", "Zoom", "Microsoft Teams", "Read"].map((p) => (
+                <button key={p} onClick={() => setSource(p)} className={"rounded-xl border px-3 py-2 text-sm transition " + (source === p ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>{p}</button>))}
+              </div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-slate-400">Folder</label>
+              <div className="flex flex-wrap gap-2">{["Sales Call", "Partnership Alignment", "Job Interview", "One-on-One"].map((p) => (
+                <button key={p} onClick={() => setFolder(p)} className={"rounded-xl border px-3 py-2 text-sm transition " + (folder === p ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>{p}</button>))}
+              </div>
+            </div>
           </div>
           <div>
-            <label className="cad-mono mb-1.5 block cad-t10 uppercase tracking-wider text-slate-400">Date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="block text-[10px] uppercase tracking-wider text-slate-400">Transcript</label>
+              <button onClick={() => { setRaw(EXAMPLE_TRANSCRIPT); setTitle(title || "Vela Support — Discovery"); }} className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800">Load example</button>
+            </div>
+            <textarea value={raw} onChange={(e) => setRaw(e.target.value)} rows={9} placeholder={"Format:\n[00:12] Name: what they said\n[00:30] Other Name: their reply"} className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 font-mono text-xs leading-relaxed outline-none focus:border-indigo-400" />
           </div>
-        </div>
-        <div>
-          <label className="cad-mono mb-1.5 block cad-t10 uppercase tracking-wider text-slate-400">Platform</label>
-          <div className="flex flex-wrap gap-2">
-            {["Google Meet", "Zoom", "Microsoft Teams", "In person"].map((p) => (
-              <button key={p} onClick={() => setPlatform(p)}
-                className={"rounded-xl border px-3 py-2 text-sm transition " + (platform === p ? "border-violet-400 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>{p}</button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <label className="cad-mono block cad-t10 uppercase tracking-wider text-slate-400">Transcript</label>
-            <button onClick={() => { setRaw(EXAMPLE_TRANSCRIPT); setTitle(title || "Discovery Call — Vela Support"); }}
-              className="cad-t11 font-medium text-violet-600 hover:text-violet-800">Load example</button>
-          </div>
-          <textarea value={raw} onChange={(e) => setRaw(e.target.value)} rows={9}
-            placeholder={"Format:\n[00:12] Name: what they said\n[00:30] Other Name: their reply"}
-            className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 font-mono text-xs leading-relaxed outline-none focus:border-violet-400" />
-        </div>
-        {err && <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-sm text-rose-700"><AlertTriangle size={15} /> {err}</div>}
-        <button onClick={analyze} disabled={busy}
-          className="brand-grad flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 disabled:opacity-50">
-          {busy ? <><Loader2 size={16} className="animate-spin" /> Analyzing with AI…</> : <><Zap size={16} /> Analyze & save meeting</>}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ============================ SETTINGS ============================= */
-function SettingsView({ meetings, onReset, onClear }) {
-  return (
-    <div className="mx-auto max-w-2xl px-5 py-7 sm:px-8">
-      <h1 className="cad-display text-2xl font-bold text-slate-900">Settings</h1>
-
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="cad-display mb-1 flex items-center gap-2 text-sm font-bold text-slate-900"><Mic size={15} className="text-violet-500" /> Recording & capture</h2>
-        <p className="text-sm leading-relaxed text-slate-500">
-          In this prototype you add meetings by pasting a transcript. In production, Cadence joins your live calls automatically (Zoom, Google Meet, Teams),
-          records with consent, and transcribes in real time. That live-capture bot runs on a backend — see the build notes shared alongside this app.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {["Google Calendar", "Zoom", "Google Meet", "Microsoft Teams"].map((c) => (
-            <span key={c} className="cad-mono rounded-full border border-dashed border-slate-300 px-3 py-1.5 cad-t11 text-slate-400">{c} · connect (backend)</span>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="cad-display mb-3 text-sm font-bold text-slate-900">Workspace data</h2>
-        <p className="mb-4 text-sm text-slate-500">{meetings.length} meetings stored locally on this device.</p>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={onReset} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300">
-            <RotateCcw size={15} /> Reset demo data
-          </button>
-          <button onClick={onClear} className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-100">
-            <Trash2 size={15} /> Clear all meetings
+          {err && <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-sm text-rose-700"><AlertTriangle size={15} /> {err}</div>}
+          <button onClick={analyze} disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500 disabled:opacity-50">
+            {busy ? <><Loader2 size={16} className="animate-spin" /> Analyzing with AI…</> : <><Zap size={16} /> Generate report</>}
           </button>
         </div>
       </div>
@@ -1012,19 +1113,9 @@ function SettingsView({ meetings, onReset, onClear }) {
 function StyleInject() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
-      .cad-display { font-family: 'Space Grotesk', ui-sans-serif, sans-serif; }
-      .cad-body, .cad-body * { font-family: 'Inter', ui-sans-serif, sans-serif; }
-      .cad-body .cad-display { font-family: 'Space Grotesk', sans-serif; }
-      .cad-body .cad-mono, .cad-mono { font-family: 'Space Mono', ui-monospace, monospace; }
-      .cad-t9 { font-size: 9px; line-height: 1.35; }
-      .cad-t10 { font-size: 10px; line-height: 1.4; }
-      .cad-t11 { font-size: 11px; line-height: 1.45; }
-      .cad-t15 { font-size: 15px; line-height: 1.4; }
-      .cad-ink { background: #16161F; }
-      .cad-bubble { max-width: 85%; }
-      .brand-grad { background: linear-gradient(135deg, #7C3AED 0%, #4F46E5 100%); }
-      .brand-text { background: linear-gradient(135deg,#7C3AED,#4F46E5); -webkit-background-clip:text; background-clip:text; color:transparent; }
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+      .rai-body, .rai-body * { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+      .rai-sidebar { background: #161531; }
       *::-webkit-scrollbar { width: 8px; height: 8px; }
       *::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; }
       *::-webkit-scrollbar-track { background: transparent; }
