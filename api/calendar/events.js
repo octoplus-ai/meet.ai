@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   try {
     const t = parseCookies(req).om_session;
     if (!t) return res.status(401).json({ error: "not authenticated" });
-    const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&select=user_id`);
+    const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (!s.length) return res.status(401).json({ error: "no session" });
     const userId = s[0].user_id;
 
@@ -43,6 +43,7 @@ export default async function handler(req, res) {
     const now = new Date().toISOString();
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now)}&maxResults=25&singleEvents=true&orderBy=startTime`;
     const cal = await fetch(url, { headers: { Authorization: `Bearer ${tk.access_token}` } }).then((r) => r.json());
+    if (cal.error) return res.status(401).json({ error: "calendar auth failed — please reconnect Google", detail: cal.error });
 
     const events = (cal.items || []).map((e) => ({
       id: e.id,

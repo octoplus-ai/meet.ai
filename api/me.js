@@ -7,6 +7,7 @@ export default async function handler(req, res) {
     const user = await currentUser(req);
     res.status(200).json({ user });
   } catch (e) {
-    res.status(200).json({ user: null, error: String(e.message || e) });
+    console.error("/api/me error:", e && (e.message || e));
+    res.status(200).json({ user: null });
   }
 }

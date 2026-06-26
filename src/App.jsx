@@ -384,16 +384,10 @@ function Toaster() {
 
 /* --------------------------- small UI bits ------------------------- */
 function PlatformBadge({ source }) {
-  const map = {
-    "Google Meet": { c: "#00AC47", letter: "M" },
-    "Zoom": { c: "#2D8CFF", letter: "Z" },
-    "Microsoft Teams": { c: "#6264A7", letter: "T" },
-    "Read": { c: "#6366F1", letter: "●" },
-  };
-  const p = map[source] || map["Read"];
+  const brand = source === "Google Meet" ? "googleMeet" : source === "Zoom" ? "zoom" : source === "Microsoft Teams" ? "teams" : "extension";
   return (
-    <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-[5px] border border-white bg-white shadow-sm">
-      <span className="flex h-full w-full items-center justify-center rounded-[4px] text-[8px] font-bold text-white" style={{ background: p.c }}>{p.letter}</span>
+    <span className="absolute -bottom-1 -right-1 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border border-white bg-white shadow-sm">
+      <BrandIcon name={brand} size={13} />
     </span>
   );
 }
@@ -669,7 +663,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
         )}
         {collapsed ? (
           <div className="flex flex-col items-center gap-3">
-            <button title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
+            <button onClick={() => setCollapsed(false)} title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
             <button onClick={copyLink} title={t("smartScheduler")} className={"flex h-8 w-8 items-center justify-center rounded-md text-white " + (copied ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500")}>{copied ? <Check size={14} /> : <Link2 size={14} />}</button>
             <button onClick={() => setMenuOpen((v) => !v)} title="Account" className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(uInit) }}>{user?.picture ? <img src={user.picture} alt="" className="h-full w-full object-cover" /> : uInit}</button>
           </div>
@@ -734,7 +728,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
 /* ============================ REPORTS LIST ========================= */
 function FilterBtn({ label, icon: Icon, onClick }) {
   return (
-    <button onClick={onClick || (() => toast(label + " — filtro próximamente"))} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
+    <button onClick={onClick || (() => toast(label + " filter — coming soon"))} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
       {Icon && <Icon size={14} className="text-slate-400" />}{label}<ChevronDown size={14} className="text-slate-400" />
     </button>
   );
@@ -766,7 +760,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t }) {
           <h1 className="text-lg font-bold text-slate-900">{t("reports")}</h1>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
-          className="mb-3 flex items-center gap-2 rounded-xl border-2 border-indigo-200 bg-white px-3 py-2 focus-within:border-indigo-400">
+          className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-white shadow-sm px-3 py-2 focus-within:border-indigo-400">
           <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-slate-400"><Globe size={15} /><ChevronDown size={13} /></button>
           <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder={t("askAnything")}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
@@ -805,8 +799,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t }) {
               <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-indigo-50 px-4 py-3">
                 <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">✨ NEW!</span>
                 <span className="flex-1 text-sm text-slate-700">Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.</span>
-                <button onClick={() => toast("Connect HubSpot — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="text-orange-400">◆</span> Add Hubspot</button>
-                <button onClick={() => toast("Connect Salesforce — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="text-sky-400">☁</span> Add Salesforce</button>
+                <button onClick={() => toast("Connect HubSpot — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="hubspot" size={14} /></span> Add Hubspot</button>
+                <button onClick={() => toast("Connect Salesforce — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="salesforce" size={14} /></span> Add Salesforce</button>
                 <button onClick={() => setShowCrm(false)} className="text-[13px] font-medium text-slate-500 hover:text-slate-700">Dismiss</button>
               </div>
             )}
@@ -822,7 +816,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t }) {
               <FilterBtn label={t("type")} />
               <FilterBtn label={t("source")} />
               <FilterBtn label={t("folder")} />
-              <button onClick={() => toast("Vista compacta — próximamente")} className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-400 hover:bg-slate-50"><PanelRightClose size={16} /></button>
+              <button onClick={() => toast("Compact view — coming soon")} className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-400 hover:bg-slate-50"><PanelRightClose size={16} /></button>
             </div>
 
             <div className="mt-4 overflow-hidden">
@@ -886,9 +880,9 @@ function Placeholder({ section, onReports, t }) {
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500"><Icon size={26} /></div>
       <h2 className="text-xl font-bold text-slate-800">{section ? t(section.tkey) : ""}</h2>
       <p className="mt-1 max-w-md text-sm text-slate-500">
-        Esta sección llega en una fase próxima. Por ahora, la pantalla de <b>Reports</b> ya está funcionando.
+        This section is coming soon. For now, the <b>Reports</b> screen is fully working.
       </p>
-      <button onClick={onReports} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Ir a Reports</button>
+      <button onClick={onReports} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Go to Reports</button>
     </div>
   );
 }
@@ -988,10 +982,10 @@ function CreateWorkspace({ onCancel, onDone }) {
             <h2 className="text-3xl font-bold text-slate-900">Connect a calendar</h2>
             <p className="mt-3 text-[15px] text-slate-500">Connect a calendar so Octomeet can auto-join your meetings. Optional.</p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              {["Google Calendar", "Outlook Calendar"].map((c) => (
-                <button key={c} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-500"><CalendarCheck size={18} /></div>
-                  <div><div className="text-sm font-medium text-slate-700">{c}</div><div className="text-xs text-slate-400">Connect</div></div>
+              {[{ label: "Google Calendar", brand: "googleCalendar" }, { label: "Outlook Calendar", brand: "outlook" }].map((c) => (
+                <button key={c.label} onClick={() => toast("Connecting " + c.label + "…")} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white"><BrandIcon name={c.brand} size={20} /></div>
+                  <div><div className="text-sm font-medium text-slate-700">{c.label}</div><div className="text-xs text-slate-400">Connect</div></div>
                 </button>
               ))}
             </div>
@@ -1034,7 +1028,7 @@ function SectionTop({ title, onAsk, right }) {
       </div>
       <div className="flex items-center gap-3">
         <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
-          className="flex flex-1 items-center gap-2 rounded-xl border-2 border-indigo-200 bg-white px-3 py-2 focus-within:border-indigo-400">
+          className="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white shadow-sm px-3 py-2 focus-within:border-indigo-400">
           <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-slate-400"><Globe size={15} /><ChevronDown size={13} /></button>
           <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Ask Octo anything..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
           <button type="submit" disabled={!ask.trim()} className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40"><Send size={15} /></button>
@@ -1167,7 +1161,7 @@ function CalendarView({ onAsk, initialTab }) {
         ) : (
           <div className="space-y-6">
             <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm">
-              <span className="text-slate-600">📅 Scheduling based on: <b>nicolas@octomeet.ai</b> (Google Calendar)</span>
+              <span className="flex items-center gap-1.5 text-slate-600"><BrandIcon name="googleCalendar" size={16} /> Scheduling based on: <b>nicolas@octomeet.ai</b> (Google Calendar)</span>
               <span className="flex gap-4 text-[13px] font-semibold text-indigo-600"><button onClick={() => toast("Change calendar — coming soon")}>Change Calendar</button><button onClick={() => toast("Scheduling settings — coming soon")}>Scheduling Settings</button></span>
             </div>
             <div>
@@ -1199,14 +1193,16 @@ function CalToggle({ on, onChange }) {
 
 /* ============================ FOR YOU ============================= */
 function ForYouView({ meetings, onOpen, onAsk }) {
-  const actions = meetings.flatMap((m) => m.actionItems.map((a) => ({ ...a, meeting: m.title, id: m.id }))).slice(0, 8);
+  const [aiFilter, setAiFilter] = useState("all");
+  const allActions = meetings.flatMap((m) => m.actionItems.map((a) => ({ ...a, meeting: m.title, id: m.id })));
+  const actions = (aiFilter === "me" ? allActions.filter((a) => /nicolas/i.test(a.owner || "")) : allActions).slice(0, 8);
   return (
     <>
-      <SectionTop title="For You" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white"><Calendar size={14} /> Jun 12 - 25, 2026</span>} />
+      <SectionTop title="For You" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> Jun 12 - 25, 2026</span>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
           <div className="space-y-5">
-            <div className="rounded-2xl border-2 border-indigo-200 bg-white p-5">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
               <h2 className="text-2xl font-bold text-indigo-700">Good afternoon, Nicolas</h2>
               <p className="mt-1 text-sm font-medium text-slate-500">Here's what happened Jun 12 - Jun 25</p>
               <div className="mt-3 flex gap-4">
@@ -1238,7 +1234,7 @@ function ForYouView({ meetings, onOpen, onAsk }) {
               <div className="mt-3 flex items-start gap-2 rounded-lg bg-indigo-800 p-2.5 text-[12px] text-indigo-200">ℹ The text-to-speech voice you are hearing is AI-generated and not a human voice.</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><CheckCircle2 size={16} className="text-indigo-500" /> Action Items</h3><div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]"><span className="rounded-md bg-indigo-600 px-2 py-0.5 font-semibold text-white">For me</span><span className="px-2 py-0.5 text-slate-500">All</span></div></div>
+              <div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><CheckCircle2 size={16} className="text-indigo-500" /> Action Items</h3><div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]"><button onClick={() => setAiFilter("me")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "me" ? "bg-indigo-600 text-white" : "text-slate-500")}>For me</button><button onClick={() => setAiFilter("all")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "all" ? "bg-indigo-600 text-white" : "text-slate-500")}>All</button></div></div>
               <div className="space-y-3">
                 {actions.map((a, i) => (
                   <button key={i} onClick={() => onOpen(a.id)} className="block w-full border-b border-slate-100 pb-3 text-left last:border-0">
@@ -1260,7 +1256,7 @@ function CoachingView({ onAsk }) {
   const moments = [{ w: 223, m: "Vertex Retail" }, { w: 225, m: "Vertex Retail" }, { w: 244, m: "Acme — Outreach" }, { w: 224, m: "Northwind" }];
   return (
     <>
-      <SectionTop title="Coaching" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white"><Calendar size={14} /> May 27 - Jun 26, 2026</span>} />
+      <SectionTop title="Coaching" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> May 27 - Jun 26, 2026</span>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
           <div className="space-y-5">
@@ -1343,6 +1339,7 @@ function RecommendationsView({ onAsk }) {
     { name: "Lumio — 1st Intro", n: 1, date: "Mon 6/22 · 9:00 AM - 9:30 AM" },
   ];
   const [sel, setSel] = useState(0);
+  const [recTab, setRecTab] = useState("new");
   const [items, setItems] = useState([
     { text: "Nicolas Benech will send an email with the company's organizational structure and operational details to start implementation.", quote: "Yeah, the basic thing we need to start is the structure of the company with the organization.", who: "Nicolas Benech" },
     { text: "Nicolas Benech will arrange a meeting with the customer's IT team to discuss sales and data integration.", quote: "If you want to see all the sales and everything, we can do a meeting with the IT and everything.", who: "Nicolas Benech" },
@@ -1351,15 +1348,16 @@ function RecommendationsView({ onAsk }) {
   const resolve = (i, kind) => { setItems((arr) => arr.filter((_, j) => j !== i)); toast(kind); };
   return (
     <>
-      <SectionTop title="Recommendations" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white"><Calendar size={14} /> Apr 26 - Jun 26, 2026</span>} />
+      <SectionTop title="Recommendations" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> Apr 26 - Jun 26, 2026</span>} />
       <div className="flex flex-1 overflow-hidden">
         <div className="w-80 shrink-0 overflow-y-auto border-r border-slate-200">
           <div className="flex items-center gap-4 border-b border-slate-200 px-4 py-3 text-sm font-semibold">
-            <span className="text-indigo-700">New <span className="rounded-full bg-indigo-600 px-1.5 text-[11px] text-white">19</span></span>
-            <span className="text-slate-400">Reviewed</span>
-            <span className="ml-auto text-[13px] font-medium text-indigo-600">Show filters</span>
+            <button onClick={() => setRecTab("new")} className={"flex items-center gap-1 " + (recTab === "new" ? "text-indigo-700" : "text-slate-400")}>New <span className="rounded-full bg-indigo-600 px-1.5 text-[11px] text-white">19</span></button>
+            <button onClick={() => setRecTab("reviewed")} className={recTab === "reviewed" ? "text-indigo-700" : "text-slate-400"}>Reviewed</button>
+            <button onClick={() => toast("Filters — coming soon")} className="ml-auto text-[13px] font-medium text-indigo-600">Show filters</button>
           </div>
-          {list.map((r, i) => (
+          {recTab === "reviewed" && <div className="px-4 py-16 text-center text-sm text-slate-400">No reviewed recommendations yet.</div>}
+          {recTab === "new" && list.map((r, i) => (
             <button key={i} onClick={() => setSel(i)} className={"block w-full border-b border-slate-100 px-4 py-3 text-left transition " + (sel === i ? "bg-indigo-50/60" : "hover:bg-slate-50")}>
               <div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-800">{r.name}</span><span className="flex items-center gap-1 text-[12px] text-slate-500"><Zap size={12} className="text-indigo-400" /> {r.n}</span></div>
               <div className="mt-1 flex items-center gap-1 text-[12px] text-slate-400"><Calendar size={11} /> {r.date}</div>
@@ -1369,6 +1367,7 @@ function RecommendationsView({ onAsk }) {
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="mb-4 flex items-center gap-2"><h2 className="text-lg font-bold text-slate-900">{list[sel].name}</h2><span className="flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[12px] font-semibold text-indigo-700"><Zap size={12} /> {list[sel].n}</span></div>
           <div className="space-y-4">
+            {!items.length && <div className="rounded-2xl border border-dashed border-slate-200 py-16 text-center text-sm text-slate-400">All recommendations handled 🎉</div>}
             {items.map((it, i) => (
               <div key={i} className="rounded-2xl border border-slate-200 bg-white p-5">
                 <div className="mb-3 flex items-center justify-between">
@@ -1428,28 +1427,28 @@ function IntegrationsView({ onAsk }) {
         <div className="mx-auto max-w-3xl space-y-6">
           <SecHead icon={LayoutGrid} title="Integrations" desc="Manage and connect external tools and services to Octomeet." />
           <Group title="Calendar & Meetings" desc="Allow Octomeet to join your meetings and automatically generate summaries." items={[
-            { name: "Google Calendar", icon: "📅", desc: "Connect your calendar" },
-            { name: "Google Meet", icon: "🎥", desc: "Auto-join Meet calls" },
-            { name: "Outlook Calendar", icon: "📧", desc: "Connect your calendar" },
-            { name: "Zoom", icon: "🎦", desc: "Auto-join Zoom calls" },
+            { name: "Google Calendar", icon: <BrandIcon name="googleCalendar" />, desc: "Connect your calendar" },
+            { name: "Google Meet", icon: <BrandIcon name="googleMeet" />, desc: "Auto-join Meet calls" },
+            { name: "Outlook Calendar", icon: <BrandIcon name="outlook" />, desc: "Connect your calendar" },
+            { name: "Zoom", icon: <BrandIcon name="zoom" />, desc: "Auto-join Zoom calls" },
           ]} />
           <Group title="Apps" desc="Integrate Octomeet across your tools." items={[
-            { name: "Octomeet Web Extension", icon: "🧩", desc: "Chrome extension" },
-            { name: "Slack", icon: "💬", desc: "Push notes to channels" },
-            { name: "Notion", icon: "📝", desc: "Send reports to Notion" },
-            { name: "Asana", icon: "✅", desc: "Create tasks from action items" },
-            { name: "Zapier", icon: "⚡", desc: "Automate workflows" },
-            { name: "Webhook", icon: "🔗", desc: "Send events to any URL" },
+            { name: "Octomeet Web Extension", icon: <BrandIcon name="extension" />, desc: "Chrome extension" },
+            { name: "Slack", icon: <BrandIcon name="slack" />, desc: "Push notes to channels" },
+            { name: "Notion", icon: <BrandIcon name="notion" />, desc: "Send reports to Notion" },
+            { name: "Asana", icon: <BrandIcon name="asana" />, desc: "Create tasks from action items" },
+            { name: "Zapier", icon: <BrandIcon name="zapier" />, desc: "Automate workflows" },
+            { name: "Webhook", icon: <BrandIcon name="mcp" />, desc: "Send events to any URL" },
           ]} />
           <Group title="CRM" desc="Sync meeting context to your CRM." items={[
-            { name: "HubSpot", icon: "🟠", desc: "Sync deals & contacts" },
-            { name: "Salesforce", icon: "☁️", desc: "Sync opportunities" },
+            { name: "HubSpot", icon: <BrandIcon name="hubspot" />, desc: "Sync deals & contacts" },
+            { name: "Salesforce", icon: <BrandIcon name="salesforce" />, desc: "Sync opportunities" },
           ]} />
           <Group title="AI" desc="Programmatically access meeting context." items={[
-            { name: "Anthropic Claude", icon: "🅰️", desc: "Connect Claude" },
-            { name: "OpenAI ChatGPT", icon: "🤖", desc: "Connect ChatGPT" },
-            { name: "MCP Server", icon: "🔌", desc: "Model Context Protocol" },
-            { name: "API", icon: "{ }", desc: "Build with the Octomeet API" },
+            { name: "Anthropic Claude", icon: <BrandIcon name="claude" />, desc: "Connect Claude" },
+            { name: "OpenAI ChatGPT", icon: <BrandIcon name="openai" />, desc: "Connect ChatGPT" },
+            { name: "MCP Server", icon: <BrandIcon name="mcp" />, desc: "Model Context Protocol" },
+            { name: "API", icon: <BrandIcon name="api" />, desc: "Build with the Octomeet API" },
           ]} />
         </div>
       </div>
@@ -1537,6 +1536,59 @@ function AppleIcon() {
     </svg>
   );
 }
+// Official-style brand logos (inline SVG) for integrations.
+function BrandIcon({ name, size = 20 }) {
+  const s = { width: size, height: size, viewBox: "0 0 24 24", "aria-hidden": true };
+  switch (name) {
+    case "google": return <span style={{ display: "inline-flex" }}><GoogleIcon /></span>;
+    case "microsoft": return <span style={{ display: "inline-flex" }}><MicrosoftIcon /></span>;
+    case "apple": return <span style={{ display: "inline-flex" }}><AppleIcon /></span>;
+    case "googleCalendar": return (
+      <svg {...s}><rect x="4.5" y="4.5" width="15" height="15" rx="2.5" fill="#fff" stroke="#DADCE0" /><path d="M4.5 7a2.5 2.5 0 0 1 2.5-2.5h1.5v15H7A2.5 2.5 0 0 1 4.5 17z" fill="#4285F4" opacity=".12" /><text x="12.2" y="15.6" textAnchor="middle" fontFamily="Arial" fontSize="8.5" fontWeight="700" fill="#4285F4">31</text></svg>
+    );
+    case "googleMeet": return (
+      <svg {...s}><path d="M13.5 12 18 8.6v6.8L13.5 12z" fill="#00AC47" /><path d="M3 8a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="#2684FC" /><path d="M13 9.3 18 8.6 16.8 6.2 13 7z" fill="#FFBA00" /><path d="M13 14.7 18 15.4l-1.2 2.4L13 17z" fill="#00832D" /><path d="M3 8a1 1 0 0 1 1-1h4l-2 5-3 1z" fill="#EA4335" opacity=".0" /></svg>
+    );
+    case "outlook": return (
+      <svg {...s}><rect x="3" y="5" width="18" height="14" rx="2.5" fill="#0F6CBD" /><path d="M11 8h8v8h-8z" fill="#fff" opacity=".25" /><ellipse cx="8" cy="12" rx="3.2" ry="3.6" fill="#fff" /><ellipse cx="8" cy="12" rx="1.4" ry="1.7" fill="#0F6CBD" /></svg>
+    );
+    case "zoom": return (
+      <svg {...s}><rect width="24" height="24" rx="6" fill="#2D8CFF" /><path d="M6 9.5A1.5 1.5 0 0 1 7.5 8h5A1.5 1.5 0 0 1 14 9.5v5A1.5 1.5 0 0 1 12.5 16h-5A1.5 1.5 0 0 1 6 14.5zM15 10.5l3-2v7l-3-2z" fill="#fff" /></svg>
+    );
+    case "teams": return (
+      <svg {...s}><rect width="24" height="24" rx="6" fill="#5059C9" /><circle cx="16" cy="8" r="2.2" fill="#fff" opacity=".85" /><rect x="6" y="8" width="9" height="9" rx="1.5" fill="#fff" /><text x="10.5" y="15" textAnchor="middle" fontFamily="Arial" fontSize="7" fontWeight="700" fill="#5059C9">T</text></svg>
+    );
+    case "slack": return (
+      <svg {...s}><path d="M9 13.5a1.6 1.6 0 1 1-1.6-1.6H9z" fill="#E01E5A" /><path d="M9.8 13.5a1.6 1.6 0 0 1 3.2 0v4a1.6 1.6 0 1 1-3.2 0z" fill="#E01E5A" /><path d="M10.5 9a1.6 1.6 0 1 1 1.6-1.6V9z" fill="#36C5F0" /><path d="M10.5 9.8a1.6 1.6 0 0 1 0 3.2h-4a1.6 1.6 0 1 1 0-3.2z" fill="#36C5F0" /><path d="M15 10.5a1.6 1.6 0 1 1 1.6 1.6H15z" fill="#2EB67D" /><path d="M14.2 10.5a1.6 1.6 0 0 1-3.2 0v-4a1.6 1.6 0 1 1 3.2 0z" fill="#2EB67D" /><path d="M13.5 15a1.6 1.6 0 1 1-1.6 1.6V15z" fill="#ECB22E" /><path d="M13.5 14.2a1.6 1.6 0 0 1 0-3.2h4a1.6 1.6 0 1 1 0 3.2z" fill="#ECB22E" /></svg>
+    );
+    case "hubspot": return (
+      <svg {...s} fill="#FF7A59"><circle cx="10" cy="14.5" r="4.3" fill="none" stroke="#FF7A59" strokeWidth="2.2" /><circle cx="17" cy="7" r="2.2" /><path d="M15.4 8.4 12 11.5" stroke="#FF7A59" strokeWidth="2.2" /><circle cx="17" cy="7" r="0.1" /></svg>
+    );
+    case "salesforce": return (
+      <svg {...s}><path d="M10 7.5a3 3 0 0 1 5.4-.6 3.2 3.2 0 0 1 4 3.4 3 3 0 0 1-1.4 5.7H7.5A3.5 3.5 0 0 1 6.6 9 3 3 0 0 1 10 7.5z" fill="#00A1E0" /></svg>
+    );
+    case "notion": return (
+      <svg {...s}><rect x="4" y="4" width="16" height="16" rx="3" fill="#fff" stroke="#111" strokeWidth="1.3" /><path d="M9 16V9l6 7V9" stroke="#111" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    );
+    case "asana": return (
+      <svg {...s} fill="#F06A6A"><circle cx="12" cy="7.5" r="3" /><circle cx="7.5" cy="15" r="3" /><circle cx="16.5" cy="15" r="3" /></svg>
+    );
+    case "zapier": return (
+      <svg {...s}><g stroke="#FF4F00" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14M7 7l10 10M17 7 7 17" /></g></svg>
+    );
+    case "claude": return (
+      <svg {...s}><rect width="24" height="24" rx="6" fill="#D97757" /><g stroke="#fff" strokeWidth="1.7" strokeLinecap="round"><path d="M12 6.5v11M6.5 9l11 6M17.5 9l-11 6" /></g></svg>
+    );
+    case "openai": return (
+      <svg {...s}><rect width="24" height="24" rx="6" fill="#111" /><path d="M12 7.5a3 3 0 0 1 3 3v3a3 3 0 0 1-6 0v-3a3 3 0 0 1 3-3z" fill="none" stroke="#fff" strokeWidth="1.4" /></svg>
+    );
+    case "mcp": return <span style={{ display: "inline-flex" }}><Link2 size={size - 2} className="text-indigo-500" /></span>;
+    case "api": return <span className="text-[12px] font-bold text-slate-600">{"{ }"}</span>;
+    case "extension": return <span style={{ display: "inline-flex" }}><OctoLogo size={size} /></span>;
+    default: return <span style={{ display: "inline-flex" }}><LayoutGrid size={size - 2} className="text-slate-400" /></span>;
+  }
+}
+
 function LoginView({ onLogin, onGoogle }) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
@@ -1617,10 +1669,10 @@ function SupportView({ onBack }) {
       </div>
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h2 className="text-xl font-bold text-slate-900">How can we help?</h2>
-        <p className="mt-1 text-sm text-slate-500">Find answers, contact us, or send feedback. (Pantalla base — la ajusto con tu captura.)</p>
+        <p className="mt-1 text-sm text-slate-500">Find answers, contact us, or send feedback.</p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           {cards.map((c) => (
-            <button key={c.title} onClick={() => toast(c.title + " — coming soon")} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-indigo-300 hover:shadow-sm">
+            <button key={c.title} onClick={() => { if (c.title === "Email support") { window.location.href = "mailto:support@octomeet.ai"; } else { toast(c.title + " — coming soon"); } }} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-indigo-300 hover:shadow-sm">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500"><c.icon size={18} /></div>
               <div><div className="text-sm font-semibold text-slate-800">{c.title}</div><div className="text-[13px] text-slate-500">{c.desc}</div></div>
             </button>
@@ -1729,19 +1781,19 @@ function ToggleRow({ title, desc, on, onChange, children }) {
     </div>
   );
 }
-function IntegRow({ name, icon, connectedAs, onConnect }) {
+function IntegRow({ name, brand, connectedAs }) {
   return (
     <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 last:border-0">
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-base">{icon}</div>
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white"><BrandIcon name={brand} size={20} /></div>
         <div>
           <div className="text-sm font-semibold text-slate-800">{name}</div>
           {connectedAs && <div className="text-[12px] text-emerald-600">{connectedAs} is connected</div>}
         </div>
       </div>
       {connectedAs
-        ? <button className="rounded-lg border border-indigo-300 px-4 py-1.5 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-50">Manage</button>
-        : <button className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500">Connect</button>}
+        ? <button onClick={() => toast("Manage " + name)} className="rounded-lg border border-indigo-300 px-4 py-1.5 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-50">Manage</button>
+        : <button onClick={() => toast("Connecting " + name + "…")} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500">Connect</button>}
     </div>
   );
 }
@@ -1775,6 +1827,7 @@ function AccountSettings({ onBack, lang, setLang }) {
   const [profile, setProfile] = useState({ name: "Nicolas Benech", jobTitle: "", roleLevel: "", department: "", email: "nicolas@octomeet.ai", photo: null });
   const [vocab, setVocab] = useState([]);
   const [newWord, setNewWord] = useState("");
+  const [slug, setSlug] = useState("nicolas-82n88");
   const fileRef = useRef(null);
   const onPhoto = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -1849,7 +1902,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <div className="text-sm font-semibold text-slate-800">Sign-In Methods</div>
                 <p className="mb-3 text-[13px] text-slate-500">Connect your accounts to sign in to Octomeet using your credentials from these providers.</p>
-                <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3"><span className="text-lg">🇬</span> <span className="text-sm font-medium text-slate-700">Google</span><Check size={15} className="ml-auto text-emerald-500" /></div>
+                <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3"><BrandIcon name="google" size={18} /> <span className="text-sm font-medium text-slate-700">Google</span><Check size={15} className="ml-auto text-emerald-500" /></div>
                 <div className="mt-3 flex gap-2">
                   <button onClick={() => toast("Sign-in method — coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Add Sign-In Method</button>
                   <button onClick={() => toast("Add password — coming soon")} className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Add Account Password</button>
@@ -1863,19 +1916,19 @@ function AccountSettings({ onBack, lang, setLang }) {
                 <div className="mb-2 text-sm font-bold text-slate-800">Calendar & Meetings</div>
                 <p className="mb-3 text-[13px] text-slate-500">Allow Octomeet to join your meetings and automatically generate meeting summaries</p>
                 <div className="rounded-xl border border-slate-200 bg-white">
-                  <IntegRow name="Google Calendar" icon="📅" connectedAs="nicolas@octomeet.ai" />
-                  <IntegRow name="Google Meet" icon="🎥" connectedAs="nicolas@octomeet.ai" />
-                  <IntegRow name="Outlook Calendar" icon="📧" />
-                  <IntegRow name="Zoom Calendar" icon="🎦" />
+                  <IntegRow name="Google Calendar" brand="googleCalendar" connectedAs="nicolas@octomeet.ai" />
+                  <IntegRow name="Google Meet" brand="googleMeet" connectedAs="nicolas@octomeet.ai" />
+                  <IntegRow name="Outlook Calendar" brand="outlook" />
+                  <IntegRow name="Zoom Calendar" brand="zoom" />
                 </div>
               </div>
               <div>
                 <div className="mb-2 text-sm font-bold text-slate-800">Apps</div>
                 <div className="rounded-xl border border-slate-200 bg-white">
-                  <IntegRow name="Octomeet Web Extension" icon="🧩" connectedAs="nicolas@octomeet.ai" />
-                  <IntegRow name="Slack" icon="💬" />
-                  <IntegRow name="HubSpot" icon="🟠" />
-                  <IntegRow name="Salesforce" icon="☁️" />
+                  <IntegRow name="Octomeet Web Extension" brand="extension" connectedAs="nicolas@octomeet.ai" />
+                  <IntegRow name="Slack" brand="slack" />
+                  <IntegRow name="HubSpot" brand="hubspot" />
+                  <IntegRow name="Salesforce" brand="salesforce" />
                 </div>
               </div>
             </>)}
@@ -1886,7 +1939,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <ToggleRow title="Auto-Join Calendar Events" desc="Auto-joins scheduled meetings from your connected calendar(s)." on={tg.autoJoinCal} onChange={(v) => set1("autoJoinCal", v)}>
                 {tg.autoJoinCal && (
                   <div className="mt-3 space-y-3">
-                    <div className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[12px] text-emerald-700">📅 Google Calendar ✓</div>
+                    <div className="inline-flex items-center gap-1.5 rounded bg-emerald-50 px-2 py-0.5 text-[12px] text-emerald-700"><BrandIcon name="googleCalendar" size={13} /> Google Calendar <Check size={12} /></div>
                     <div>
                       <div className="mb-1 text-[13px] font-semibold text-slate-700">Which Calendar Events</div>
                       <Radio label="All calendar events" desc="Octomeet joins every meeting on your calendar" def checked={whichEvents === "all"} onClick={() => setWhichEvents("all")} />
@@ -1965,7 +2018,7 @@ function AccountSettings({ onBack, lang, setLang }) {
                 <div><div className="text-sm font-semibold text-slate-800">Default conferencing platform</div><select className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-500 outline-none"><option>Select one</option><option>Google Meet</option><option>Zoom</option><option>Microsoft Teams</option></select></div>
                 <div>
                   <div className="text-sm font-semibold text-slate-800">Custom URL</div>
-                  <div className="mt-1 flex items-center gap-2"><span className="text-sm text-slate-500">cal.octomeet.ai/</span><input defaultValue="nicolas-82n88" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" /><button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Link copied"); }} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Copy</button></div>
+                  <div className="mt-1 flex items-center gap-2"><span className="text-sm text-slate-500">cal.octomeet.ai/</span><input value={slug} onChange={(e) => setSlug(e.target.value)} className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" /><button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/" + slug); } catch (e) {} toast("Link copied"); }} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Copy</button></div>
                 </div>
               </div>
               <ToggleRow title="Available hours" desc="Restrict scheduling to the hours you've designated as available (Mon–Fri, 9:00 AM – 5:00 PM)." on={tg.availHours} onChange={(v) => set1("availHours", v)} />
@@ -1992,7 +2045,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <div className="text-sm font-semibold text-slate-800">Sync Contacts</div>
                 <p className="mb-3 text-[13px] text-slate-500">Sync your contacts from Google or Microsoft to simplify sharing.</p>
-                <div className="flex gap-2"><button onClick={() => toast("Connect Google contacts — coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">🇬 Connect Google</button><button onClick={() => toast("Connect Microsoft contacts — coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">⊞ Connect Microsoft</button></div>
+                <div className="flex gap-2"><button onClick={() => toast("Connect Google contacts — coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><BrandIcon name="google" size={16} /> Connect Google</button><button onClick={() => toast("Connect Microsoft contacts — coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><BrandIcon name="microsoft" size={16} /> Connect Microsoft</button></div>
               </div>
               <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">No contact groups created<br /><span className="text-[13px]">Create a new group for easier sharing</span></div>
             </>)}
@@ -2261,7 +2314,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               </Card>
             </div>
             <div className="rounded-xl bg-indigo-50 p-4 text-sm text-indigo-700">
-              💡 El coaching detallado (clarity / inclusion / impact por hablante, con histórico para training de empleados) llega en una fase próxima.
+              💡 Detailed speaker coaching (clarity / inclusion / impact, with history for employee training) is coming soon.
             </div>
           </div>
         )}
@@ -2301,7 +2354,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
         {tab === "chapters" && (
           <div className="space-y-2">
             {meeting.topics.length ? meeting.topics.map((t, i) => (
-              <button key={i} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-200">
+              <button key={i} onClick={() => toast("Jump to: " + t)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-200">
                 <VideoThumb src={meeting.video} source={meeting.source} size={48} showBadge={false} />
                 <span className="text-[12px] font-mono text-indigo-500">{String(i).padStart(2, "0")}:{String((i * 7) % 60).padStart(2, "0")}</span>
                 <span className="text-sm font-medium text-slate-700">{t}</span>
@@ -2352,7 +2405,7 @@ function RecentSearches({ groups, onPick }) {
           </div>
         ))}
       </div>
-      <button className="flex items-center justify-center gap-2 border-t border-slate-200 py-3 text-[13px] font-semibold text-indigo-600 hover:bg-indigo-50/50"><Clock size={14} /> All Search History</button>
+      <button onClick={() => toast("Search history — coming soon")} className="flex items-center justify-center gap-2 border-t border-slate-200 py-3 text-[13px] font-semibold text-indigo-600 hover:bg-indigo-50/50"><Clock size={14} /> All Search History</button>
     </aside>
   );
 }
@@ -2432,7 +2485,7 @@ function ChatView({ meetings, onOpen, seed }) {
             <div className="mt-8 w-full max-w-3xl">
               <h2 className="mb-7 text-center text-3xl font-bold text-slate-900">What can I help you discover?</h2>
               <form onSubmit={(e) => { e.preventDefault(); send(); }}
-                className="flex items-center gap-2 rounded-2xl border-2 border-indigo-200 bg-white px-3 py-2.5 shadow-sm focus-within:border-indigo-400">
+                className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white shadow-sm px-3 py-2.5 shadow-sm focus-within:border-indigo-400">
                 <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-400"><Globe size={16} /><ChevronDown size={13} /></button>
                 <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask Octo anything..." className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-slate-400" />
                 <button type="submit" disabled={!input.trim()} className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40"><Send size={16} /></button>
@@ -2450,7 +2503,7 @@ function ChatView({ meetings, onOpen, seed }) {
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm"><Calendar size={18} className="text-sky-500" /></div>
                   <div className="h-10 w-10 rounded-lg border border-dashed border-slate-200 bg-white" />
                   <div className="h-10 w-10 rounded-lg border border-dashed border-slate-200 bg-white" />
-                  <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-50"><Plus size={18} /></button>
+                  <button onClick={() => toast("Add a source — coming soon")} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-50"><Plus size={18} /></button>
                 </div>
               </div>
             </div>

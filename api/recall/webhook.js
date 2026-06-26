@@ -29,6 +29,11 @@ async function analyze(transcriptText, title) {
 
 export default async function handler(req, res) {
   try {
+    // Shared-secret guard: configure the Recall webhook URL with ?key=RECALL_WEBHOOK_SECRET.
+    const key = new URL(req.url, "http://x").searchParams.get("key");
+    if (process.env.RECALL_WEBHOOK_SECRET && key !== process.env.RECALL_WEBHOOK_SECRET) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
     const ev = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const botId = ev?.data?.bot_id || ev?.bot?.id || ev?.data?.bot?.id || ev?.data?.id;
     const type = ev?.event || ev?.type || "";
@@ -52,17 +57,25 @@ export default async function handler(req, res) {
     } catch (e) { /* transcript fetch failed */ }
 
     const ai = await analyze(text, meeting.title);
+    // Insert the report. A UNIQUE(meeting_id) constraint dedupes racing deliveries.
+    try {
+      await sb("reports", {
+        method: "POST",
+        body: {
+          meeting_id: meeting.id, user_id: meeting.user_id,
+          summary: ai.summary || "", action_items: ai.actionItems || [], key_questions: ai.keyQuestions || [],
+          topics: ai.topics || [], transcript: text, scores: ai.scores || {}, read_score: (ai.scores && ai.scores.overall) || 80,
+        },
+      });
+    } catch (e) {
+      // 23505 = unique_violation -> another delivery already wrote the report; safe to continue.
+      if (!/23505|duplicate/i.test(String(e.message || ""))) throw e;
+    }
     await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { status: "done" } });
-    await sb("reports", {
-      method: "POST",
-      body: {
-        meeting_id: meeting.id, user_id: meeting.user_id,
-        summary: ai.summary || "", action_items: ai.actionItems || [], key_questions: ai.keyQuestions || [],
-        topics: ai.topics || [], transcript: text, scores: ai.scores || {}, read_score: (ai.scores && ai.scores.overall) || 80,
-      },
-    });
     res.status(200).json({ ok: true });
   } catch (e) {
-    res.status(200).json({ ok: false, error: String(e.message || e) });
+    // Return 5xx on transient failures so Recall retries; status stays != 'done'.
+    console.error("Recall webhook error:", e && (e.stack || e.message || e));
+    res.status(500).json({ ok: false, error: "processing failed" });
   }
 }

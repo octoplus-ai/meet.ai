@@ -19,7 +19,7 @@ export async function currentUser(req) {
   const c = parseCookies(req);
   const t = c.om_session;
   if (!t) return null;
-  const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&select=user_id`);
+  const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
   if (!s.length) return null;
   const u = await sb(`app_users?id=eq.${s[0].user_id}&select=*`);
   return u[0] || null;
