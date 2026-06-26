@@ -358,6 +358,30 @@ const scoreColor = (n) => (n >= 80 ? "#10B981" : n >= 70 ? "#F59E0B" : "#F43F5E"
 const OWNER_COLORS = { NB: "#F472B6", AS: "#FB923C", SL: "#34D399" };
 const ownerColor = (o) => OWNER_COLORS[o] || "#94A3B8";
 
+/* ------------------------------ toast ------------------------------ */
+function toast(msg) { try { window.dispatchEvent(new CustomEvent("octo-toast", { detail: msg })); } catch (e) { /* ignore */ } }
+function Toaster() {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    const h = (e) => {
+      const id = Math.random().toString(36).slice(2);
+      setItems((x) => [...x, { id, msg: e.detail }]);
+      setTimeout(() => setItems((x) => x.filter((i) => i.id !== id)), 2400);
+    };
+    window.addEventListener("octo-toast", h);
+    return () => window.removeEventListener("octo-toast", h);
+  }, []);
+  return (
+    <div className="pointer-events-none fixed bottom-5 right-5 z-[100] flex flex-col gap-2">
+      {items.map((i) => (
+        <div key={i.id} className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-xl">
+          <CheckCircle2 size={15} className="text-emerald-400" /> {i.msg}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* --------------------------- small UI bits ------------------------- */
 function PlatformBadge({ source }) {
   const map = {
@@ -499,6 +523,7 @@ export default function App() {
   return (
     <div dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
       <StyleInject />
+      <Toaster />
       <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
       <main className="flex flex-1 flex-col overflow-hidden">
         {view === "reports" && <ReportsList meetings={meetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} t={t} />}
@@ -696,9 +721,9 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
 }
 
 /* ============================ REPORTS LIST ========================= */
-function FilterBtn({ label, icon: Icon }) {
+function FilterBtn({ label, icon: Icon, onClick }) {
   return (
-    <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
+    <button onClick={onClick || (() => toast(label + " — filtro próximamente"))} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
       {Icon && <Icon size={14} className="text-slate-400" />}{label}<ChevronDown size={14} className="text-slate-400" />
     </button>
   );
@@ -769,8 +794,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t }) {
               <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-indigo-50 px-4 py-3">
                 <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">✨ NEW!</span>
                 <span className="flex-1 text-sm text-slate-700">Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.</span>
-                <button className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="text-orange-400">◆</span> Add Hubspot</button>
-                <button className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="text-sky-400">☁</span> Add Salesforce</button>
+                <button onClick={() => toast("Connect HubSpot — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="text-orange-400">◆</span> Add Hubspot</button>
+                <button onClick={() => toast("Connect Salesforce — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="text-sky-400">☁</span> Add Salesforce</button>
                 <button onClick={() => setShowCrm(false)} className="text-[13px] font-medium text-slate-500 hover:text-slate-700">Dismiss</button>
               </div>
             )}
@@ -786,7 +811,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t }) {
               <FilterBtn label={t("type")} />
               <FilterBtn label={t("source")} />
               <FilterBtn label={t("folder")} />
-              <button className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-400 hover:bg-slate-50"><PanelRightClose size={16} /></button>
+              <button onClick={() => toast("Vista compacta — próximamente")} className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-400 hover:bg-slate-50"><PanelRightClose size={16} /></button>
             </div>
 
             <div className="mt-4 overflow-hidden">
@@ -1034,7 +1059,7 @@ function FoldersView({ onAsk }) {
             </div>
             <FilterBtn label="Folder Types" icon={Folder} />
           </div>
-          <button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><FolderPlus size={15} /> New Folder</button>
+          <button onClick={() => toast("New folder — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><FolderPlus size={15} /> New Folder</button>
         </div>
         <div className="grid grid-cols-[1fr_120px_90px_140px_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
           <div>Folder</div><div>Members</div><div>Reports</div><div>Last Updated</div><div></div>
@@ -1087,7 +1112,7 @@ function CalendarView({ onAsk, initialTab }) {
     : events;
   return (
     <>
-      <SectionTop title="Calendar" onAsk={onAsk} right={<button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><Link2 size={15} /> Scheduling Link</button>} />
+      <SectionTop title="Calendar" onAsk={onAsk} right={<button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Scheduling link copied"); }} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><Link2 size={15} /> Scheduling Link</button>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="mb-5 flex items-center gap-5 border-b border-slate-200">
           {[{ k: "upcoming", l: "Upcoming" }, { k: "scheduling", l: "Scheduling" }].map((tb) => (
@@ -1123,7 +1148,7 @@ function CalendarView({ onAsk, initialTab }) {
           <div className="space-y-6">
             <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm">
               <span className="text-slate-600">📅 Scheduling based on: <b>nicolas@octomeet.ai</b> (Google Calendar)</span>
-              <span className="flex gap-4 text-[13px] font-semibold text-indigo-600"><button>Change Calendar</button><button>Scheduling Settings</button></span>
+              <span className="flex gap-4 text-[13px] font-semibold text-indigo-600"><button onClick={() => toast("Change calendar — coming soon")}>Change Calendar</button><button onClick={() => toast("Scheduling settings — coming soon")}>Scheduling Settings</button></span>
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-900">Default scheduling links</h3>
@@ -1297,11 +1322,12 @@ function RecommendationsView({ onAsk }) {
     { name: "Lumio — 1st Intro", n: 1, date: "Mon 6/22 · 9:00 AM - 9:30 AM" },
   ];
   const [sel, setSel] = useState(0);
-  const items = [
+  const [items, setItems] = useState([
     { text: "Nicolas Benech will send an email with the company's organizational structure and operational details to start implementation.", quote: "Yeah, the basic thing we need to start is the structure of the company with the organization.", who: "Nicolas Benech" },
     { text: "Nicolas Benech will arrange a meeting with the customer's IT team to discuss sales and data integration.", quote: "If you want to see all the sales and everything, we can do a meeting with the IT and everything.", who: "Nicolas Benech" },
     { text: "Tony Cola will send an email to arrange a follow-up meeting.", quote: "Send us an email and we meet up together and everything.", who: "Daniel Lopez" },
-  ];
+  ]);
+  const resolve = (i, kind) => { setItems((arr) => arr.filter((_, j) => j !== i)); toast(kind); };
   return (
     <>
       <SectionTop title="Recommendations" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white"><Calendar size={14} /> Apr 26 - Jun 26, 2026</span>} />
@@ -1327,8 +1353,8 @@ function RecommendationsView({ onAsk }) {
                 <div className="mb-3 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-sm font-semibold text-slate-800"><CheckCircle2 size={16} className="text-indigo-500" /> Action item for you</span>
                   <div className="flex gap-2">
-                    <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><ThumbsUp size={14} /> Acknowledge</button>
-                    <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-rose-600 hover:bg-rose-50"><X size={14} /> Ignore</button>
+                    <button onClick={() => resolve(i, "Acknowledged")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><ThumbsUp size={14} /> Acknowledge</button>
+                    <button onClick={() => resolve(i, "Ignored")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-rose-600 hover:bg-rose-50"><X size={14} /> Ignore</button>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
@@ -1566,7 +1592,7 @@ function SupportView({ onBack }) {
         <p className="mt-1 text-sm text-slate-500">Find answers, contact us, or send feedback. (Pantalla base — la ajusto con tu captura.)</p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           {cards.map((c) => (
-            <button key={c.title} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-indigo-300 hover:shadow-sm">
+            <button key={c.title} onClick={() => toast(c.title + " — coming soon")} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-indigo-300 hover:shadow-sm">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500"><c.icon size={18} /></div>
               <div><div className="text-sm font-semibold text-slate-800">{c.title}</div><div className="text-[13px] text-slate-500">{c.desc}</div></div>
             </button>
@@ -1642,7 +1668,7 @@ function PlansView({ onBack }) {
                 <span className="text-3xl font-extrabold text-slate-900">{annual ? p.annual : p.monthly}</span>
               </div>
               <p className="mt-1 text-[11px] text-slate-400">{p.note}{annual && p.name !== "Free" ? " · billed annually" : ""}</p>
-              <button disabled={p.disabled} className={"mt-4 rounded-lg py-2.5 text-sm font-semibold transition " +
+              <button disabled={p.disabled} onClick={() => toast(p.cta + " — coming soon")} className={"mt-4 rounded-lg py-2.5 text-sm font-semibold transition " +
                 (p.disabled ? "cursor-default bg-slate-100 text-slate-400" : "bg-indigo-600 text-white hover:bg-indigo-500")}>{p.cta}</button>
               <ul className="mt-5 space-y-2">
                 {p.features.map((f, i) => (
@@ -1692,7 +1718,44 @@ function IntegRow({ name, icon, connectedAs, onConnect }) {
   );
 }
 
+function EditableField({ label, value, onSave, placeholder }) {
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(value || "");
+  useEffect(() => { setV(value || ""); }, [value]);
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-0">
+      <span className="shrink-0 text-sm font-medium text-slate-700">{label}</span>
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <input autoFocus value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder}
+            onKeyDown={(e) => { if (e.key === "Enter") { onSave(v); setEditing(false); toast("Saved"); } if (e.key === "Escape") setEditing(false); }}
+            className="w-56 rounded-lg border border-indigo-300 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-500" />
+          <button onClick={() => { onSave(v); setEditing(false); toast("Saved"); }} className="rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Save</button>
+          <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600"><X size={15} /></button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <span className={"text-sm " + (value ? "text-slate-700" : "italic text-slate-400")}>{value || placeholder || "Not provided"}</span>
+          <button onClick={() => setEditing(true)} className="text-slate-300 transition hover:text-indigo-500" title="Edit">✎</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AccountSettings({ onBack, lang, setLang }) {
+  const [profile, setProfile] = useState({ name: "Nicolas Benech", jobTitle: "", roleLevel: "", department: "", email: "nicolas@octomeet.ai", photo: null });
+  const [vocab, setVocab] = useState([]);
+  const [newWord, setNewWord] = useState("");
+  const fileRef = useRef(null);
+  const onPhoto = (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => { setProfile((p) => ({ ...p, photo: reader.result })); toast("Photo updated"); };
+    reader.readAsDataURL(f);
+  };
+  const setP = (k, val) => setProfile((p) => ({ ...p, [k]: val }));
   const SUBNAV = ["Profile & Account", "Integrations", "Meeting Recording", "Report Content", "Report Sharing", "Notifications", "Ask Octo", "Smart Scheduler", "Folders", "Contacts & Groups", "Custom Vocabulary", "Advanced"];
   const [sec, setSec] = useState(0);
   const [tg, setTg] = useState({
@@ -1730,20 +1793,23 @@ function AccountSettings({ onBack, lang, setLang }) {
             {sec === 0 && (<>
               <SecHead icon={Users} title="Profile & Account" desc="Manage name, role, email, password, and SSO settings." />
               <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
-                <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Upload photo</button>
+                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full text-xl font-bold text-white" style={{ background: ownerColor(initialsOf(profile.name)) }}>
+                  {profile.photo ? <img src={profile.photo} alt="" className="h-full w-full object-cover" /> : initialsOf(profile.name)}
+                </div>
+                <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} className="hidden" />
+                <button onClick={() => fileRef.current && fileRef.current.click()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Upload photo</button>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white">
-                <Field label="Name" value="Nicolas Benech" edit />
-                <Field label="Job title" value="Not provided" muted edit />
-                <Field label="Role level" value="Not provided" muted />
-                <Field label="Department" value="Not provided" muted />
+                <EditableField label="Name" value={profile.name} onSave={(v) => setP("name", v)} />
+                <EditableField label="Job title" value={profile.jobTitle} placeholder="Not provided" onSave={(v) => setP("jobTitle", v)} />
+                <EditableField label="Role level" value={profile.roleLevel} placeholder="Not provided" onSave={(v) => setP("roleLevel", v)} />
+                <EditableField label="Department" value={profile.department} placeholder="Not provided" onSave={(v) => setP("department", v)} />
                 <div className="border-t border-slate-100 p-4">
                   <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-[13px] text-amber-800">
                     <AlertTriangle size={15} className="mt-0.5 shrink-0" /> Your primary email cannot be changed because it is connected to an SSO account. To update it, you must first add a password below.
                   </div>
                 </div>
-                <Field label="Primary Email" value="nicolas@octomeet.ai" edit />
+                <EditableField label="Primary Email" value={profile.email} onSave={(v) => setP("email", v)} />
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <label className="text-sm font-semibold text-slate-800">Default Language</label>
@@ -1757,8 +1823,8 @@ function AccountSettings({ onBack, lang, setLang }) {
                 <p className="mb-3 text-[13px] text-slate-500">Connect your accounts to sign in to Octomeet using your credentials from these providers.</p>
                 <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3"><span className="text-lg">🇬</span> <span className="text-sm font-medium text-slate-700">Google</span><Check size={15} className="ml-auto text-emerald-500" /></div>
                 <div className="mt-3 flex gap-2">
-                  <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Add Sign-In Method</button>
-                  <button className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Add Account Password</button>
+                  <button onClick={() => toast("Sign-in method — coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Add Sign-In Method</button>
+                  <button onClick={() => toast("Add password — coming soon")} className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Add Account Password</button>
                 </div>
               </div>
             </>)}
@@ -1859,7 +1925,7 @@ function AccountSettings({ onBack, lang, setLang }) {
             {sec === 6 && (<>
               <SecHead icon={Sparkles} title="Ask Octo" desc="Manage Ask Octo settings and chat history." />
               <ToggleRow title="Chat History" desc="Automatically save your past chats so you can revisit them later. Only visible to you." on={tg.chatHistory} onChange={(v) => set1("chatHistory", v)}>
-                <button className="mt-3 rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">Delete All Chat History</button>
+                <button onClick={() => toast("Chat history deleted")} className="mt-3 rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">Delete All Chat History</button>
               </ToggleRow>
             </>)}
 
@@ -1871,7 +1937,7 @@ function AccountSettings({ onBack, lang, setLang }) {
                 <div><div className="text-sm font-semibold text-slate-800">Default conferencing platform</div><select className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-500 outline-none"><option>Select one</option><option>Google Meet</option><option>Zoom</option><option>Microsoft Teams</option></select></div>
                 <div>
                   <div className="text-sm font-semibold text-slate-800">Custom URL</div>
-                  <div className="mt-1 flex items-center gap-2"><span className="text-sm text-slate-500">cal.octomeet.ai/</span><input defaultValue="nicolas-82n88" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" /><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Copy</button></div>
+                  <div className="mt-1 flex items-center gap-2"><span className="text-sm text-slate-500">cal.octomeet.ai/</span><input defaultValue="nicolas-82n88" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" /><button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Link copied"); }} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Copy</button></div>
                 </div>
               </div>
               <ToggleRow title="Available hours" desc="Restrict scheduling to the hours you've designated as available (Mon–Fri, 9:00 AM – 5:00 PM)." on={tg.availHours} onChange={(v) => set1("availHours", v)} />
@@ -1880,7 +1946,7 @@ function AccountSettings({ onBack, lang, setLang }) {
 
             {sec === 8 && (<>
               <SecHead icon={Folder} title="Folders" desc="Control how meeting reports are sorted and displayed in folders." />
-              <div><div className="mb-1 text-sm font-bold text-slate-800">Custom Folders</div><p className="mb-3 text-[13px] text-slate-500">Create and manage your own folders to organize meeting reports your way.</p><button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><FolderPlus size={16} /> Add New Folder</button></div>
+              <div><div className="mb-1 text-sm font-bold text-slate-800">Custom Folders</div><p className="mb-3 text-[13px] text-slate-500">Create and manage your own folders to organize meeting reports your way.</p><button onClick={() => toast("New folder — coming soon")} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><FolderPlus size={16} /> Add New Folder</button></div>
               <div>
                 <div className="mb-1 text-sm font-bold text-slate-800">Smart Folders</div>
                 <p className="mb-3 text-[13px] text-slate-500">Auto-organize reports by topic. Show or hide folders that aren't relevant to you.</p>
@@ -1898,7 +1964,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <div className="text-sm font-semibold text-slate-800">Sync Contacts</div>
                 <p className="mb-3 text-[13px] text-slate-500">Sync your contacts from Google or Microsoft to simplify sharing.</p>
-                <div className="flex gap-2"><button className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">🇬 Connect Google</button><button className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">⊞ Connect Microsoft</button></div>
+                <div className="flex gap-2"><button onClick={() => toast("Connect Google contacts — coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">🇬 Connect Google</button><button onClick={() => toast("Connect Microsoft contacts — coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">⊞ Connect Microsoft</button></div>
               </div>
               <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">No contact groups created<br /><span className="text-[13px]">Create a new group for easier sharing</span></div>
             </>)}
@@ -1906,8 +1972,14 @@ function AccountSettings({ onBack, lang, setLang }) {
             {sec === 10 && (<>
               <SecHead icon={Type} title="Custom Vocabulary" desc="Boost words for better transcript accuracy." />
               <div className="rounded-lg bg-indigo-50 p-3 text-[13px] text-indigo-700">Maximum 100 entries.</div>
-              <div className="text-sm font-semibold text-slate-700">0 custom words</div>
-              <button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><Plus size={16} /> Add new</button>
+              <div className="text-sm font-semibold text-slate-700">{vocab.length} custom words</div>
+              <div className="flex gap-2">
+                <input value={newWord} onChange={(e) => setNewWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} placeholder="Add a word, name or term…" className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
+                <button onClick={() => { if (newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><Plus size={16} /> Add new</button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {vocab.map((w, i) => (<span key={i} className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">{w}<button onClick={() => setVocab((v) => v.filter((_, j) => j !== i))} className="text-slate-400 hover:text-rose-500"><X size={13} /></button></span>))}
+              </div>
             </>)}
 
             {sec === 11 && (<>
@@ -1916,13 +1988,13 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="text-sm font-semibold text-slate-800">Active Sessions</div>
                 <p className="mb-3 text-[13px] text-slate-500">See where your account is signed in.</p>
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3"><div><div className="text-sm font-medium text-slate-700">Chrome Browser (Current)</div><div className="text-[12px] text-slate-400">BR · Active just now</div></div><button className="text-[13px] font-semibold text-indigo-600">Log out</button></div>
-                <button className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Log out of all sessions</button>
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3"><div><div className="text-sm font-medium text-slate-700">Chrome Browser (Current)</div><div className="text-[12px] text-slate-400">BR · Active just now</div></div><button onClick={() => toast("Session logged out")} className="text-[13px] font-semibold text-indigo-600">Log out</button></div>
+                <button onClick={() => toast("Logged out of all sessions")} className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Log out of all sessions</button>
               </div>
               <div className="rounded-xl border border-rose-200 bg-white p-4">
                 <div className="text-sm font-semibold text-slate-800">Delete Account</div>
                 <p className="mb-3 text-[13px] text-slate-500">This action is permanent and cannot be undone.</p>
-                <button className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Delete my account</button>
+                <button onClick={() => toast("Account deletion requested")} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Delete my account</button>
               </div>
             </>)}
 
@@ -1980,15 +2052,33 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
     { k: "chapters", label: "Chapters", icon: ListChecks },
   ];
 
+  const downloadReport = () => {
+    const lines = [
+      `# ${meeting.title}`,
+      `${fmtDateShort(meeting.date)} · ${meeting.timeStart} - ${meeting.timeEnd} · ${meeting.source}`,
+      `Read Score ${meeting.scores.overall} · Engagement ${meeting.scores.engagement} · Sentiment ${meeting.scores.sentiment}`,
+      "", "## Summary", meeting.summary,
+      "", "## Action Items", ...meeting.actionItems.map((a) => `- ${a.task} (${a.owner})`),
+      "", "## Key Questions", ...meeting.keyQuestions.map((q) => `- ${q}`),
+      "", "## Transcript", ...meeting.transcript.map((tt) => `[${tt.t}] ${tt.speaker}: ${tt.text}`),
+    ].join("\n");
+    const url = URL.createObjectURL(new Blob([lines], { type: "text/plain" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = meeting.title.replace(/[^a-z0-9]+/gi, "_") + ".txt"; a.click();
+    URL.revokeObjectURL(url);
+    toast("Report downloaded");
+  };
+  const shareReport = async () => { try { await navigator.clipboard.writeText(window.location.href); } catch (e) {} toast("Report link copied"); };
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between">
           <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download</button>
-            <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Share2 size={14} /> Push to…</button>
-            <button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500"><Share2 size={14} /> Share</button>
+            <button onClick={downloadReport} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download</button>
+            <button onClick={() => toast("Push to Slack/Notion/CRM — coming soon")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Share2 size={14} /> Push to…</button>
+            <button onClick={shareReport} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500"><Share2 size={14} /> Share</button>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-400">
