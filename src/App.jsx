@@ -6,7 +6,7 @@ import {
   ArrowLeft, Send, Loader2, CheckCircle2, Circle, Clock, Video, Hash, Target,
   ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
   Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play,
-  Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose,
+  Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type,
 } from "lucide-react";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -488,6 +488,7 @@ export default function App() {
         {view === "upload" && <UploadView onSave={async (m) => { await persist([m, ...meetings]); openMeeting(m.id); }} onCancel={() => setView("reports")} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
         {view === "plans" && <PlansView onBack={() => setView("reports")} />}
+        {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} />}
         {["folders", "calendar", "for-you", "coaching", "recommendations", "meeting-policy", "integrations"].includes(view) && (
           <Placeholder section={NAV.find((n) => n.k === view)} onReports={() => setView("reports")} t={t} />
         )}
@@ -573,7 +574,7 @@ function Sidebar({ view, setView, t, lang, setLang }) {
           <div className="flex flex-col items-center gap-3">
             <button title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
             <button onClick={copyLink} title={t("smartScheduler")} className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-600 text-white hover:bg-indigo-500"><Link2 size={14} /></button>
-            <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
+            <button onClick={() => setView("account")} title="Account Settings" className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</button>
           </div>
         ) : (
           <>
@@ -591,13 +592,13 @@ function Sidebar({ view, setView, t, lang, setLang }) {
                 <button className="rounded-md bg-white/10 px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/15">{t("manage")}</button>
               </div>
             </div>
-            <div className="flex items-center gap-2 rounded-lg px-1 py-1">
+            <button onClick={() => setView("account")} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-white/5">
               <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-[13px] font-medium text-white">Nicolas Benech</div>
                 <div className="truncate text-[11px] text-slate-500">nicolas@octomeet.ai</div>
               </div>
-            </div>
+            </button>
           </>
         )}
       </div>
@@ -966,6 +967,301 @@ function PlansView({ onBack }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ========================= ACCOUNT SETTINGS ======================= */
+function ToggleRow({ title, desc, on, onChange, children }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-slate-800">{title}</div>
+        {desc && <div className="mt-0.5 text-[13px] leading-relaxed text-slate-500">{desc}</div>}
+        {children}
+      </div>
+      <Toggle on={on} onChange={onChange} />
+    </div>
+  );
+}
+function IntegRow({ name, icon, connectedAs, onConnect }) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 last:border-0">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-base">{icon}</div>
+        <div>
+          <div className="text-sm font-semibold text-slate-800">{name}</div>
+          {connectedAs && <div className="text-[12px] text-emerald-600">{connectedAs} is connected</div>}
+        </div>
+      </div>
+      {connectedAs
+        ? <button className="rounded-lg border border-indigo-300 px-4 py-1.5 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-50">Manage</button>
+        : <button className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500">Connect</button>}
+    </div>
+  );
+}
+
+function AccountSettings({ onBack, lang, setLang }) {
+  const SUBNAV = ["Profile & Account", "Integrations", "Meeting Recording", "Report Content", "Report Sharing", "Notifications", "Ask Octo", "Smart Scheduler", "Folders", "Contacts & Groups", "Custom Vocabulary", "Advanced"];
+  const [sec, setSec] = useState(0);
+  const [tg, setTg] = useState({
+    autoJoinCal: true, autoJoinUnsched: true, autoNotes: true, transcription: true, playback: true, affective: true,
+    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false,
+    daily: false, topicReadouts: true, weeklyRecaps: true, recs: true, productUpdates: true, accountInfo: true,
+    chatHistory: true, smartLinks: true, availHours: true, minNotice: true, domainDiscovery: true, cxp: false,
+  });
+  const [whichEvents, setWhichEvents] = useState("all");
+  const [whoInvited, setWhoInvited] = useState("any");
+  const set1 = (k, v) => setTg((p) => ({ ...p, [k]: v }));
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
+        <button onClick={onBack}><ChevronLeft size={18} className="text-slate-400" /></button>
+        <h1 className="text-lg font-bold text-slate-900">Account Settings</h1>
+      </div>
+
+      <div className="flex">
+        {/* sub-nav */}
+        <div className="w-56 shrink-0 border-r border-slate-200 bg-white py-3">
+          {SUBNAV.map((s, i) => (
+            <button key={s} onClick={() => setSec(i)}
+              className={"block w-full px-5 py-2.5 text-left text-[14px] transition " + (sec === i ? "bg-indigo-50 font-semibold text-indigo-700" : "text-slate-600 hover:bg-slate-50")}>
+              {s}
+            </button>
+          ))}
+        </div>
+
+        {/* content */}
+        <div className="flex-1 overflow-y-auto px-8 py-7">
+          <div className="mx-auto max-w-2xl space-y-5">
+
+            {sec === 0 && (<>
+              <SecHead icon={Users} title="Profile & Account" desc="Manage name, role, email, password, and SSO settings." />
+              <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
+                <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Upload photo</button>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white">
+                <Field label="Name" value="Nicolas Benech" edit />
+                <Field label="Job title" value="Not provided" muted edit />
+                <Field label="Role level" value="Not provided" muted />
+                <Field label="Department" value="Not provided" muted />
+                <div className="border-t border-slate-100 p-4">
+                  <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-[13px] text-amber-800">
+                    <AlertTriangle size={15} className="mt-0.5 shrink-0" /> Your primary email cannot be changed because it is connected to an SSO account. To update it, you must first add a password below.
+                  </div>
+                </div>
+                <Field label="Primary Email" value="nicolas@octomeet.ai" edit />
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <label className="text-sm font-semibold text-slate-800">Default Language</label>
+                <p className="mb-2 text-[13px] text-slate-500">Set your default language for the Octomeet dashboard</p>
+                <select value={lang} onChange={(e) => setLang(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
+                  {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+                </select>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <div className="text-sm font-semibold text-slate-800">Sign-In Methods</div>
+                <p className="mb-3 text-[13px] text-slate-500">Connect your accounts to sign in to Octomeet using your credentials from these providers.</p>
+                <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3"><span className="text-lg">🇬</span> <span className="text-sm font-medium text-slate-700">Google</span><Check size={15} className="ml-auto text-emerald-500" /></div>
+                <div className="mt-3 flex gap-2">
+                  <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Add Sign-In Method</button>
+                  <button className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Add Account Password</button>
+                </div>
+              </div>
+            </>)}
+
+            {sec === 1 && (<>
+              <SecHead icon={LayoutGrid} title="Integrations" desc="Manage and connect external tools and services to Octomeet." />
+              <div>
+                <div className="mb-2 text-sm font-bold text-slate-800">Calendar & Meetings</div>
+                <p className="mb-3 text-[13px] text-slate-500">Allow Octomeet to join your meetings and automatically generate meeting summaries</p>
+                <div className="rounded-xl border border-slate-200 bg-white">
+                  <IntegRow name="Google Calendar" icon="📅" connectedAs="nicolas@octomeet.ai" />
+                  <IntegRow name="Google Meet" icon="🎥" connectedAs="nicolas@octomeet.ai" />
+                  <IntegRow name="Outlook Calendar" icon="📧" />
+                  <IntegRow name="Zoom Calendar" icon="🎦" />
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-sm font-bold text-slate-800">Apps</div>
+                <div className="rounded-xl border border-slate-200 bg-white">
+                  <IntegRow name="Octomeet Web Extension" icon="🧩" connectedAs="nicolas@octomeet.ai" />
+                  <IntegRow name="Slack" icon="💬" />
+                  <IntegRow name="HubSpot" icon="🟠" />
+                  <IntegRow name="Salesforce" icon="☁️" />
+                </div>
+              </div>
+            </>)}
+
+            {sec === 2 && (<>
+              <SecHead icon={Video} title="Meeting Recording" desc="Manage how your Octomeet Assistant joins and appears in meetings." />
+              <div className="text-sm font-bold text-slate-800">Auto-Join Preferences</div>
+              <ToggleRow title="Auto-Join Calendar Events" desc="Auto-joins scheduled meetings from your connected calendar(s)." on={tg.autoJoinCal} onChange={(v) => set1("autoJoinCal", v)}>
+                {tg.autoJoinCal && (
+                  <div className="mt-3 space-y-3">
+                    <div className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[12px] text-emerald-700">📅 Google Calendar ✓</div>
+                    <div>
+                      <div className="mb-1 text-[13px] font-semibold text-slate-700">Which Calendar Events</div>
+                      <Radio label="All calendar events" desc="Octomeet joins every meeting on your calendar" def checked={whichEvents === "all"} onClick={() => setWhichEvents("all")} />
+                      <Radio label="Calendar events I'm hosting" desc="Octomeet only joins meetings you created or own" checked={whichEvents === "host"} onClick={() => setWhichEvents("host")} />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-[13px] font-semibold text-slate-700">Who's Invited</div>
+                      <Radio label="Any participants" desc="Join regardless of who is on the calendar invite" def checked={whoInvited === "any"} onClick={() => setWhoInvited("any")} />
+                      <Radio label="Internal participants only" desc="Only join when all invitees are from your domain (@octomeet.ai)" checked={whoInvited === "internal"} onClick={() => setWhoInvited("internal")} />
+                    </div>
+                  </div>
+                )}
+              </ToggleRow>
+              <ToggleRow title="Auto-Join Unscheduled Meetings" desc="Octomeet automatically joins unscheduled calls started in Google Meet or Zoom." on={tg.autoJoinUnsched} onChange={(v) => set1("autoJoinUnsched", v)} />
+              <div className="text-sm font-bold text-slate-800">Assistant Appearance</div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="text-sm font-semibold text-slate-800">Assistant Name</div>
+                <p className="mb-2 text-[13px] text-slate-500">Choose the name your Assistant will show when it joins a meeting.</p>
+                <select className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
+                  <option>octomeet.ai meeting notes</option><option>Meeting Analytics from Octomeet</option><option>Nicolas's Assistant</option><option>Nicolas's Notetaker</option>
+                </select>
+              </div>
+            </>)}
+
+            {sec === 3 && (<>
+              <SecHead icon={Sparkles} title="Report Content" desc="Manage what's captured in your reports and how it's presented." />
+              <ToggleRow title="Automatic Meeting Notes" desc="Automatically generate AI-powered summaries, chapters, action items, and key questions, even when transcripts or recordings are disabled." on={tg.autoNotes} onChange={(v) => set1("autoNotes", v)} />
+              <ToggleRow title="Transcription" desc="Enable transcription for meeting reports you own." on={tg.transcription} onChange={(v) => set1("transcription", v)} />
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="text-sm font-semibold text-slate-800">Output Language</div>
+                <p className="mb-2 text-[13px] text-slate-500">Octomeet generates transcripts and notes in the meeting's primary language. You can override this.</p>
+                <select className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400"><option>Auto-Detected (Default)</option>{LANGS.map((l) => <option key={l.code}>{l.label}</option>)}</select>
+              </div>
+              <ToggleRow title="Audio & Video Playback" desc="Enable playback for meeting reports you own. Only available with an Enterprise or Enterprise+ plan." on={tg.playback} onChange={(v) => set1("playback", v)} />
+              <ToggleRow title="Affective metrics" desc="Include metrics that calculate engagement, sentiment, charisma, and bias in reports." on={tg.affective} onChange={(v) => set1("affective", v)} />
+            </>)}
+
+            {sec === 4 && (<>
+              <SecHead icon={Share2} title="Report Sharing" desc="Manage how reports are shared with meeting participants." />
+              <div className="text-sm font-bold text-slate-800">Sharing Preferences</div>
+              <ToggleRow title="Internal Participant Access" desc="Automatically grant report access for internal (octomeet.ai) meeting participants" on={tg.internalAccess} onChange={(v) => set1("internalAccess", v)} />
+              <ToggleRow title="External Participant Access" desc="Automatically grant report access for external (not octomeet.ai) meeting participants" on={tg.externalAccess} onChange={(v) => set1("externalAccess", v)} />
+              <ToggleRow title="One-Click Sharing" desc="Share reports instantly with a single click for quicker collaboration." on={tg.oneClick} onChange={(v) => set1("oneClick", v)} />
+              <div className="text-sm font-bold text-slate-800">Report Distribution</div>
+              <ToggleRow title="Meeting Reports" desc="Send meeting notes, transcript, and more after a meeting ends" on={tg.mtgReports} onChange={(v) => set1("mtgReports", v)} />
+              <ToggleRow title="Meeting Pre-Reads" desc="Send a recap of the previous meeting before an upcoming meeting" on={tg.preReads} onChange={(v) => set1("preReads", v)} />
+              <ToggleRow title="Update Calendar Event" desc="After a meeting, update the calendar event description with a summary and report link" on={tg.updateCal} onChange={(v) => set1("updateCal", v)} />
+              <ToggleRow title="Display Meeting Thumbnail" desc="Display thumbnail images in Meeting Recap and Pre-Read emails for reports you own." on={tg.thumb} onChange={(v) => set1("thumb", v)} />
+              <div className="text-sm font-bold text-slate-800">Live Meeting Dashboard Access</div>
+              <ToggleRow title="Automatically share the Live Meeting Dashboard" desc="Post a link to the live dashboard in the meeting chat." on={tg.liveDash} onChange={(v) => set1("liveDash", v)} />
+            </>)}
+
+            {sec === 5 && (<>
+              <SecHead icon={Bell} title="Notifications" desc="Manage notifications preferences and email subscriptions." />
+              <ToggleRow title="Daily Summaries" desc="Receive daily summaries that highlight the most important updates that may require a response." on={tg.daily} onChange={(v) => set1("daily", v)} />
+              <ToggleRow title="Topic Readouts" desc="When Octomeet generates a new Readout from email or messaging, automatically notify me." on={tg.topicReadouts} onChange={(v) => set1("topicReadouts", v)} />
+              <ToggleRow title="Weekly Recaps" desc="Receive a Monday summary of last week's meetings and a Thursday wrap-up of remaining action items." on={tg.weeklyRecaps} onChange={(v) => set1("weeklyRecaps", v)} />
+              <ToggleRow title="Recommendations" desc="Notify me when Octomeet generates personalized suggestions and action items" on={tg.recs} onChange={(v) => set1("recs", v)} />
+              <div className="text-sm font-bold text-slate-800">Your Email Preferences</div>
+              <ToggleRow title="Product Updates" desc="Get product updates and announcements from Octomeet" on={tg.productUpdates} onChange={(v) => set1("productUpdates", v)} />
+              <ToggleRow title="Account Info" desc="Receive information from Octomeet about your account" on={tg.accountInfo} onChange={(v) => set1("accountInfo", v)} />
+            </>)}
+
+            {sec === 6 && (<>
+              <SecHead icon={Sparkles} title="Ask Octo" desc="Manage Ask Octo settings and chat history." />
+              <ToggleRow title="Chat History" desc="Automatically save your past chats so you can revisit them later. Only visible to you." on={tg.chatHistory} onChange={(v) => set1("chatHistory", v)}>
+                <button className="mt-3 rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">Delete All Chat History</button>
+              </ToggleRow>
+            </>)}
+
+            {sec === 7 && (<>
+              <SecHead icon={Calendar} title="Smart Scheduler" desc="Configure scheduling links, calendar, conference platform, URL, and availability." />
+              <ToggleRow title="Smart Scheduler Links" desc="Smart Scheduler links allow others to find a time to meet with you via a scheduling link." on={tg.smartLinks} onChange={(v) => set1("smartLinks", v)} />
+              <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+                <div><div className="text-sm font-semibold text-slate-800">Scheduling Calendar</div><select className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none"><option>Google Calendar</option></select></div>
+                <div><div className="text-sm font-semibold text-slate-800">Default conferencing platform</div><select className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-500 outline-none"><option>Select one</option><option>Google Meet</option><option>Zoom</option><option>Microsoft Teams</option></select></div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">Custom URL</div>
+                  <div className="mt-1 flex items-center gap-2"><span className="text-sm text-slate-500">cal.octomeet.ai/</span><input defaultValue="nicolas-82n88" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" /><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Copy</button></div>
+                </div>
+              </div>
+              <ToggleRow title="Available hours" desc="Restrict scheduling to the hours you've designated as available (Mon–Fri, 9:00 AM – 5:00 PM)." on={tg.availHours} onChange={(v) => set1("availHours", v)} />
+              <ToggleRow title="Minimum notice" desc="Enforce minimum notice for scheduling meetings (4 hours before event start time)." on={tg.minNotice} onChange={(v) => set1("minNotice", v)} />
+            </>)}
+
+            {sec === 8 && (<>
+              <SecHead icon={Folder} title="Folders" desc="Control how meeting reports are sorted and displayed in folders." />
+              <div><div className="mb-1 text-sm font-bold text-slate-800">Custom Folders</div><p className="mb-3 text-[13px] text-slate-500">Create and manage your own folders to organize meeting reports your way.</p><button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><FolderPlus size={16} /> Add New Folder</button></div>
+              <div>
+                <div className="mb-1 text-sm font-bold text-slate-800">Smart Folders</div>
+                <p className="mb-3 text-[13px] text-slate-500">Auto-organize reports by topic. Show or hide folders that aren't relevant to you.</p>
+                <div className="flex flex-wrap gap-2">
+                  {["Account Review","Business Review","Coaching Session","Customer Feedback","Customer Success","Educational","Investor Pitch","Job Interview","One-on-One","Partnership Alignment","Planning Meeting","Sales Call","Sales Strategy","Status Update","Training"].map((f) => (
+                    <span key={f} className="flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1.5 text-[12px] text-slate-600"><Folder size={12} className="text-indigo-400" /> {f}</span>
+                  ))}
+                </div>
+              </div>
+            </>)}
+
+            {sec === 9 && (<>
+              <SecHead icon={Users} title="Contacts & Groups" desc="Manage your contact preferences and groups." />
+              <ToggleRow title="Domain Discovery" desc="Improve sharing by making yourself discoverable within your domain." on={tg.domainDiscovery} onChange={(v) => set1("domainDiscovery", v)} />
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <div className="text-sm font-semibold text-slate-800">Sync Contacts</div>
+                <p className="mb-3 text-[13px] text-slate-500">Sync your contacts from Google or Microsoft to simplify sharing.</p>
+                <div className="flex gap-2"><button className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">🇬 Connect Google</button><button className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">⊞ Connect Microsoft</button></div>
+              </div>
+              <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">No contact groups created<br /><span className="text-[13px]">Create a new group for easier sharing</span></div>
+            </>)}
+
+            {sec === 10 && (<>
+              <SecHead icon={Type} title="Custom Vocabulary" desc="Boost words for better transcript accuracy." />
+              <div className="rounded-lg bg-indigo-50 p-3 text-[13px] text-indigo-700">Maximum 100 entries.</div>
+              <div className="text-sm font-semibold text-slate-700">0 custom words</div>
+              <button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><Plus size={16} /> Add new</button>
+            </>)}
+
+            {sec === 11 && (<>
+              <SecHead icon={Settings} title="Advanced" desc="Manage additional controls for your account, security, and preferences." />
+              <ToggleRow title="Customer Experience Program" desc="Participate in a voluntary program that stores meeting data to help improve the features in our service." on={tg.cxp} onChange={(v) => set1("cxp", v)} />
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="text-sm font-semibold text-slate-800">Active Sessions</div>
+                <p className="mb-3 text-[13px] text-slate-500">See where your account is signed in.</p>
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3"><div><div className="text-sm font-medium text-slate-700">Chrome Browser (Current)</div><div className="text-[12px] text-slate-400">BR · Active just now</div></div><button className="text-[13px] font-semibold text-indigo-600">Log out</button></div>
+                <button className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Log out of all sessions</button>
+              </div>
+              <div className="rounded-xl border border-rose-200 bg-white p-4">
+                <div className="text-sm font-semibold text-slate-800">Delete Account</div>
+                <p className="mb-3 text-[13px] text-slate-500">This action is permanent and cannot be undone.</p>
+                <button className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Delete my account</button>
+              </div>
+            </>)}
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function SecHead({ icon: Icon, title, desc }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500"><Icon size={20} /></div>
+      <div><h2 className="text-lg font-bold text-slate-900">{title}</h2><p className="text-[13px] text-slate-500">{desc}</p></div>
+    </div>
+  );
+}
+function Field({ label, value, muted, edit }) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 last:border-0">
+      <div><span className="text-sm font-medium text-slate-700">{label}</span></div>
+      <div className="flex items-center gap-3"><span className={"text-sm " + (muted ? "italic text-slate-400" : "text-slate-700")}>{value}</span>{edit && <button className="text-slate-300 hover:text-indigo-500">✎</button>}</div>
+    </div>
+  );
+}
+function Radio({ label, desc, def, checked, onClick }) {
+  return (
+    <button onClick={onClick} className="flex w-full items-start gap-2.5 py-1.5 text-left">
+      <span className={"mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 " + (checked ? "border-indigo-600" : "border-slate-300")}>{checked && <span className="h-2 w-2 rounded-full bg-indigo-600" />}</span>
+      <span><span className="text-[13px] font-medium text-slate-700">{label}</span>{def && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">Default</span>}<span className="block text-[12px] text-slate-400">{desc}</span></span>
+    </button>
   );
 }
 
