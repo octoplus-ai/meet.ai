@@ -490,7 +490,7 @@ export default function App() {
       const localAuthed = await store.get("octomeet:authed", false);
       // Check for a real backend session (Google login).
       try {
-        const r = await fetch("/api/me");
+        const r = await fetch("/api/me", { cache: "no-store" });
         const d = await r.json();
         if (d && d.user) { setUser(d.user); setAuthed(true); store.set("octomeet:authed", true); return; }
       } catch (e) { /* backend not configured yet */ }
@@ -1542,6 +1542,8 @@ function LoginView({ onLogin, onGoogle }) {
   const [email, setEmail] = useState("");
   const [tip, setTip] = useState(false);
   const signup = mode === "signup";
+  let authError = "";
+  try { authError = new URLSearchParams(window.location.search).get("auth_error") || ""; } catch (e) { /* ignore */ }
   const providers = [
     { label: "Continue with Google", icon: <GoogleIcon />, real: true },
     { label: "Continue with Microsoft", icon: <MicrosoftIcon /> },
@@ -1557,6 +1559,11 @@ function LoginView({ onLogin, onGoogle }) {
           <h1 className="text-2xl font-bold text-slate-900">{signup ? "Create your OctoMeet AI account" : "Sign in to OctoMeet AI"}</h1>
           <p className="mt-1 text-sm text-slate-500">{signup ? "It's free to get started — no credit card required." : "Welcome back. Choose how to continue."}</p>
         </div>
+        {authError && (
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" /> <span><b>No se pudo iniciar sesión:</b> {authError}</span>
+          </div>
+        )}
         <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           {providers.map((p) => (
             <button key={p.label} onClick={p.real ? onGoogle : onLogin} className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:shadow-sm">

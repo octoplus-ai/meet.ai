@@ -11,6 +11,8 @@ export default async function handler(req, res) {
   try {
     const code = new URL(req.url, "http://x").searchParams.get("code");
     if (!code) throw new Error("missing code");
+    if (!process.env.GOOGLE_CLIENT_SECRET) throw new Error("GOOGLE_CLIENT_SECRET no está configurada en Vercel");
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY no está configurada en Vercel");
 
     // Exchange the code for tokens.
     const tok = await fetch("https://oauth2.googleapis.com/token", {
@@ -31,8 +33,9 @@ export default async function handler(req, res) {
       headers: { Authorization: `Bearer ${tok.access_token}` },
     }).then((r) => r.json());
 
+    console.log("OAuth login attempt for:", ui.email);
     if (!ALLOWLIST.includes((ui.email || "").toLowerCase())) {
-      res.writeHead(302, { Location: "/?auth_error=" + encodeURIComponent("Access is limited to the test user for now.") });
+      res.writeHead(302, { Location: "/?auth_error=" + encodeURIComponent(`Acceso limitado al usuario de prueba. Entraste con ${ui.email || "?"}; usá santiago@octoplusteam.com.`) });
       return res.end();
     }
 
@@ -69,6 +72,7 @@ export default async function handler(req, res) {
     res.writeHead(302, { Location: "/" });
     res.end();
   } catch (e) {
+    console.error("OAuth callback error:", e && (e.stack || e.message || e));
     res.writeHead(302, { Location: "/?auth_error=" + encodeURIComponent(String(e.message || e)) });
     res.end();
   }
