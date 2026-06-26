@@ -7,6 +7,7 @@ import {
   ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
   Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play,
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type,
+  HelpCircle, LogOut, ChevronRight,
 } from "lucide-react";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -489,6 +490,8 @@ export default function App() {
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
         {view === "plans" && <PlansView onBack={() => setView("reports")} />}
         {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} />}
+        {view === "support" && <SupportView onBack={() => setView("reports")} />}
+        {view === "logout" && <LogoutView onCancel={() => setView("reports")} />}
         {["folders", "calendar", "for-you", "coaching", "recommendations", "meeting-policy", "integrations"].includes(view) && (
           <Placeholder section={NAV.find((n) => n.k === view)} onReports={() => setView("reports")} t={t} />
         )}
@@ -498,10 +501,18 @@ export default function App() {
 }
 
 /* ============================ SIDEBAR ============================== */
+function MenuItem({ icon: Icon, label, onClick }) {
+  return (
+    <button onClick={onClick} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+      <Icon size={17} className="text-slate-500" /> {label}
+    </button>
+  );
+}
 function Sidebar({ view, setView, t, lang, setLang }) {
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const copyLink = async () => {
     try { await navigator.clipboard.writeText("https://meet-ai-three-beige.vercel.app/s/nicolas"); setCopied(true); setTimeout(() => setCopied(false), 1500); }
     catch { setCopied(false); }
@@ -569,12 +580,26 @@ function Sidebar({ view, setView, t, lang, setLang }) {
         ))}
       </nav>
 
-      <div className="border-t border-white/5 px-3 py-3">
+      <div className="relative border-t border-white/5 px-3 py-3">
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+            <div className="absolute bottom-full left-3 z-50 mb-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-2xl">
+              <MenuItem icon={Settings} label="Account Settings" onClick={() => { setView("account"); setMenuOpen(false); }} />
+              <MenuItem icon={Rocket} label="Plan & Billing" onClick={() => { setView("plans"); setMenuOpen(false); }} />
+              <MenuItem icon={Users} label="Add People" onClick={() => { setView("add-people"); setMenuOpen(false); }} />
+              <div className="my-1 border-t border-slate-100" />
+              <MenuItem icon={HelpCircle} label="Support" onClick={() => { setView("support"); setMenuOpen(false); }} />
+              <div className="my-1 border-t border-slate-100" />
+              <MenuItem icon={LogOut} label="Log Out" onClick={() => { setView("logout"); setMenuOpen(false); }} />
+            </div>
+          </>
+        )}
         {collapsed ? (
           <div className="flex flex-col items-center gap-3">
             <button title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
             <button onClick={copyLink} title={t("smartScheduler")} className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-600 text-white hover:bg-indigo-500"><Link2 size={14} /></button>
-            <button onClick={() => setView("account")} title="Account Settings" className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</button>
+            <button onClick={() => setMenuOpen((v) => !v)} title="Account" className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</button>
           </div>
         ) : (
           <>
@@ -592,12 +617,13 @@ function Sidebar({ view, setView, t, lang, setLang }) {
                 <button className="rounded-md bg-white/10 px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/15">{t("manage")}</button>
               </div>
             </div>
-            <button onClick={() => setView("account")} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-white/5">
+            <button onClick={() => setMenuOpen((v) => !v)} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-white/5">
               <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-[13px] font-medium text-white">Nicolas Benech</div>
                 <div className="truncate text-[11px] text-slate-500">nicolas@octomeet.ai</div>
               </div>
+              <ChevronRight size={16} className="ml-auto text-slate-500" />
             </button>
           </>
         )}
@@ -893,6 +919,49 @@ function CreateWorkspace({ onCancel, onDone }) {
           </button>
           <button onClick={onCancel} className="rounded-lg px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50">Cancel</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ SUPPORT / LOGOUT ==================== */
+function SupportView({ onBack }) {
+  const cards = [
+    { icon: FileText, title: "Help Center", desc: "Browse guides and articles." },
+    { icon: MessageSquareText, title: "Chat with us", desc: "Get help from our support team." },
+    { icon: Mail, title: "Email support", desc: "support@octomeet.ai" },
+    { icon: Sparkles, title: "What's new", desc: "Latest features and updates." },
+  ];
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
+        <button onClick={onBack}><ChevronLeft size={18} className="text-slate-400" /></button>
+        <h1 className="text-lg font-bold text-slate-900">Support</h1>
+      </div>
+      <div className="mx-auto max-w-3xl px-6 py-8">
+        <h2 className="text-xl font-bold text-slate-900">How can we help?</h2>
+        <p className="mt-1 text-sm text-slate-500">Find answers, contact us, or send feedback. (Pantalla base — la ajusto con tu captura.)</p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {cards.map((c) => (
+            <button key={c.title} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-indigo-300 hover:shadow-sm">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500"><c.icon size={18} /></div>
+              <div><div className="text-sm font-semibold text-slate-800">{c.title}</div><div className="text-[13px] text-slate-500">{c.desc}</div></div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+function LogoutView({ onCancel }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-500"><LogOut size={26} /></div>
+      <h2 className="text-xl font-bold text-slate-800">Log out of Octomeet?</h2>
+      <p className="mt-1 max-w-sm text-sm text-slate-500">You'll need to sign in again with Google to access your meetings and reports.</p>
+      <div className="mt-5 flex gap-3">
+        <button onClick={onCancel} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+        <button onClick={onCancel} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Log out</button>
       </div>
     </div>
   );
