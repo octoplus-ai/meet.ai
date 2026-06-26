@@ -455,6 +455,7 @@ export default function App() {
   const [lang, setLangState] = useState("en");
   const [calTab, setCalTab] = useState("upcoming");
   const [authed, setAuthed] = useState(null);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -462,12 +463,23 @@ export default function App() {
       if (!m) { m = seedMeetings(); await store.set("octomeet:meetings:v1", m); }
       setMeetings(m);
       setLangState(await store.get("octomeet:lang", "en"));
-      setAuthed(await store.get("octomeet:authed", false));
+      const localAuthed = await store.get("octomeet:authed", false);
+      // Check for a real backend session (Google login).
+      try {
+        const r = await fetch("/api/me");
+        const d = await r.json();
+        if (d && d.user) { setUser(d.user); setAuthed(true); store.set("octomeet:authed", true); return; }
+      } catch (e) { /* backend not configured yet */ }
+      setAuthed(localAuthed);
     })();
   }, []);
 
   const login = () => { setAuthed(true); store.set("octomeet:authed", true); };
-  const logout = () => { setAuthed(false); store.set("octomeet:authed", false); setView("reports"); };
+  const loginGoogle = () => { window.location.href = "/api/auth/google/start"; };
+  const logout = async () => {
+    try { await fetch("/api/auth/logout"); } catch (e) { /* ignore */ }
+    setAuthed(false); setUser(null); store.set("octomeet:authed", false); setView("reports");
+  };
   const setLang = (l) => { setLangState(l); store.set("octomeet:lang", l); };
   const t = (k) => (TR[lang] && TR[lang][k]) || TR.en[k] || k;
   const persist = async (next) => { setMeetings(next); await store.set("octomeet:meetings:v1", next); };
@@ -482,12 +494,12 @@ export default function App() {
       </div>
     );
   }
-  if (!authed) return <LoginView onLogin={login} />;
+  if (!authed) return <LoginView onLogin={login} onGoogle={loginGoogle} />;
 
   return (
     <div dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
       <StyleInject />
-      <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
+      <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
       <main className="flex flex-1 flex-col overflow-hidden">
         {view === "reports" && <ReportsList meetings={meetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} t={t} />}
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={meetings} />}
@@ -532,7 +544,10 @@ function MenuItem({ icon: Icon, label, onClick }) {
     </button>
   );
 }
-function Sidebar({ view, setView, t, lang, setLang, openScheduling }) {
+function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
+  const uName = user?.name || "Nicolas Benech";
+  const uEmail = user?.email || "nicolas@octomeet.ai";
+  const uInit = initialsOf(uName);
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
@@ -631,7 +646,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling }) {
           <div className="flex flex-col items-center gap-3">
             <button title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
             <button onClick={copyLink} title={t("smartScheduler")} className={"flex h-8 w-8 items-center justify-center rounded-md text-white " + (copied ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500")}>{copied ? <Check size={14} /> : <Link2 size={14} />}</button>
-            <button onClick={() => setMenuOpen((v) => !v)} title="Account" className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</button>
+            <button onClick={() => setMenuOpen((v) => !v)} title="Account" className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(uInit) }}>{user?.picture ? <img src={user.picture} alt="" className="h-full w-full object-cover" /> : uInit}</button>
           </div>
         ) : (
           <>
@@ -666,10 +681,10 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling }) {
               )}
             </div>
             <button onClick={() => setMenuOpen((v) => !v)} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-white/5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</div>
+              <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(uInit) }}>{user?.picture ? <img src={user.picture} alt="" className="h-full w-full object-cover" /> : uInit}</div>
               <div className="min-w-0 leading-tight">
-                <div className="truncate text-[13px] font-medium text-white">Nicolas Benech</div>
-                <div className="truncate text-[11px] text-slate-500">nicolas@octomeet.ai</div>
+                <div className="truncate text-[13px] font-medium text-white">{uName}</div>
+                <div className="truncate text-[11px] text-slate-500">{uEmail}</div>
               </div>
               <ChevronRight size={16} className="ml-auto text-slate-500" />
             </button>
@@ -1047,6 +1062,12 @@ function FoldersView({ onAsk }) {
 /* ============================ CALENDAR ============================ */
 function CalendarView({ onAsk, initialTab }) {
   const [tab, setTab] = useState(initialTab || "upcoming");
+  const [realEvents, setRealEvents] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try { const r = await fetch("/api/calendar/events"); if (r.ok) { const d = await r.json(); if (Array.isArray(d.events)) setRealEvents(d.events); } } catch (e) { /* not connected */ }
+    })();
+  }, []);
   const events = [
     { name: "Morning Meeting", ppl: 39, date: "Sun, Jun 28", time: "3:30 AM - 4:30 AM", add: false, role: null },
     { name: "Acme Corp — Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
@@ -1057,6 +1078,13 @@ function CalendarView({ onAsk, initialTab }) {
     { name: "Morning Meeting", ppl: 39, date: "Sun, Jul 5", time: "3:30 AM - 4:30 AM", add: false, role: null },
   ];
   const links = [{ m: 15 }, { m: 30 }, { m: 60 }, { m: 90 }];
+  const fmtEv = (iso) => {
+    try { const d = new Date(iso); return { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) }; }
+    catch { return { date: iso, time: "" }; }
+  };
+  const display = realEvents && realEvents.length
+    ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: true, role: null }; })
+    : events;
   return (
     <>
       <SectionTop title="Calendar" onAsk={onAsk} right={<button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><Link2 size={15} /> Scheduling Link</button>} />
@@ -1071,12 +1099,12 @@ function CalendarView({ onAsk, initialTab }) {
           <>
             <div className="mb-3 flex items-center justify-between">
               <div className="flex gap-2"><FilterBtn label="Filter" icon={SlidersHorizontal} /><FilterBtn label="Has video conferencing" /></div>
-              <span className="flex items-center gap-2 text-[13px] text-slate-400"><RefreshCw size={13} /> 1–{events.length} of {events.length}</span>
+              <span className="flex items-center gap-2 text-[13px] text-slate-400"><RefreshCw size={13} /> 1–{display.length} of {display.length}{realEvents && realEvents.length ? " · your Google Calendar" : ""}</span>
             </div>
             <div className="grid grid-cols-[1.6fr_1fr_120px_120px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
               <div>Meeting</div><div>Date &amp; Time</div><div>Add Octo?</div><div>Flexible?</div>
             </div>
-            {events.map((e, i) => (
+            {display.map((e, i) => (
               <div key={i} className="grid grid-cols-[1.6fr_1fr_120px_120px] items-center border-b border-slate-100 px-3 py-3.5">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white shadow-sm"><Video size={18} className="text-emerald-500" /></div>
@@ -1462,13 +1490,13 @@ function AppleIcon() {
     </svg>
   );
 }
-function LoginView({ onLogin }) {
+function LoginView({ onLogin, onGoogle }) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
   const [tip, setTip] = useState(false);
   const signup = mode === "signup";
   const providers = [
-    { label: "Continue with Google", icon: <GoogleIcon /> },
+    { label: "Continue with Google", icon: <GoogleIcon />, real: true },
     { label: "Continue with Microsoft", icon: <MicrosoftIcon /> },
     { label: "Continue with Apple", icon: <AppleIcon /> },
     { label: "Continue with SSO", icon: <KeyRound size={17} className="text-slate-500" /> },
@@ -1484,7 +1512,7 @@ function LoginView({ onLogin }) {
         </div>
         <div className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           {providers.map((p) => (
-            <button key={p.label} onClick={onLogin} className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:shadow-sm">
+            <button key={p.label} onClick={p.real ? onGoogle : onLogin} className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:shadow-sm">
               <span className="flex w-5 justify-center">{p.icon}</span> {p.label}
             </button>
           ))}

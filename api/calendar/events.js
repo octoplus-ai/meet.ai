@@ -25,7 +25,7 @@ export default async function handler(req, res) {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
-          client_id: process.env.GOOGLE_CLIENT_ID,
+          client_id: process.env.GOOGLE_CLIENT_ID || "540014435995-d8rb5g8a9c4rv82vo4dtak9eoh3e2ufi.apps.googleusercontent.com",
           client_secret: process.env.GOOGLE_CLIENT_SECRET,
           refresh_token: tk.refresh_token,
           grant_type: "refresh_token",
