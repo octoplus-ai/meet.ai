@@ -27,13 +27,16 @@ export async function syncRecallCalendar(userId, calendarId, { botName, sinceTs 
     const r = await scheduleBotForEvent(e.id, { dedupKey: `${e.start_time || ""}-${e.meeting_url}`, botName: botName || "OctoMeet AI Notetaker" });
     const botId = botIdFromEvent(r.data) || botIdFromEvent(e);
     if (!botId) continue;
+    const gid = googleEventId(e);
     await sb("meetings", {
       method: "POST",
       body: {
         user_id: userId, title: e.title || (e.raw && e.raw.summary) || "Meeting", source: "Recall", meeting_url: e.meeting_url,
-        bot_id: botId, status: "scheduled", start_time: e.start_time || null, calendar_event_id: googleEventId(e),
+        bot_id: botId, status: "scheduled", start_time: e.start_time || null, calendar_event_id: gid,
       },
     });
+    // Annotate the real Google Calendar event so OctoMeet shows up in the invite.
+    if (gid) annotateEvent(userId, gid, "🐙 OctoMeet AI will join and record this meeting, then add the AI summary & report link here.").catch(() => {});
     scheduled++;
   }
   return { events: events.length, scheduled };
