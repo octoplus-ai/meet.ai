@@ -14,6 +14,7 @@ export default async function handler(req, res) {
 
     const u = await sb(`app_users?id=eq.${uid}&select=auto_join,notetaker_name`);
     if (u[0] && u[0].auto_join === false) return res.status(200).json({ ok: true, autoJoin: false, armed: 0 });
+    // V1 and V2 coexist safely: scheduleBot dedups on meeting_url so no meeting gets two bots.
 
     const result = await armUserCalendar(uid, { botName: (u[0] && u[0].notetaker_name) || "OctoMeet AI Notetaker", days: 7 });
     res.status(200).json({ ok: true, ...result });

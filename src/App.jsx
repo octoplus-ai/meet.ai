@@ -599,13 +599,18 @@ export default function App() {
   // you create while the app is open.
   useEffect(() => {
     if (!authed) return;
-    const armNow = (announce) => fetch("/api/calendar/arm-all", { method: "POST" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && d.armed > 0) { if (announce) toast(`OctoMeet will auto-join ${d.armed} upcoming meeting${d.armed > 1 ? "s" : ""} 🗓️`); loadReal(); } })
+    let stopped = false;
+    // Connect the calendar to Recall (V2) so Recall auto-schedules bots in real time.
+    // arm-all is the fallback and becomes a no-op once Recall is connected.
+    const run = (announce) => fetch("/api/calendar/connect-recall", { method: "POST" })
+      .catch(() => {})
+      .then(() => fetch("/api/calendar/arm-all", { method: "POST" }))
+      .then((r) => (r && r.ok ? r.json() : null))
+      .then((d) => { if (!stopped && d && d.armed > 0) { if (announce) toast(`OctoMeet will auto-join ${d.armed} upcoming meeting${d.armed > 1 ? "s" : ""} 🗓️`); loadReal(); } })
       .catch(() => {});
-    armNow(true);
-    const id = setInterval(() => armNow(false), 150000); // re-arm every 2.5 min
-    return () => clearInterval(id);
+    run(true);
+    const id = setInterval(() => run(false), 150000);
+    return () => { stopped = true; clearInterval(id); };
   }, [authed, loadReal]);
 
   const login = () => { setAuthed(true); store.set("octomeet:authed", true); loadReal(); };
@@ -1295,6 +1300,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   const [realEvents, setRealEvents] = useState(null);
   const [armed, setArmed] = useState({});
   const [autoJoin, setAutoJoin] = useState(true);
+  const [recallConnected, setRecallConnected] = useState(false);
   const loadEvents = async () => {
     try { const r = await fetch("/api/calendar/events"); if (r.ok) { const d = await r.json(); if (Array.isArray(d.events)) setRealEvents(d.events); } } catch (e) { /* not connected */ }
   };
@@ -1303,7 +1309,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
       await loadEvents();
       setArmed((await store.get(CAL_ARMED_KEY, {})) || {});
       let on = true;
-      try { const s = await fetch("/api/settings"); if (s.ok) { const sd = await s.json(); on = sd.auto_join !== false; setAutoJoin(on); } } catch (e) { /* default on */ }
+      try { const s = await fetch("/api/settings"); if (s.ok) { const sd = await s.json(); on = sd.auto_join !== false; setAutoJoin(on); setRecallConnected(!!sd.recall_connected); } } catch (e) { /* default on */ }
       // Opening the Calendar immediately arms any new meetings (real-time auto-join).
       if (on) {
         try { const a = await fetch("/api/calendar/arm-all", { method: "POST" }); if (a.ok) { const ad = await a.json(); if (ad.armed > 0) { toast(`OctoMeet armed ${ad.armed} meeting${ad.armed > 1 ? "s" : ""} 🗓️`); await loadEvents(); } } } catch (e) { /* ignore */ }
@@ -1377,8 +1383,8 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
               <OctoLogo size={22} />
               <div className="flex-1">
-                <div className="text-sm font-semibold text-slate-800">Auto-join your meetings</div>
-                <div className="text-[12px] text-slate-500">When on, OctoMeet automatically joins, records and analyzes every meeting on your calendar — you don't have to do anything.</div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">Auto-join your meetings {recallConnected && autoJoin && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Calendar connected</span>}</div>
+                <div className="text-[12px] text-slate-500">{recallConnected ? "Your Google Calendar is synced with OctoMeet — every meeting is recorded & analyzed automatically, in real time, even with the app closed." : "When on, OctoMeet automatically joins, records and analyzes every meeting on your calendar — you don't have to do anything."}</div>
               </div>
               <CalToggle on={autoJoin} onChange={toggleAutoJoin} />
             </div>

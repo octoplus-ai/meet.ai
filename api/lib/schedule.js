@@ -4,8 +4,40 @@ import { sb } from "./supa.js";
 import { recallBase } from "./recall.js";
 import { listUpcomingEvents, annotateEvent } from "./google.js";
 import { OCTO_AVATAR_JPEG_B64 } from "./avatar.js";
+import { listCalendarEvents, scheduleBotForEvent, botIdFromEvent } from "./recall-calendar.js";
 
 const RECALL_BASE = recallBase();
+
+function googleEventId(ev) {
+  return ev.platform_id || (ev.raw && (ev.raw.id || ev.raw.iCalUID)) || ev.ical_uid || ev.id;
+}
+
+// Sync a connected Recall calendar: schedule a notetaker bot for every upcoming
+// meeting that doesn't already have one. Used on connect (initial pass) and by the
+// calendar webhook (ongoing). Dedups on meeting_url; skips meetings that already ended.
+export async function syncRecallCalendar(userId, calendarId, { botName, sinceTs } = {}) {
+  const events = await listCalendarEvents(calendarId, sinceTs);
+  const now = Date.now();
+  let scheduled = 0;
+  for (const e of events) {
+    if (e.is_deleted || !e.meeting_url) continue;
+    if (e.end_time && new Date(e.end_time).getTime() < now - 5 * 60000) continue; // already ended
+    const dup = await sb(`meetings?user_id=eq.${userId}&meeting_url=eq.${encodeURIComponent(e.meeting_url)}&status=in.(scheduled,joining,in_call,recording,processing)&select=id`);
+    if (dup.length) continue;
+    const r = await scheduleBotForEvent(e.id, { dedupKey: `${e.start_time || ""}-${e.meeting_url}`, botName: botName || "OctoMeet AI Notetaker" });
+    const botId = botIdFromEvent(r.data) || botIdFromEvent(e);
+    if (!botId) continue;
+    await sb("meetings", {
+      method: "POST",
+      body: {
+        user_id: userId, title: e.title || (e.raw && e.raw.summary) || "Meeting", source: "Recall", meeting_url: e.meeting_url,
+        bot_id: botId, status: "scheduled", start_time: e.start_time || null, calendar_event_id: googleEventId(e),
+      },
+    });
+    scheduled++;
+  }
+  return { events: events.length, scheduled };
+}
 
 async function createRecallBot(recallBody) {
   // Try with the branded camera tile; if Recall rejects it, retry without so the
@@ -36,6 +68,9 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
     const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&status=neq.error&select=id,bot_id`);
     if (ex && ex.length) return { already: true, meeting: ex[0] };
   }
+  // Cross-path dedup (V1 + V2 + cron): never two bots for the same active meeting URL.
+  const exUrl = await sb(`meetings?user_id=eq.${userId}&meeting_url=eq.${encodeURIComponent(meetingUrl)}&status=in.(scheduled,joining,in_call,recording,processing)&select=id,bot_id`);
+  if (exUrl && exUrl.length) return { already: true, meeting: exUrl[0] };
 
   const joinDate = joinAt ? new Date(joinAt) : null;
   const scheduled = joinDate && joinDate.getTime() > Date.now() + 30 * 1000;

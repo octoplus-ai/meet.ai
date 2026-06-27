@@ -15,9 +15,9 @@ export default async function handler(req, res) {
     if (!uid) return res.status(401).json({ error: "not authenticated" });
 
     if (req.method === "GET") {
-      const u = await sb(`app_users?id=eq.${uid}&select=auto_join,notetaker_name`);
+      const u = await sb(`app_users?id=eq.${uid}&select=auto_join,notetaker_name,recall_calendar_id,recall_calendar_status`);
       const row = u[0] || {};
-      return res.status(200).json({ auto_join: row.auto_join !== false, notetaker_name: row.notetaker_name || "OctoMeet AI Notetaker" });
+      return res.status(200).json({ auto_join: row.auto_join !== false, notetaker_name: row.notetaker_name || "OctoMeet AI Notetaker", recall_connected: !!row.recall_calendar_id, recall_status: row.recall_calendar_status || null });
     }
     if (req.method === "POST") {
       const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
