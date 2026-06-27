@@ -334,24 +334,38 @@ function seedMeetings() {
 }
 
 // Adapt a real meeting+report row from Supabase into the UI meeting shape.
+const hhmm = (iso) => { try { return iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : ""; } catch { return ""; } };
+function statusSummary(status) {
+  switch (status) {
+    case "scheduled": return "🗓️ OctoMeet is scheduled to join this meeting and will start recording automatically at the start time.";
+    case "joining": return "🔄 OctoMeet is joining the meeting now. Admit it from the waiting room to start recording.";
+    case "in_call": return "🟡 OctoMeet is in the meeting. Recording will begin once allowed.";
+    case "recording": return "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.";
+    case "processing": return "⏳ Meeting ended — generating your AI report from the transcript. This page updates automatically.";
+    case "error": return "⚠️ The notetaker couldn't complete this meeting. Check the meeting link or permissions and try again.";
+    default: return "";
+  }
+}
 function adaptReal(m) {
   const r = (m.reports && m.reports[0]) || {};
   const sc = r.scores || {};
   const done = m.status === "done";
   const overall = r.read_score || sc.overall || 0;
+  const ppl = Array.isArray(m.participants) ? m.participants.filter(Boolean) : [];
+  const start = m.start_time || m.created_at;
   return {
     id: m.id, title: m.title || "Meeting", source: m.source || "Recall",
-    date: String(m.start_time || m.created_at || REF_TODAY).slice(0, 10),
-    timeStart: "", timeEnd: "", durationMin: 0,
-    folder: "Meetings", folderLocked: false, owner: "NB", participantsCount: 0,
+    date: String(start || REF_TODAY).slice(0, 10),
+    timeStart: hhmm(start), timeEnd: hhmm(m.end_time), durationMin: m.duration_min || 0,
+    folder: "Meetings", folderLocked: false, owner: "NB", participantsCount: ppl.length,
     scores: { overall, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: 0, clarity: 0 },
     sentimentLabel: "Positive", sentimentTimeline: [0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.7, 0.7],
-    summary: r.summary || (done ? "" : "⏳ Processing — the AI report will appear here once the meeting ends and the transcript is ready."),
+    summary: r.summary || (done ? "" : statusSummary(m.status)),
     topics: r.topics || [], keyQuestions: r.key_questions || [],
     actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", done: false })),
-    nextSteps: [], participants: [],
+    nextSteps: [], participants: ppl.map((name) => ({ name, initials: (name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
-    video: null, real: true, status: m.status,
+    video: null, real: true, status: m.status, error: m.error || null,
   };
 }
 
@@ -449,6 +463,25 @@ function ScoreChip({ value }) {
   );
 }
 
+const STATUS_META = {
+  scheduled: { label: "Scheduled", cls: "bg-slate-100 text-slate-600", dot: "bg-slate-400" },
+  joining: { label: "Joining…", cls: "bg-amber-100 text-amber-700", spin: true },
+  in_call: { label: "In call", cls: "bg-amber-100 text-amber-700", dot: "bg-amber-500", pulse: true },
+  recording: { label: "Recording", cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500", pulse: true },
+  processing: { label: "Processing report…", cls: "bg-indigo-100 text-indigo-700", spin: true },
+  error: { label: "Failed", cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500" },
+};
+function StatusBadge({ status }) {
+  const m = STATUS_META[status];
+  if (!m) return null;
+  return (
+    <span className={"inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold " + m.cls}>
+      {m.spin ? <Loader2 size={11} className="animate-spin" /> : <span className={"h-1.5 w-1.5 rounded-full " + (m.dot || "bg-slate-400") + (m.pulse ? " animate-pulse" : "")} />}
+      {m.label}
+    </span>
+  );
+}
+
 function TalkRibbon({ participants }) {
   return (
     <div className="flex h-2.5 w-full overflow-hidden rounded-full">
@@ -499,6 +532,7 @@ export default function App() {
   const [authed, setAuthed] = useState(null);
   const [user, setUser] = useState(null);
   const [realMeetings, setRealMeetings] = useState([]);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const loadReal = async () => {
     try {
@@ -523,6 +557,16 @@ export default function App() {
       setAuthed(localAuthed);
     })();
   }, []);
+
+  // Live polling: keep real meetings fresh so recording/processing states and the
+  // finished AI report appear automatically, the way Read.ai updates in place.
+  useEffect(() => {
+    if (!authed) return;
+    const id = setInterval(() => { loadReal(); }, 12000);
+    const onFocus = () => loadReal();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [authed]);
 
   const login = () => { setAuthed(true); store.set("octomeet:authed", true); };
   const loginGoogle = () => { window.location.href = "/api/auth/google/start"; };
@@ -558,10 +602,9 @@ export default function App() {
       <Toaster />
       <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
       <main className="flex flex-1 flex-col overflow-hidden">
-        {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} t={t} onRefresh={loadReal} />}
+        {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} />}
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
-        {view === "upload" && <UploadView onSave={async (m) => { await persist([m, ...meetings]); openMeeting(m.id); }} onCancel={() => setView("reports")} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
         {view === "plans" && <PlansView onBack={() => setView("reports")} />}
         {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} />}
@@ -575,6 +618,7 @@ export default function App() {
         {view === "integrations" && <IntegrationsView onAsk={goAsk} />}
         {view === "meeting-policy" && <MeetingPolicyView onAsk={goAsk} />}
       </main>
+      {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} onSave={async (m) => { await persist([m, ...meetings]); setUploadOpen(false); openMeeting(m.id); }} />}
     </div>
   );
 }
@@ -789,6 +833,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
     filtered.forEach((m) => { const b = bucketOf(m.date); (by[b] = by[b] || []).push(m); });
     return order.filter((o) => by[o]).map((o) => ({ label: o, items: by[o] }));
   }, [filtered]);
+  const live = useMemo(() => meetings.filter((m) => m.real && ["joining", "in_call", "recording"].includes(m.status)), [meetings]);
+  const proc = useMemo(() => meetings.filter((m) => m.real && m.status === "processing"), [meetings]);
 
   return (
     <>
@@ -833,6 +879,19 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
           </div>
         ) : (
           <>
+            {(live.length > 0 || proc.length > 0) && (
+              <div className={"mb-5 flex items-center gap-3 rounded-xl border px-4 py-3 " + (live.length ? "border-rose-200 bg-rose-50" : "border-indigo-200 bg-indigo-50")}>
+                {live.length ? (
+                  <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" /></span>
+                ) : <Loader2 size={15} className="animate-spin text-indigo-600" />}
+                <span className="flex-1 text-sm font-medium text-slate-700">
+                  {live.length
+                    ? <>OctoMeet is <b className="text-rose-700">recording live</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} — the AI report will appear here automatically.</>
+                    : <>Generating <b className="text-indigo-700">{proc.length}</b> AI report{proc.length > 1 ? "s" : ""} from your meeting{proc.length > 1 ? "s" : ""}… this updates automatically.</>}
+                </span>
+                <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> Refresh</button>
+              </div>
+            )}
             {showCrm && (
               <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-indigo-50 px-4 py-3">
                 <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">✨ NEW!</span>
@@ -878,7 +937,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
                           <div className="truncate text-sm font-semibold text-slate-800">{m.title}</div>
                           <div className="mt-1 flex items-center gap-2">
                             <span className="flex items-center gap-1 text-[12px] text-slate-400"><Users size={12} /> {m.participantsCount ?? m.participants.length}</span>
-                            <ScoreChip value={m.scores.overall} />
+                            {m.real && m.status && m.status !== "done" ? <StatusBadge status={m.status} /> : <ScoreChip value={m.scores.overall} />}
                           </div>
                         </div>
                       </div>
@@ -1151,15 +1210,16 @@ function CalendarView({ onAsk, initialTab }) {
     catch { return { date: iso, time: "" }; }
   };
   const display = realEvents && realEvents.length
-    ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: false, role: null, url: e.meetingUrl }; })
+    ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: false, role: null, url: e.meetingUrl, startIso: e.start, eventId: e.id }; })
     : events;
-  const startBot = async (url, title) => {
+  const startBot = async (url, title, joinAt, calendarEventId) => {
     if (!url) { toast("This event has no meeting link"); return; }
-    toast("Sending OctoMeet to the meeting…");
+    const future = joinAt && new Date(joinAt).getTime() > Date.now() + 30 * 1000;
+    toast(future ? "Scheduling OctoMeet…" : "Sending OctoMeet to the meeting…");
     try {
-      const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, title }) });
+      const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, title, joinAt, calendarEventId }) });
       const d = await r.json();
-      toast(r.ok ? "OctoMeet is joining 🎥" : ("Error: " + (d.error || "failed")));
+      toast(r.ok ? (d.already ? "OctoMeet is already set for this meeting ✓" : future ? "OctoMeet will join automatically at the start time 🗓️" : "OctoMeet is joining 🎥") : ("Error: " + (d.error || "failed")));
     } catch (e) { toast("Network error"); }
   };
   return (
@@ -1191,7 +1251,7 @@ function CalendarView({ onAsk, initialTab }) {
                   </div>
                 </div>
                 <div className="leading-tight"><div className="text-[13px] text-slate-700">{e.date}</div><div className="text-[12px] text-slate-400">{e.time}</div></div>
-                <div><CalToggle on={e.add} onChange={(val) => { if (val) startBot(e.url, e.name); }} /></div>
+                <div><CalToggle on={e.add} onChange={(val) => { if (val) startBot(e.url, e.name, e.startIso, e.eventId); }} /></div>
                 <div><CalToggle on={false} /></div>
               </div>
             ))}
@@ -2220,7 +2280,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-violet-50 text-center text-sm text-slate-500">
-            <div><Video size={28} className="mx-auto mb-2 text-indigo-300" />{meeting.status && meeting.status !== "done" ? "Recording in progress…" : "Recording will appear here once processed."}</div>
+            <div className="px-6">{meeting.status && meeting.status !== "done" ? <span className="inline-flex items-center gap-2"><StatusBadge status={meeting.status} /> {statusSummary(meeting.status)}</span> : <><Video size={28} className="mx-auto mb-2 text-indigo-300" />Recording will appear here once processed.</>}</div>
           </div>
         )}
 
@@ -2600,6 +2660,121 @@ const EXAMPLE_TRANSCRIPT =
 [00:48] Nicolas Benech: That's a perfect candidate. We can have AI classify each ticket, set priority, and auto-route — humans only touch the edge cases.
 [01:25] Nicolas Benech: We'd train on your historical tickets and start in suggest-only mode until trust is high, then flip to auto.
 [02:05] Jordan Vela: I like the phased approach. I'll export a month of tickets by Friday. Let's get a proposal moving.`;
+
+function UploadModal({ onClose, onSave }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [notify, setNotify] = useState(true);
+  const [fileName, setFileName] = useState("");
+  const [transcript, setTranscript] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
+  const [drag, setDrag] = useState(false);
+  const inputRef = useRef(null);
+
+  const handleFiles = async (files) => {
+    const f = files && files[0];
+    if (!f) return;
+    setFileName(f.name); setErr("");
+    const isText = /\.(txt|vtt|srt|md|json)$/i.test(f.name) || (f.type && f.type.startsWith("text"));
+    if (isText) {
+      try { setTranscript(await f.text()); } catch { setErr("Couldn't read that file."); }
+    } else {
+      setTranscript("");
+      setErr("Audio/video transcription via upload is coming soon. For now, drop a transcript file (.txt/.vtt/.srt) or paste the transcript below — or use “Add to live meeting” to capture a live call.");
+      setShowPaste(true);
+    }
+  };
+
+  const generate = async () => {
+    if (!transcript.trim()) {
+      setShowPaste(true);
+      setErr("Drop a transcript file or paste the transcript below to generate a report.");
+      return;
+    }
+    setBusy(true); setErr("");
+    try {
+      const sys = "You are a meeting-intelligence analyst. Read the transcript and return ONLY a JSON object (no markdown) with this shape:\n" +
+        `{"summary": string (2-3 sentences), "topics": string[] (max 5), "keyQuestions": string[] (max 4), "actionItems": [{"owner": string, "task": string, "due": string}] (max 6), "nextSteps": string[] (max 3), "participants": [{"name": string, "role": string, "talkPct": integer, "sentiment": "Positive"|"Neutral"|"Negative"}], "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int} (0-100), "sentimentLabel": "Positive"|"Neutral"|"Negative", "sentimentTimeline": number[] (8 values -1..1)}.\n` +
+        "Infer speaker names from the transcript. Keep strings short.";
+      const baseTitle = (fileName || "Uploaded meeting").replace(/\.[^.]+$/, "");
+      const out = await callClaude([{ role: "user", content: "Title: " + baseTitle + "\n\nTranscript:\n" + transcript }], sys);
+      const parsed = extractJSON(out);
+      const turns = parseTranscript(transcript);
+      const meeting = mk({
+        id: "m" + Date.now(), title: baseTitle, date: REF_TODAY, source: "Upload", folder: "Meetings",
+        timeStart: "—", timeEnd: "—", owner: "NB", readScore: parsed.scores?.overall ?? 80,
+        video: VIDEOS[(baseTitle.length) % VIDEOS.length],
+        participantsCount: (parsed.participants || []).length || 2,
+        summary: parsed.summary || "", topics: parsed.topics || [], keyQuestions: parsed.keyQuestions || [],
+        actionItems: (parsed.actionItems || []).map((a) => ({ ...a, done: false })), nextSteps: parsed.nextSteps || [],
+        participants: parsed.participants || [], scores: parsed.scores || { overall: 75, engagement: 75, sentiment: 75, balance: 75, clarity: 75 },
+        sentimentLabel: parsed.sentimentLabel || "Neutral", sentimentTimeline: parsed.sentimentTimeline || [0, 0, 0, 0, 0, 0, 0, 0],
+        transcript: turns,
+      });
+      onSave(meeting);
+    } catch (e) { setErr("Couldn't analyze that transcript. Check ANTHROPIC_API_KEY and try again."); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between">
+          <h2 className="text-xl font-bold text-slate-900">Upload files</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X size={20} /></button>
+        </div>
+        <div className="mb-4 flex items-center gap-3 text-sm">
+          <span className="text-slate-500">You have <b className="text-slate-700">200 minutes</b> remaining.</span>
+          <button onClick={() => toast("Get more credits — coming soon")} className="font-semibold text-indigo-600 hover:text-indigo-800">Get more credits</button>
+          <button onClick={() => toast("Upload supports transcript files today; video transcription is coming soon")} className="font-semibold text-indigo-600 hover:text-indigo-800">Learn more</button>
+        </div>
+
+        <input ref={inputRef} type="file" accept=".txt,.vtt,.srt,.md,.json,audio/*,video/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); handleFiles(e.dataTransfer.files); }}
+          onClick={() => inputRef.current && inputRef.current.click()}
+          className={"flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition " + (drag ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:border-indigo-300")}>
+          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm"><Upload size={20} className="text-indigo-500" /></div>
+          {fileName ? (
+            <div className="text-sm font-semibold text-slate-700">{fileName}{transcript ? " ✓" : ""}</div>
+          ) : (
+            <div className="text-[15px] text-slate-600">Drop a file here, or <span className="font-semibold text-indigo-600">browse files</span></div>
+          )}
+          <div className="mt-1 text-[12px] text-slate-400">MP4 or M4A, maximum 5GB each — or a transcript (.txt/.vtt/.srt)</div>
+        </div>
+
+        {showPaste && (
+          <div className="mt-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-[10px] uppercase tracking-wider text-slate-400">Or paste a transcript</label>
+              <button onClick={() => { setTranscript(EXAMPLE_TRANSCRIPT); setFileName(fileName || "Pasted transcript"); }} className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800">Load example</button>
+            </div>
+            <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5} placeholder={"[00:12] Name: what they said\n[00:30] Other Name: their reply"} className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs leading-relaxed outline-none focus:border-indigo-400" />
+          </div>
+        )}
+        {!showPaste && (
+          <button onClick={() => setShowPaste(true)} className="mt-2 text-[12px] font-medium text-indigo-600 hover:text-indigo-800">…or paste a transcript instead</button>
+        )}
+
+        {err && <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800"><AlertTriangle size={15} className="mt-0.5 shrink-0" /> {err}</div>}
+
+        <label className="mt-4 flex items-center gap-2.5 text-sm text-slate-600">
+          <button type="button" onClick={() => setNotify((v) => !v)} className={"flex h-5 w-5 items-center justify-center rounded border transition " + (notify ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white")}>{notify && <Check size={13} />}</button>
+          Notify me by email when my reports are ready
+        </label>
+
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <button onClick={onClose} className="text-sm font-semibold text-indigo-600 hover:text-indigo-800">Cancel</button>
+          <button onClick={generate} disabled={busy} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50">
+            {busy ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : "Generate Reports"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function UploadView({ onSave, onCancel }) {
   const [title, setTitle] = useState("");

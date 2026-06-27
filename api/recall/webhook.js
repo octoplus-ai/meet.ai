@@ -1,8 +1,10 @@
 // Recall.ai webhook: fires when a bot finishes / transcript is ready.
-// Fetches the transcript, analyzes it with Claude, and saves a full report.
+// Fetches the transcript, analyzes it with Claude, captures participants + duration,
+// and saves a full report. Also reflects live bot-status changes onto the meeting.
 import { sb } from "../lib/supa.js";
+import { recallBase, getBot, latestCode, mapStatus, durationMin, participants } from "../lib/recall.js";
 
-const RECALL_BASE = process.env.RECALL_REGION_URL || "https://us-west-2.recall.ai";
+const RECALL_BASE = recallBase();
 
 async function analyze(transcriptText, title) {
   const sys =
@@ -38,15 +40,27 @@ export default async function handler(req, res) {
     const botId = ev?.data?.bot_id || ev?.bot?.id || ev?.data?.bot?.id || ev?.data?.data?.bot?.id || ev?.data?.id;
     const type = ev?.event || ev?.type || "";
     if (!botId) return res.status(200).json({ ok: true, ignored: true });
-    // Only act when the TRANSCRIPT is ready. Other "*.done" events (bot/recording)
-    // fire before the transcript exists and would create an empty report.
-    const isTranscriptDone = /transcript[._-]?(done|complete|completed)/i.test(type);
-    if (type && !isTranscriptDone) return res.status(200).json({ ok: true, skipped: type });
 
     const meetings = await sb(`meetings?bot_id=eq.${botId}&select=*`);
     const meeting = meetings[0];
     if (!meeting) return res.status(200).json({ ok: true, noMeeting: true });
-    // Avoid double-processing.
+
+    const isTranscriptDone = /transcript[._-]?(done|complete|completed)/i.test(type);
+
+    // --- Bot status events (optional): keep the live status fresh without polling. ---
+    if (!isTranscriptDone) {
+      const code = (type.split(".")[1] || type).trim();
+      const mapped = mapStatus(code);
+      if (mapped && meeting.status !== "done") {
+        const patch = { status: mapped, status_synced_at: new Date().toISOString() };
+        if (mapped === "error") patch.error = ev?.data?.message || ev?.message || "bot failed";
+        await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: patch });
+        return res.status(200).json({ ok: true, status: mapped });
+      }
+      return res.status(200).json({ ok: true, skipped: type });
+    }
+
+    // --- Transcript ready: build the full report. ---
     if (meeting.status === "done") return res.status(200).json({ ok: true, alreadyDone: true });
 
     let text = "";
@@ -57,6 +71,15 @@ export default async function handler(req, res) {
         text = segs.map((s) => `${s.speaker || "Speaker"}: ${s.words ? s.words.map((w) => w.text).join(" ") : (s.text || "")}`).join("\n");
       }
     } catch (e) { /* transcript fetch failed */ }
+
+    // Capture real participants + duration from the bot.
+    let ppl = [], dur = null;
+    try {
+      const bot = await getBot(botId);
+      if (bot) { ppl = participants(bot); dur = durationMin(bot); }
+    } catch (e) { /* bot fetch failed */ }
+    // Fall back to transcript speakers for participants.
+    if (!ppl.length && text) ppl = [...new Set(text.split("\n").map((l) => (l.split(":")[0] || "").trim()).filter((s) => s && s.length < 40))];
 
     const ai = await analyze(text, meeting.title);
     // Insert the report. A UNIQUE(meeting_id) constraint dedupes racing deliveries.
@@ -73,7 +96,10 @@ export default async function handler(req, res) {
       // 23505 = unique_violation -> another delivery already wrote the report; safe to continue.
       if (!/23505|duplicate/i.test(String(e.message || ""))) throw e;
     }
-    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { status: "done" } });
+    const mpatch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString() };
+    if (ppl.length) mpatch.participants = ppl;
+    if (dur) mpatch.duration_min = dur;
+    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: mpatch });
     res.status(200).json({ ok: true });
   } catch (e) {
     // Return 5xx on transient failures so Recall retries; status stays != 'done'.
