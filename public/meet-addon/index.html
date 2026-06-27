@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OctoMeet AI — Meet Add-on</title>
+  <!-- Google Meet Add-ons Web SDK (must be the gstatic build, not a CDN module). -->
+  <script src="https://www.gstatic.com/meetjs/addons/1.1.0/meet.addons.js"></script>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #14122e; color: #fff; }
@@ -14,13 +16,11 @@
     .card { margin-top: 16px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 14px; }
     .status { display: flex; align-items: center; gap: 8px; font-size: 13px; }
     .dot { width: 9px; height: 9px; border-radius: 50%; background: #64748b; }
-    .dot.rec { background: #f43f5e; box-shadow: 0 0 0 0 rgba(244,63,94,.6); animation: pulse 1.4s infinite; }
+    .dot.rec { background: #f43f5e; animation: pulse 1.4s infinite; }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(244,63,94,.6);} 70% { box-shadow: 0 0 0 8px rgba(244,63,94,0);} 100%{ box-shadow:0 0 0 0 rgba(244,63,94,0);} }
     button { width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 12px; }
-    .start { background: #7c3aed; color: #fff; }
-    .start:hover { background: #6d28d9; }
+    .start { background: #7c3aed; color: #fff; } .start:hover { background: #6d28d9; }
     .stop { background: #f43f5e; color: #fff; }
-    .ghost { background: transparent; color: #b9a9e6; font-weight: 600; }
     .muted { font-size: 11px; color: #8b80b0; margin-top: 14px; line-height: 1.5; }
     a { color: #c084fc; }
     .feat { font-size: 12px; color: #cbb9f0; margin-top: 8px; }
@@ -36,31 +36,26 @@
         <path d="M10 27 C10 16 19 8 28 8 C37 8 46 16 46 27 L46 40 Q43.5 46 41 46 Q38.5 46 36.5 40 Q34 46 32 46 Q29.5 46 27.5 40 Q25 46 23 46 Q20.5 46 18.5 40 Q16 46 14 46 Q11 46 10 40 Z" fill="url(#g)"/>
         <rect x="25" y="16" width="6" height="20" rx="3" fill="#fff"/><rect x="18" y="23" width="20" height="6" rx="3" fill="#fff"/>
       </svg>
-      <div>
-        <h1>OctoMeet AI</h1>
-        <div class="sub">AI Notetaker</div>
-      </div>
+      <div><h1>OctoMeet AI</h1><div class="sub">AI Notetaker</div></div>
     </div>
 
     <div class="card">
       <div class="status"><span class="dot" id="dot"></span><span id="statusText">Ready to record</span></div>
-      <div class="feat" id="feat"><span>✦ Transcript</span><span>✦ Summary</span><span>✦ Action items</span><span>✦ Scores</span></div>
+      <div class="feat"><span>✦ Transcript</span><span>✦ Summary</span><span>✦ Action items</span><span>✦ Scores</span></div>
       <button class="start" id="startBtn">● Start recording</button>
       <button class="stop" id="stopBtn" style="display:none">■ Stop recording</button>
     </div>
 
     <div class="muted" id="ctx">Connecting to this meeting…</div>
     <div style="flex:1"></div>
-    <div class="muted">When you start, OctoMeet joins, records & transcribes this call, then generates the full report. View reports at <a href="https://meet-ai-three-beige.vercel.app/" target="_blank">meet-ai-three-beige.vercel.app</a>.</div>
+    <div class="muted">OctoMeet joins, records & transcribes this call, then generates the full AI report. Reports: <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noopener">open OctoMeet</a>.</div>
   </div>
 
-  <script type="module">
-    // Google Meet Add-ons Web SDK. cloudProjectNumber comes from YOUR Google Cloud
-    // project (set after creating it). The add-on must be registered via the
-    // Google Workspace Marketplace SDK to load inside Meet.
+  <script>
     const CLOUD_PROJECT_NUMBER = "540014435995";
     const APP = "https://meet-ai-three-beige.vercel.app";
     const $ = (id) => document.getElementById(id);
+    let meetingUrl = null;
 
     function setRecording(on, text) {
       $("dot").className = "dot" + (on ? " rec" : "");
@@ -69,36 +64,37 @@
       $("stopBtn").style.display = on ? "block" : "none";
     }
 
-    let meetingUrl = null;
-
     async function init() {
       try {
-        const { meet } = await import("https://esm.sh/@googleworkspace/meet-addons@0.10.0/meet.addons");
-        const session = await meet.addon.createAddonSession({ cloudProjectNumber: CLOUD_PROJECT_NUMBER });
+        // createAddonSession signals to Meet that the panel loaded (completes the handshake).
+        const session = await window.meet.addon.createAddonSession({ cloudProjectNumber: CLOUD_PROJECT_NUMBER });
         const sidePanel = await session.createSidePanelClient();
         const info = await sidePanel.getMeetingInfo();
         const code = info && (info.meetingCode || info.meetingId);
-        meetingUrl = code ? `https://meet.google.com/${code}` : null;
-        $("ctx").textContent = meetingUrl ? "Connected to this meeting ✓" : "Open this from inside a Google Meet call.";
+        meetingUrl = code ? ("https://meet.google.com/" + String(code).replace(/^https?:\/\/meet\.google\.com\//, "")) : null;
+        $("ctx").textContent = "Connected to this meeting ✓";
       } catch (e) {
-        $("ctx").textContent = "Add-on context not available (open inside Google Meet after registering the add-on).";
+        $("ctx").textContent = "Loaded. (If it says reconnect, refresh the panel.)";
+        console.error("addon init error", e);
       }
     }
 
     $("startBtn").onclick = async () => {
       setRecording(true, "Joining the meeting…");
       try {
-        const r = await fetch(`${APP}/api/recall/start-bot`, {
+        const r = await fetch(APP + "/api/recall/start-bot", {
           method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-          body: JSON.stringify({ meetingUrl: meetingUrl || location.href, title: "Live meeting", botName: "OctoMeet AI Notetaker" }),
+          body: JSON.stringify({ meetingUrl: meetingUrl, title: "Live meeting", botName: "OctoMeet AI Notetaker" }),
         });
-        const d = await r.json();
+        const d = await r.json().catch(() => ({}));
+        if (r.status === 401) { setRecording(false, "Open OctoMeet & sign in first, then retry"); return; }
         setRecording(r.ok, r.ok ? "OctoMeet is recording this meeting" : ("Error: " + (d.error || "failed")));
       } catch (e) { setRecording(false, "Network error — try again"); }
     };
     $("stopBtn").onclick = () => setRecording(false, "Recording stopped");
 
-    init();
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+    else init();
   </script>
 </body>
 </html>
