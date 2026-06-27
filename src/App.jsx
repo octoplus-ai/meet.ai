@@ -389,7 +389,7 @@ function adaptReal(m) {
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
     video: (done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null,
-    real: true, status: m.status, error: m.error || null,
+    real: true, status: m.status, error: m.error || null, calendarEventId: m.calendar_event_id || null,
   };
 }
 
@@ -593,6 +593,16 @@ export default function App() {
     return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [authed, loadReal]);
 
+  // Read.ai-style auto-join: on sign-in, arm a Recall bot for every upcoming
+  // calendar meeting. Recall then joins each at its start time, even if the app is closed.
+  useEffect(() => {
+    if (!authed) return;
+    fetch("/api/calendar/arm-all", { method: "POST" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && d.armed > 0) { toast(`OctoMeet will auto-join ${d.armed} upcoming meeting${d.armed > 1 ? "s" : ""} 🗓️`); loadReal(); } })
+      .catch(() => {});
+  }, [authed, loadReal]);
+
   const login = () => { setAuthed(true); store.set("octomeet:authed", true); loadReal(); };
   const loginGoogle = () => { window.location.href = "/api/auth/google/start"; };
   const logout = async () => {
@@ -640,7 +650,7 @@ export default function App() {
         {view === "support" && <SupportView onBack={() => setView("reports")} />}
         {view === "logout" && <LogoutView onCancel={() => setView("reports")} onLogout={logout} />}
         {view === "folders" && <FoldersView onAsk={goAsk} meetings={allMeetings} onOpenFolder={(name) => { setFolderFilter(name); setView("reports"); }} />}
-        {view === "calendar" && <CalendarView onAsk={goAsk} initialTab={calTab} />}
+        {view === "calendar" && <CalendarView onAsk={goAsk} initialTab={calTab} meetings={allMeetings} onOpen={openMeeting} />}
         {view === "for-you" && <ForYouView meetings={allMeetings} onOpen={openMeeting} onAsk={goAsk} user={user} />}
         {view === "coaching" && <CoachingView onAsk={goAsk} />}
         {view === "recommendations" && <RecommendationsView onAsk={goAsk} />}
@@ -844,20 +854,61 @@ function FilterBtn({ label, icon: Icon, onClick }) {
     </button>
   );
 }
+// Working filter dropdown used in Reports.
+function FilterDropdown({ label, icon: Icon, value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const active = value && value !== "all";
+  const cur = options.find((o) => o.value === value);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((o) => !o)} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (active ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+        {Icon && <Icon size={14} className={active ? "text-indigo-500" : "text-slate-400"} />}{active ? cur?.label : label}<ChevronDown size={14} className={active ? "text-indigo-400" : "text-slate-400"} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 z-20 mt-1 max-h-72 min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+            {options.map((o) => (
+              <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} className={"flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-50 " + (o.value === value ? "font-semibold text-indigo-700" : "text-slate-600")}>
+                {o.label}{o.value === value && <Check size={14} className="text-indigo-600" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
   const [tab, setTab] = useState("reports");
   const [showCrm, setShowCrm] = useState(true);
+  const [fOwner, setFOwner] = useState("all");
+  const [fDate, setFDate] = useState("all");
+  const [fType, setFType] = useState("all");
+  const [fSource, setFSource] = useState("all");
+  const [fFolder, setFFolder] = useState("all");
 
   const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing", "error"];
+  const sourceOpts = useMemo(() => [{ value: "all", label: "All sources" }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
+  const folderOpts = useMemo(() => [{ value: "all", label: "All folders" }, ...[...new Set(meetings.map((m) => m.folder).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
+  const typeOpts = [{ value: "all", label: "All types" }, { value: "completed", label: "Completed" }, { value: "processing", label: "In progress" }];
+  const dateOpts = [{ value: "all", label: "Anytime" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }];
+  const ownerOpts = [{ value: "all", label: "All Reports" }, { value: "mine", label: "My reports" }, { value: "real", label: "Recorded by OctoMeet" }];
+
   const filtered = useMemo(
     () => (tab === "incomplete" ? meetings.filter((m) => m.real && INCOMPLETE.includes(m.status)) : meetings)
       .filter((m) => !folderFilter || m.folder === folderFilter)
+      .filter((m) => fOwner === "all" || (fOwner === "mine" ? m.owner === "NB" : m.real))
+      .filter((m) => fSource === "all" || m.source === fSource)
+      .filter((m) => fFolder === "all" || m.folder === fFolder)
+      .filter((m) => fType === "all" || (fType === "completed" ? (!m.real || m.status === "done") : (m.real && INCOMPLETE.includes(m.status))))
+      .filter((m) => { if (fDate === "all") return true; const d = daysAgo(m.date); return fDate === "today" ? d <= 0 : fDate === "week" ? d <= 7 : d <= 31; })
       .filter((m) => !q || m.title.toLowerCase().includes(q.toLowerCase()))
       .sort((a, b) => (b.date + b.timeStart).localeCompare(a.date + a.timeStart)),
-    [meetings, q, tab, folderFilter]
+    [meetings, q, tab, folderFilter, fOwner, fDate, fType, fSource, fFolder]
   );
   const groups = useMemo(() => {
     const order = ["TODAY", "THIS WEEK", "THIS MONTH", "EARLIER"];
@@ -936,12 +987,14 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               {folderFilter && (
                 <span className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-2 text-[13px] font-semibold text-indigo-700"><Folder size={13} /> {folderFilter}<button onClick={onClearFolder} className="ml-1 text-indigo-400 hover:text-indigo-700"><X size={13} /></button></span>
               )}
-              <FilterBtn label={t("allReports")} icon={ClipboardList} />
-              <FilterBtn label={t("anytime")} icon={Calendar} />
-              <FilterBtn label={t("type")} />
-              <FilterBtn label={t("source")} />
-              <FilterBtn label={t("folder")} />
-              <button onClick={() => toast("Compact view — coming soon")} className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-400 hover:bg-slate-50"><PanelRightClose size={16} /></button>
+              <FilterDropdown label={t("allReports")} icon={ClipboardList} value={fOwner} onChange={setFOwner} options={ownerOpts} />
+              <FilterDropdown label={t("anytime")} icon={Calendar} value={fDate} onChange={setFDate} options={dateOpts} />
+              <FilterDropdown label={t("type")} value={fType} onChange={setFType} options={typeOpts} />
+              <FilterDropdown label={t("source")} value={fSource} onChange={setFSource} options={sourceOpts} />
+              <FilterDropdown label={t("folder")} value={fFolder} onChange={setFFolder} options={folderOpts} />
+              {(fOwner !== "all" || fDate !== "all" || fType !== "all" || fSource !== "all" || fFolder !== "all") && (
+                <button onClick={() => { setFOwner("all"); setFDate("all"); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">Clear filters</button>
+              )}
             </div>
 
             <div className="mt-4 overflow-hidden">
@@ -1230,38 +1283,22 @@ function FoldersView({ onAsk, meetings, onOpenFolder }) {
 
 /* ============================ CALENDAR ============================ */
 const CAL_ARMED_KEY = "octomeet:calendar-armed:v1";
-function CalendarView({ onAsk, initialTab }) {
+function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   const [tab, setTab] = useState(initialTab || "upcoming");
   const [realEvents, setRealEvents] = useState(null);
   const [armed, setArmed] = useState({});
+  const [autoJoin, setAutoJoin] = useState(true);
   useEffect(() => {
     (async () => {
       try { const r = await fetch("/api/calendar/events"); if (r.ok) { const d = await r.json(); if (Array.isArray(d.events)) setRealEvents(d.events); } } catch (e) { /* not connected */ }
       setArmed((await store.get(CAL_ARMED_KEY, {})) || {});
+      try { const s = await fetch("/api/settings"); if (s.ok) { const sd = await s.json(); setAutoJoin(sd.auto_join !== false); } } catch (e) { /* default on */ }
     })();
   }, []);
-  const arm = (e, key, val) => {
-    setArmed((s) => { const next = { ...s, [key]: val }; store.set(CAL_ARMED_KEY, next); return next; });
-    if (val) startBot(e.url, e.name, e.startIso, e.eventId);
-    else toast("OctoMeet won't join this one.");
-  };
-  const events = [
-    { name: "Morning Meeting", ppl: 39, date: "Sun, Jun 28", time: "3:30 AM - 4:30 AM", add: false, role: null },
-    { name: "Acme Corp — Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
-    { name: "Chad Dubose & Octo", ppl: 4, date: "Mon, Jun 29", time: "11:00 AM - 12:00 PM", add: true, role: "Editor" },
-    { name: "Northwind — Demo", ppl: 3, date: "Tue, Jun 30", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
-    { name: "Miniso & Octo", ppl: 2, date: "Thu, Jul 2", time: "2:00 PM - 3:00 PM", add: true, role: "Report Owner" },
-    { name: "Vertex — 2nd Meeting", ppl: 4, date: "Fri, Jul 3", time: "12:00 PM - 1:00 PM", add: true, role: "Report Owner" },
-    { name: "Morning Meeting", ppl: 39, date: "Sun, Jul 5", time: "3:30 AM - 4:30 AM", add: false, role: null },
-  ];
-  const links = [{ m: 15 }, { m: 30 }, { m: 60 }, { m: 90 }];
-  const fmtEv = (iso) => {
-    try { const d = new Date(iso); return { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) }; }
-    catch { return { date: iso, time: "" }; }
-  };
-  const display = realEvents && realEvents.length
-    ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: false, role: null, url: e.meetingUrl, startIso: e.start, eventId: e.id }; })
-    : events;
+  // Cross-reference: calendar event id -> the processed meeting (status, score, report).
+  const byEvent = {};
+  (meetings || []).forEach((m) => { if (m.calendarEventId) byEvent[m.calendarEventId] = m; });
+
   const startBot = async (url, title, joinAt, calendarEventId) => {
     if (!url) { toast("This event has no meeting link"); return; }
     const future = joinAt && new Date(joinAt).getTime() > Date.now() + 30 * 1000;
@@ -1272,6 +1309,44 @@ function CalendarView({ onAsk, initialTab }) {
       toast(r.ok ? (d.already ? "OctoMeet is already set for this meeting ✓" : future ? "OctoMeet will join automatically at the start time 🗓️" : "OctoMeet is joining 🎥") : ("Error: " + (d.error || "failed")));
     } catch (e) { toast("Network error"); }
   };
+  const arm = (e, key, val) => {
+    setArmed((s) => { const next = { ...s, [key]: val }; store.set(CAL_ARMED_KEY, next); return next; });
+    if (val) startBot(e.url, e.name, e.startIso, e.eventId);
+    else toast("OctoMeet won't join this one.");
+  };
+  const toggleAutoJoin = async (val) => {
+    setAutoJoin(val);
+    try { await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto_join: val }) }); } catch (e) { /* ignore */ }
+    if (val) {
+      toast("Auto-join ON — arming your meetings…");
+      fetch("/api/calendar/arm-all", { method: "POST" }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.armed > 0) toast(`OctoMeet will join ${d.armed} meeting${d.armed > 1 ? "s" : ""} 🗓️`); }).catch(() => {});
+    } else toast("Auto-join OFF — toggle meetings individually.");
+  };
+  const events = [
+    { name: "Morning Meeting", ppl: 39, date: "Sun, Jun 28", time: "3:30 AM - 4:30 AM", add: false, role: null },
+    { name: "Acme Corp — Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
+    { name: "Northwind — Demo", ppl: 3, date: "Tue, Jun 30", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
+    { name: "Vertex — 2nd Meeting", ppl: 4, date: "Fri, Jul 3", time: "12:00 PM - 1:00 PM", add: true, role: "Report Owner" },
+  ];
+  const links = [{ m: 15 }, { m: 30 }, { m: 60 }, { m: 90 }];
+  const fmtEv = (iso) => {
+    try { const d = new Date(iso); return { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) }; }
+    catch { return { date: iso, time: "" }; }
+  };
+  const totalTime = (startIso, endIso, guests) => {
+    try {
+      const mins = Math.round((new Date(endIso) - new Date(startIso)) / 60000);
+      if (!mins || mins < 0) return null;
+      const g = Math.max(1, guests || 1);
+      const each = mins >= 60 ? `${Math.round((mins / 60) * 10) / 10} hr` : `${mins} min`;
+      const totMin = mins * g;
+      const tot = totMin >= 60 ? `${Math.round((totMin / 60) * 10) / 10} hours` : `${totMin} minutes`;
+      return `${each} × ${g} guest${g > 1 ? "s" : ""} = ${tot} total time`;
+    } catch { return null; }
+  };
+  const display = realEvents && realEvents.length
+    ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: false, role: null, url: e.meetingUrl, startIso: e.start, endIso: e.end, eventId: e.id }; })
+    : events;
   return (
     <>
       <SectionTop title="Calendar" onAsk={onAsk} right={<button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Scheduling link copied"); }} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><Link2 size={15} /> Scheduling Link</button>} />
@@ -1284,27 +1359,55 @@ function CalendarView({ onAsk, initialTab }) {
 
         {tab === "upcoming" ? (
           <>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex gap-2"><FilterBtn label="Filter" icon={SlidersHorizontal} /><FilterBtn label="Has video conferencing" /></div>
-              <span className="flex items-center gap-2 text-[13px] text-slate-400"><RefreshCw size={13} /> 1–{display.length} of {display.length}{realEvents && realEvents.length ? " · your Google Calendar" : ""}</span>
-            </div>
-            <div className="grid grid-cols-[1.6fr_1fr_120px_120px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
-              <div>Meeting</div><div>Date &amp; Time</div><div>Add Octo?</div><div>Flexible?</div>
-            </div>
-            {display.map((e, i) => (
-              <div key={i} className="grid grid-cols-[1.6fr_1fr_120px_120px] items-center border-b border-slate-100 px-3 py-3.5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white shadow-sm"><Video size={18} className="text-emerald-500" /></div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-800">{e.name}</div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[12px] text-slate-400"><Users size={12} /> {e.ppl}{e.role && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">{e.role}</span>}</div>
-                  </div>
-                </div>
-                <div className="leading-tight"><div className="text-[13px] text-slate-700">{e.date}</div><div className="text-[12px] text-slate-400">{e.time}</div></div>
-                <div><CalToggle on={armed[e.eventId || (e.name + "|" + e.date)] ?? e.add} onChange={(val) => arm(e, e.eventId || (e.name + "|" + e.date), val)} /></div>
-                <div><CalToggle on={false} /></div>
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+              <OctoLogo size={22} />
+              <div className="flex-1">
+                <div className="text-sm font-semibold text-slate-800">Auto-join your meetings</div>
+                <div className="text-[12px] text-slate-500">When on, OctoMeet automatically joins, records and analyzes every meeting on your calendar — you don't have to do anything.</div>
               </div>
-            ))}
+              <CalToggle on={autoJoin} onChange={toggleAutoJoin} />
+            </div>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex gap-2"><FilterBtn label="Has video conferencing" /></div>
+              <span className="flex items-center gap-2 text-[13px] text-slate-400"><RefreshCw size={13} /> {display.length} event{display.length === 1 ? "" : "s"}{realEvents && realEvents.length ? " · your Google Calendar" : " · demo"}</span>
+            </div>
+            <div className="grid grid-cols-[1.7fr_1fr_1.2fr_90px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+              <div>Meeting</div><div>Date &amp; Time</div><div>OctoMeet</div><div>Join</div>
+            </div>
+            {display.map((e, i) => {
+              const key = e.eventId || (e.name + "|" + e.date);
+              const mtg = e.eventId ? byEvent[e.eventId] : null;
+              const isArmed = mtg ? mtg.status !== "error" : (armed[key] ?? (autoJoin && !!e.url));
+              const tt = e.startIso ? totalTime(e.startIso, e.endIso, e.ppl) : null;
+              return (
+                <div key={i} className="grid grid-cols-[1.7fr_1fr_1.2fr_90px] items-center border-b border-slate-100 px-3 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white shadow-sm"><Video size={18} className="text-emerald-500" /></div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-slate-800">{e.name}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-slate-400"><Users size={12} /> {tt || `${e.ppl} guests`}</div>
+                    </div>
+                  </div>
+                  <div className="leading-tight"><div className="text-[13px] text-slate-700">{e.date}</div><div className="text-[12px] text-slate-400">{e.time}</div></div>
+                  <div>
+                    {mtg && mtg.status === "done" ? (
+                      <button onClick={() => onOpen(mtg.id)} className="flex items-center gap-2 text-left">
+                        <span className="flex h-7 items-center rounded-md bg-emerald-100 px-2 text-[12px] font-bold text-emerald-700">{mtg.scores.engagement || mtg.scores.overall}</span>
+                        <span className="text-[12px] font-semibold text-indigo-600 hover:text-indigo-800">View report ↗</span>
+                      </button>
+                    ) : mtg && mtg.status && mtg.status !== "scheduled" ? (
+                      <StatusBadge status={mtg.status} />
+                    ) : isArmed ? (
+                      <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-600"><CalendarCheck size={13} /> Will auto-join</span>
+                    ) : (
+                      <span className="text-[12px] text-slate-400">Off</span>
+                    )}
+                  </div>
+                  <div><CalToggle on={isArmed} onChange={(val) => arm(e, key, val)} /></div>
+                </div>
+              );
+            })}
+            {!display.length && <div className="py-16 text-center text-sm text-slate-400">No upcoming meetings on your calendar.</div>}
           </>
         ) : (
           <div className="space-y-6">

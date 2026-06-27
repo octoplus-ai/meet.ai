@@ -1,10 +1,8 @@
-// Sends a Recall.ai bot into a meeting URL to join + record + transcribe.
-// Supports scheduled joins (join_at) so the bot enters by itself at meeting time
-// — the Read.ai-style "just activate it" flow. The transcript arrives via webhook.
+// Sends a Recall.ai bot into a meeting URL (now or scheduled). Thin wrapper over
+// the shared scheduleBot helper so manual + auto-join share one code path.
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
-
-const RECALL_BASE = process.env.RECALL_REGION_URL || "https://us-west-2.recall.ai";
+import { scheduleBot } from "../lib/schedule.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
@@ -12,53 +10,17 @@ export default async function handler(req, res) {
     const t = parseCookies(req).om_session;
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t || "")}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (!s.length) return res.status(401).json({ error: "not authenticated" });
-    const userId = s[0].user_id;
 
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const meetingUrl = body.meetingUrl;
-    if (!meetingUrl) return res.status(400).json({ error: "meetingUrl required" });
+    if (!body.meetingUrl) return res.status(400).json({ error: "meetingUrl required" });
     if (!process.env.RECALL_API_KEY) return res.status(400).json({ error: "RECALL_API_KEY not configured in Vercel" });
 
-    // Scheduled join: if joinAt is in the future, Recall holds the bot and joins at that time.
-    const joinAt = body.joinAt ? new Date(body.joinAt) : null;
-    const scheduled = joinAt && joinAt.getTime() > Date.now() + 30 * 1000;
-
-    // Don't create a duplicate bot for a calendar event already armed.
-    if (body.calendarEventId) {
-      const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(body.calendarEventId)}&status=neq.done&select=id,bot_id`);
-      if (ex && ex.length) return res.status(200).json({ ok: true, already: true, meeting: ex[0] });
-    }
-
-    const recallBody = {
-      meeting_url: meetingUrl,
-      bot_name: body.botName || "OctoMeet AI Notetaker",
-      recording_config: { transcript: { provider: { meeting_captions: {} } } },
-    };
-    if (scheduled) recallBody.join_at = joinAt.toISOString();
-
-    const r = await fetch(`${RECALL_BASE}/api/v1/bot/`, {
-      method: "POST",
-      headers: { Authorization: `Token ${process.env.RECALL_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(recallBody),
+    const result = await scheduleBot(s[0].user_id, {
+      meetingUrl: body.meetingUrl, title: body.title, joinAt: body.joinAt,
+      calendarEventId: body.calendarEventId, botName: body.botName,
     });
-    const bot = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: "recall error", detail: bot });
-
-    const m = await sb("meetings", {
-      method: "POST",
-      prefer: "return=representation",
-      body: {
-        user_id: userId,
-        title: body.title || "Live meeting",
-        source: "Recall",
-        meeting_url: meetingUrl,
-        bot_id: bot.id,
-        status: scheduled ? "scheduled" : "joining",
-        start_time: scheduled ? joinAt.toISOString() : new Date().toISOString(),
-        calendar_event_id: body.calendarEventId || null,
-      },
-    });
-    res.status(200).json({ ok: true, bot_id: bot.id, scheduled: !!scheduled, meeting: m[0] });
+    if (result.error) return res.status(502).json({ error: result.error, detail: result.detail });
+    res.status(200).json(result);
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

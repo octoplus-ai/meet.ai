@@ -1,0 +1,50 @@
+// Google Calendar helpers: get a valid (refreshed) access token and list events.
+import { sb } from "./supa.js";
+
+export async function getValidToken(userId) {
+  const r = await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google&select=*`);
+  let tk = r[0];
+  if (!tk) return null;
+  if (tk.expiry && new Date(tk.expiry) <= new Date() && tk.refresh_token) {
+    const nt = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID || "540014435995-d8rb5g8a9c4rv82vo4dtak9eoh3e2ufi.apps.googleusercontent.com",
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        refresh_token: tk.refresh_token,
+        grant_type: "refresh_token",
+      }),
+    }).then((x) => x.json());
+    if (nt.access_token) {
+      tk.access_token = nt.access_token;
+      await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google`, {
+        method: "PATCH",
+        body: { access_token: nt.access_token, expiry: new Date(Date.now() + (nt.expires_in || 3600) * 1000).toISOString() },
+      });
+    }
+  }
+  return tk.access_token || null;
+}
+
+// Returns normalized upcoming events in [now, now + days].
+export async function listUpcomingEvents(userId, { days = 7 } = {}) {
+  const token = await getValidToken(userId);
+  if (!token) return { error: "no token", events: [] };
+  const now = new Date();
+  const max = new Date(now.getTime() + days * 86400000);
+  const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=50&singleEvents=true&orderBy=startTime`;
+  const cal = await fetch(url, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+  if (cal.error) return { error: "calendar auth failed", events: [] };
+  const events = (cal.items || []).map((e) => ({
+    id: e.id,
+    title: e.summary || "(no title)",
+    start: e.start?.dateTime || e.start?.date,
+    end: e.end?.dateTime || e.end?.date,
+    meetingUrl: e.hangoutLink || (e.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri) || (e.conferenceData?.entryPoints?.[0]?.uri) || null,
+    attendees: (e.attendees || []).length,
+    organizer: e.organizer?.email || null,
+    selfDeclined: (e.attendees || []).some((a) => a.self && a.responseStatus === "declined"),
+  }));
+  return { events };
+}
