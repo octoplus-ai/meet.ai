@@ -8,13 +8,13 @@ The Add-on UI is built and hosted (this repo). The Media API is **gated by Googl
 - **Logo:** https://meet-ai-three-beige.vercel.app/octo-logo.png
 - Capture today runs through the Recall bot (hybrid); we swap to the Media API once Google approves it.
 
-## STEP 1 — Google Cloud project (you)
-1. Create a project: https://console.cloud.google.com/projectcreate
-2. Note the **Project NUMBER** (Dashboard → Project info). → send it to me; I drop it into the add-on (`CLOUD_PROJECT_NUMBER`).
-3. Enable APIs (APIs & Services → Enable APIs):
+## STEP 1 — Google Cloud project (ALREADY EXISTS)
+Uses the existing project **OctoMeet AI** — Project NUMBER **540014435995**, ID `octomeet-ai`,
+org `octoplusteam.com` (the same project as the Google OAuth client). Number is already wired into the add-on.
+Just enable these APIs (APIs & Services → Enable APIs & Services):
    - **Google Workspace Marketplace SDK**
    - **Google Workspace Add-ons API**
-4. OAuth consent screen → fill app name "OctoMeet AI", logo, privacy policy URL.
+(OAuth consent screen is already configured for Google login.)
 
 ## STEP 2 — Register the Meet Add-on (you, with me)
 In the **Google Workspace Marketplace SDK → App Configuration**, add a Meet add-on with this manifest:
