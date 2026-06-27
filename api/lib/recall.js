@@ -34,7 +34,9 @@ export function mapStatus(code) {
     case "done": return "processing";
     case "analysis_done": return "processing";
     case "fatal": return "error";
-    default: return null;
+    default:
+      console.warn("Recall: unmapped status code:", code);
+      return null;
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Users, Sparkles, ClipboardList, FolderPlus, Folder, Calendar, Star,
   Presentation, Lightbulb, ShieldCheck, LayoutGrid, PlusCircle, Link2, Globe,
@@ -534,12 +534,12 @@ export default function App() {
   const [realMeetings, setRealMeetings] = useState([]);
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  const loadReal = async () => {
+  const loadReal = useCallback(async () => {
     try {
       const mr = await fetch("/api/meetings", { cache: "no-store" });
       if (mr.ok) { const md = await mr.json(); setRealMeetings((md.meetings || []).map(adaptReal)); }
     } catch (e) { /* not connected */ }
-  };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -566,7 +566,7 @@ export default function App() {
     const onFocus = () => loadReal();
     window.addEventListener("focus", onFocus);
     return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
-  }, [authed]);
+  }, [authed, loadReal]);
 
   const login = () => { setAuthed(true); store.set("octomeet:authed", true); };
   const loginGoogle = () => { window.location.href = "/api/auth/google/start"; };
@@ -586,6 +586,9 @@ export default function App() {
   const active = useMemo(() => allMeetings.find((m) => m.id === activeId), [allMeetings, activeId]);
   const openMeeting = (id) => { setActiveId(id); setView("meeting"); };
   const goAsk = (q) => { setAskSeed(q || ""); setView("ask"); };
+  const handleUploadSave = useCallback(async (m) => {
+    await persist([m, ...meetings]); setUploadOpen(false); setActiveId(m.id); setView("meeting");
+  }, [meetings]);
 
   if (authed === null || !meetings) {
     return (
@@ -618,7 +621,7 @@ export default function App() {
         {view === "integrations" && <IntegrationsView onAsk={goAsk} />}
         {view === "meeting-policy" && <MeetingPolicyView onAsk={goAsk} />}
       </main>
-      {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} onSave={async (m) => { await persist([m, ...meetings]); setUploadOpen(false); openMeeting(m.id); }} />}
+      {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} onSave={handleUploadSave} />}
     </div>
   );
 }
@@ -822,10 +825,12 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
   const [tab, setTab] = useState("reports");
   const [showCrm, setShowCrm] = useState(true);
 
+  const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing", "error"];
   const filtered = useMemo(
-    () => [...meetings].filter((m) => !q || m.title.toLowerCase().includes(q.toLowerCase()))
+    () => (tab === "incomplete" ? meetings.filter((m) => m.real && INCOMPLETE.includes(m.status)) : meetings)
+      .filter((m) => !q || m.title.toLowerCase().includes(q.toLowerCase()))
       .sort((a, b) => (b.date + b.timeStart).localeCompare(a.date + a.timeStart)),
-    [meetings, q]
+    [meetings, q, tab]
   );
   const groups = useMemo(() => {
     const order = ["TODAY", "THIS WEEK", "THIS MONTH", "EARLIER"];
@@ -871,13 +876,6 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        {tab === "incomplete" ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center text-slate-400">
-            <ClipboardList size={36} className="mb-3 text-slate-300" />
-            <p className="text-sm font-medium text-slate-500">No incomplete reports</p>
-            <p className="text-xs">Meetings still processing will show up here.</p>
-          </div>
-        ) : (
           <>
             {(live.length > 0 || proc.length > 0) && (
               <div className={"mb-5 flex items-center gap-3 rounded-xl border px-4 py-3 " + (live.length ? "border-rose-200 bg-rose-50" : "border-indigo-200 bg-indigo-50")}>
@@ -892,7 +890,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
                 <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> Refresh</button>
               </div>
             )}
-            {showCrm && (
+            {tab === "reports" && showCrm && (
               <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-indigo-50 px-4 py-3">
                 <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">✨ NEW!</span>
                 <span className="flex-1 text-sm text-slate-700">Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.</span>
@@ -960,10 +958,9 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
                   ))}
                 </div>
               ))}
-              {!filtered.length && <div className="py-16 text-center text-sm text-slate-400">No reports match “{q}”.</div>}
+              {!filtered.length && <div className="py-16 text-center text-sm text-slate-400">{tab === "incomplete" ? (q ? `No in-progress meetings match “${q}”.` : "No meetings in progress. Live & processing meetings will appear here.") : (q ? `No reports match “${q}”.` : "No reports yet.")}</div>}
             </div>
           </>
-        )}
       </div>
     </>
   );
@@ -2273,6 +2270,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
         </div>
       </div>
 
+      {meeting.status && meeting.status !== "done" && (
+        <div className={"flex items-center gap-3 border-b px-6 py-3 " + (["recording", "error"].includes(meeting.status) ? "border-rose-200 bg-rose-50" : "border-indigo-200 bg-indigo-50")}>
+          {meeting.status === "recording"
+            ? <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" /></span>
+            : <StatusBadge status={meeting.status} />}
+          <span className="text-sm font-medium text-slate-700">{statusSummary(meeting.status)}</span>
+        </div>
+      )}
+
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
@@ -2769,89 +2775,6 @@ function UploadModal({ onClose, onSave }) {
           <button onClick={onClose} className="text-sm font-semibold text-indigo-600 hover:text-indigo-800">Cancel</button>
           <button onClick={generate} disabled={busy} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50">
             {busy ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : "Generate Reports"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function UploadView({ onSave, onCancel }) {
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState(REF_TODAY);
-  const [source, setSource] = useState("Google Meet");
-  const [folder, setFolder] = useState("Sales Call");
-  const [raw, setRaw] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  const analyze = async () => {
-    if (!raw.trim()) { setErr("Paste a transcript first."); return; }
-    setErr(""); setBusy(true);
-    try {
-      const sys = "You are a meeting-intelligence analyst. Read the transcript and return ONLY a JSON object (no markdown) with this shape:\n" +
-        `{"summary": string (2-3 sentences), "topics": string[] (max 5), "keyQuestions": string[] (max 4), "actionItems": [{"owner": string, "task": string, "due": string}] (max 6), "nextSteps": string[] (max 3), "participants": [{"name": string, "role": string, "talkPct": integer, "sentiment": "Positive"|"Neutral"|"Negative"}], "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int} (0-100), "sentimentLabel": "Positive"|"Neutral"|"Negative", "sentimentTimeline": number[] (8 values -1..1)}.\n` +
-        "Infer speaker names from the transcript. Keep strings short.";
-      const out = await callClaude([{ role: "user", content: "Title: " + (title || "Untitled meeting") + "\n\nTranscript:\n" + raw }], sys);
-      const parsed = extractJSON(out);
-      const turns = parseTranscript(raw);
-      const meeting = mk({
-        id: "m" + Date.now(), title: title || "Untitled meeting", date, source, folder,
-        timeStart: "—", timeEnd: "—", owner: "NB", readScore: parsed.scores?.overall ?? 80,
-        video: VIDEOS[Math.floor((title || "x").length) % VIDEOS.length],
-        participantsCount: (parsed.participants || []).length || 2,
-        summary: parsed.summary || "", topics: parsed.topics || [], keyQuestions: parsed.keyQuestions || [],
-        actionItems: (parsed.actionItems || []).map((a) => ({ ...a, done: false })), nextSteps: parsed.nextSteps || [],
-        participants: parsed.participants || [], scores: parsed.scores || { overall: 75, engagement: 75, sentiment: 75, balance: 75, clarity: 75 },
-        sentimentLabel: parsed.sentimentLabel || "Neutral", sentimentTimeline: parsed.sentimentTimeline || [0, 0, 0, 0, 0, 0, 0, 0],
-        transcript: turns,
-      });
-      onSave(meeting);
-    } catch (e) { setErr("Couldn't analyze that transcript. Check ANTHROPIC_API_KEY and try again."); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 py-7">
-        <button onClick={onCancel} className="mb-5 flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft size={15} /> Back to Reports</button>
-        <h1 className="text-2xl font-bold text-slate-900">Upload a meeting</h1>
-        <p className="mt-1 text-sm text-slate-500">Paste a transcript and Octomeet.ai will generate the report — summary, action items, key questions, scores — with AI.</p>
-        <div className="mt-6 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-slate-400">Title</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Acme Corp — Discovery" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-slate-400">Date</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-slate-400">Source</label>
-              <div className="flex flex-wrap gap-2">{["Google Meet", "Zoom", "Microsoft Teams", "Read"].map((p) => (
-                <button key={p} onClick={() => setSource(p)} className={"rounded-xl border px-3 py-2 text-sm transition " + (source === p ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>{p}</button>))}
-              </div>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-slate-400">Folder</label>
-              <div className="flex flex-wrap gap-2">{["Sales Call", "Partnership Alignment", "Job Interview", "One-on-One"].map((p) => (
-                <button key={p} onClick={() => setFolder(p)} className={"rounded-xl border px-3 py-2 text-sm transition " + (folder === p ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>{p}</button>))}
-              </div>
-            </div>
-          </div>
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label className="block text-[10px] uppercase tracking-wider text-slate-400">Transcript</label>
-              <button onClick={() => { setRaw(EXAMPLE_TRANSCRIPT); setTitle(title || "Vela Support — Discovery"); }} className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800">Load example</button>
-            </div>
-            <textarea value={raw} onChange={(e) => setRaw(e.target.value)} rows={9} placeholder={"Format:\n[00:12] Name: what they said\n[00:30] Other Name: their reply"} className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 font-mono text-xs leading-relaxed outline-none focus:border-indigo-400" />
-          </div>
-          {err && <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-sm text-rose-700"><AlertTriangle size={15} /> {err}</div>}
-          <button onClick={analyze} disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500 disabled:opacity-50">
-            {busy ? <><Loader2 size={16} className="animate-spin" /> Analyzing with AI…</> : <><Zap size={16} /> Generate report</>}
           </button>
         </div>
       </div>

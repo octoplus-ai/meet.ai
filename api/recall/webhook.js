@@ -49,13 +49,17 @@ export default async function handler(req, res) {
 
     // --- Bot status events (optional): keep the live status fresh without polling. ---
     if (!isTranscriptDone) {
-      const code = (type.split(".")[1] || type).trim();
+      const code = (type.includes(".") ? type.split(".").pop() : type).trim().toLowerCase();
       const mapped = mapStatus(code);
-      if (mapped && meeting.status !== "done") {
-        const patch = { status: mapped, status_synced_at: new Date().toISOString() };
-        if (mapped === "error") patch.error = ev?.data?.message || ev?.message || "bot failed";
-        await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: patch });
-        return res.status(200).json({ ok: true, status: mapped });
+      if (mapped) {
+        // Re-read current status to avoid downgrading a meeting that already finished.
+        const cur = await sb(`meetings?id=eq.${meeting.id}&select=status`);
+        if ((cur[0]?.status || meeting.status) !== "done") {
+          const patch = { status: mapped, status_synced_at: new Date().toISOString() };
+          if (mapped === "error") patch.error = ev?.data?.message || ev?.message || "bot failed";
+          await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: patch });
+          return res.status(200).json({ ok: true, status: mapped });
+        }
       }
       return res.status(200).json({ ok: true, skipped: type });
     }
