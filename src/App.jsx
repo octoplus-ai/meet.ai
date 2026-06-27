@@ -593,14 +593,19 @@ export default function App() {
     return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [authed, loadReal]);
 
-  // Read.ai-style auto-join: on sign-in, arm a Recall bot for every upcoming
-  // calendar meeting. Recall then joins each at its start time, even if the app is closed.
+  // Read.ai-style auto-join: on sign-in AND periodically, arm a Recall bot for every
+  // upcoming calendar meeting. Recall joins each at its exact start time and waits in
+  // the lobby until admitted — even after the app is closed. Re-arming catches meetings
+  // you create while the app is open.
   useEffect(() => {
     if (!authed) return;
-    fetch("/api/calendar/arm-all", { method: "POST" })
+    const armNow = (announce) => fetch("/api/calendar/arm-all", { method: "POST" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && d.armed > 0) { toast(`OctoMeet will auto-join ${d.armed} upcoming meeting${d.armed > 1 ? "s" : ""} 🗓️`); loadReal(); } })
+      .then((d) => { if (d && d.armed > 0) { if (announce) toast(`OctoMeet will auto-join ${d.armed} upcoming meeting${d.armed > 1 ? "s" : ""} 🗓️`); loadReal(); } })
       .catch(() => {});
+    armNow(true);
+    const id = setInterval(() => armNow(false), 150000); // re-arm every 2.5 min
+    return () => clearInterval(id);
   }, [authed, loadReal]);
 
   const login = () => { setAuthed(true); store.set("octomeet:authed", true); loadReal(); };
@@ -617,7 +622,9 @@ export default function App() {
     setMeetings(demo); await store.set("octomeet:meetings:v1", demo);
     setRealMeetings(real);
   };
-  const allMeetings = useMemo(() => [...realMeetings, ...(meetings || [])], [realMeetings, meetings]);
+  // Real Google user (Santiago) sees ONLY their real measured meetings — no demo/seed clutter.
+  // The demo/email login still sees seeded meetings so the app isn't empty for previews.
+  const allMeetings = useMemo(() => (user ? realMeetings : [...realMeetings, ...(meetings || [])]), [realMeetings, meetings, user]);
   const active = useMemo(() => allMeetings.find((m) => m.id === activeId), [allMeetings, activeId]);
   const openMeeting = (id) => { setActiveId(id); setView("meeting"); };
   const goAsk = (q) => { setAskSeed(q || ""); setView("ask"); };
@@ -1288,11 +1295,19 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   const [realEvents, setRealEvents] = useState(null);
   const [armed, setArmed] = useState({});
   const [autoJoin, setAutoJoin] = useState(true);
+  const loadEvents = async () => {
+    try { const r = await fetch("/api/calendar/events"); if (r.ok) { const d = await r.json(); if (Array.isArray(d.events)) setRealEvents(d.events); } } catch (e) { /* not connected */ }
+  };
   useEffect(() => {
     (async () => {
-      try { const r = await fetch("/api/calendar/events"); if (r.ok) { const d = await r.json(); if (Array.isArray(d.events)) setRealEvents(d.events); } } catch (e) { /* not connected */ }
+      await loadEvents();
       setArmed((await store.get(CAL_ARMED_KEY, {})) || {});
-      try { const s = await fetch("/api/settings"); if (s.ok) { const sd = await s.json(); setAutoJoin(sd.auto_join !== false); } } catch (e) { /* default on */ }
+      let on = true;
+      try { const s = await fetch("/api/settings"); if (s.ok) { const sd = await s.json(); on = sd.auto_join !== false; setAutoJoin(on); } } catch (e) { /* default on */ }
+      // Opening the Calendar immediately arms any new meetings (real-time auto-join).
+      if (on) {
+        try { const a = await fetch("/api/calendar/arm-all", { method: "POST" }); if (a.ok) { const ad = await a.json(); if (ad.armed > 0) { toast(`OctoMeet armed ${ad.armed} meeting${ad.armed > 1 ? "s" : ""} 🗓️`); await loadEvents(); } } } catch (e) { /* ignore */ }
+      }
     })();
   }, []);
   // Cross-reference: calendar event id -> the processed meeting (status, score, report).
