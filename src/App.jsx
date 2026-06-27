@@ -1632,8 +1632,13 @@ function LoginView({ onLogin, onGoogle }) {
   const [email, setEmail] = useState("");
   const [tip, setTip] = useState(false);
   const signup = mode === "signup";
-  let authError = "";
-  try { authError = new URLSearchParams(window.location.search).get("auth_error") || ""; } catch (e) { /* ignore */ }
+  const [authError, setAuthError] = useState("");
+  useEffect(() => {
+    try {
+      const e = new URLSearchParams(window.location.search).get("auth_error");
+      if (e) { setAuthError(e); window.history.replaceState({}, "", window.location.pathname); }
+    } catch (er) { /* ignore */ }
+  }, []);
   const providers = [
     { label: "Continue with Google", icon: <GoogleIcon />, real: true },
     { label: "Continue with Microsoft", icon: <MicrosoftIcon /> },
