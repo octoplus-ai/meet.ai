@@ -2,6 +2,9 @@
 // run a rich Read.ai-style analysis with Claude, and persist a full report.
 import { sb } from "./supa.js";
 import { getBot, getTranscript, durationMin } from "./recall.js";
+import { annotateEvent } from "./google.js";
+
+const APP_URL = "https://meet-ai-three-beige.vercel.app/";
 
 // Rich analysis prompt — mirrors Read.ai's report surface.
 export async function analyzeTranscript(text, title, participantNames) {
@@ -108,6 +111,12 @@ export async function processMeeting(meeting, { force = false } = {}) {
   if (dur) mpatch.duration_min = dur;
   if (bot && bot.recordings && bot.recordings[0]) mpatch.recording_id = bot.recordings[0].id;
   await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: mpatch });
+
+  // Post-meeting: write the score + report link into the real Google Calendar event.
+  if (meeting.calendar_event_id) {
+    const note = `✅ Recorded by OctoMeet AI · Read Score ${sc.overall || 0} · Engagement ${sc.engagement || 0}\n${(ai.summary || "").slice(0, 240)}\nFull report: ${APP_URL}`;
+    annotateEvent(meeting.user_id, meeting.calendar_event_id, note).catch(() => {});
+  }
 
   return { ok: true, transcriptChars: tr.text.length, participants: participants.length };
 }

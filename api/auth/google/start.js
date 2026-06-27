@@ -13,6 +13,9 @@ export default function handler(req, res) {
       "email",
       "profile",
       "https://www.googleapis.com/auth/calendar.readonly",
+      // Write access so OctoMeet can annotate events (e.g. "OctoMeet will record"
+      // + post-meeting score/report link) inside the user's real Google Calendar.
+      "https://www.googleapis.com/auth/calendar.events",
     ].join(" "),
   });
   res.writeHead(302, { Location: "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString() });

@@ -27,6 +27,29 @@ export async function getValidToken(userId) {
   return tk.access_token || null;
 }
 
+// Adds/updates an OctoMeet note block in a calendar event's description.
+// Best-effort: silently no-ops if write scope wasn't granted or the user can't edit.
+const MARK_START = "\n\n— OctoMeet AI —\n";
+export async function annotateEvent(userId, eventId, note) {
+  try {
+    const token = await getValidToken(userId);
+    if (!token || !eventId) return false;
+    const base = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
+    const ev = await fetch(base, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+    if (!ev || ev.error) return false;
+    let desc = ev.description || "";
+    const idx = desc.indexOf(MARK_START);
+    if (idx >= 0) desc = desc.slice(0, idx); // replace prior OctoMeet block
+    desc = `${desc}${MARK_START}${note}`;
+    const r = await fetch(base, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ description: desc }),
+    });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
 // Returns normalized upcoming events in [now, now + days].
 export async function listUpcomingEvents(userId, { days = 7 } = {}) {
   const token = await getValidToken(userId);

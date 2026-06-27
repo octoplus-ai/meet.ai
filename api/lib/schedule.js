@@ -2,9 +2,29 @@
 // (on app load) and the cron (autonomous) so auto-join behaves like Read.ai.
 import { sb } from "./supa.js";
 import { recallBase } from "./recall.js";
-import { listUpcomingEvents } from "./google.js";
+import { listUpcomingEvents, annotateEvent } from "./google.js";
+import { OCTO_AVATAR_JPEG_B64 } from "./avatar.js";
 
 const RECALL_BASE = recallBase();
+
+async function createRecallBot(recallBody) {
+  // Try with the branded camera tile; if Recall rejects it, retry without so the
+  // join never breaks because of the avatar.
+  const withAvatar = { ...recallBody, automatic_video_output: { in_call_recording: { kind: "jpeg", b64_data: OCTO_AVATAR_JPEG_B64 } } };
+  let r = await fetch(`${RECALL_BASE}/api/v1/bot/`, {
+    method: "POST",
+    headers: { Authorization: `Token ${process.env.RECALL_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(withAvatar),
+  });
+  if (r.ok) return { r, bot: await r.json() };
+  // Fallback without avatar.
+  r = await fetch(`${RECALL_BASE}/api/v1/bot/`, {
+    method: "POST",
+    headers: { Authorization: `Token ${process.env.RECALL_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(recallBody),
+  });
+  return { r, bot: await r.json() };
+}
 
 // Create a Recall bot (optionally scheduled via join_at) + a meetings row.
 // Dedups on calendar_event_id so we never double-book a calendar meeting.
@@ -26,12 +46,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
   };
   if (scheduled) recallBody.join_at = joinDate.toISOString();
 
-  const r = await fetch(`${RECALL_BASE}/api/v1/bot/`, {
-    method: "POST",
-    headers: { Authorization: `Token ${process.env.RECALL_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(recallBody),
-  });
-  const bot = await r.json();
+  const { r, bot } = await createRecallBot(recallBody);
   if (!r.ok) return { error: "recall error", detail: bot };
 
   const m = await sb("meetings", {
@@ -44,6 +59,8 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
       calendar_event_id: calendarEventId || null,
     },
   });
+  // Surface inside the user's real Google Calendar event (best-effort).
+  if (calendarEventId) annotateEvent(userId, calendarEventId, "🐙 OctoMeet AI will join and record this meeting, then add the AI summary & report link here.").catch(() => {});
   return { ok: true, scheduled: !!scheduled, bot_id: bot.id, meeting: m[0] };
 }
 
