@@ -333,6 +333,28 @@ function seedMeetings() {
   return list.map((m, i) => ({ ...m, video: VIDEOS[i % VIDEOS.length] }));
 }
 
+// Adapt a real meeting+report row from Supabase into the UI meeting shape.
+function adaptReal(m) {
+  const r = (m.reports && m.reports[0]) || {};
+  const sc = r.scores || {};
+  const done = m.status === "done";
+  const overall = r.read_score || sc.overall || 0;
+  return {
+    id: m.id, title: m.title || "Meeting", source: m.source || "Recall",
+    date: String(m.start_time || m.created_at || REF_TODAY).slice(0, 10),
+    timeStart: "", timeEnd: "", durationMin: 0,
+    folder: "Meetings", folderLocked: false, owner: "NB", participantsCount: 0,
+    scores: { overall, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: 0, clarity: 0 },
+    sentimentLabel: "Positive", sentimentTimeline: [0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.7, 0.7],
+    summary: r.summary || (done ? "" : "⏳ Processing — the AI report will appear here once the meeting ends and the transcript is ready."),
+    topics: r.topics || [], keyQuestions: r.key_questions || [],
+    actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", done: false })),
+    nextSteps: [], participants: [],
+    transcript: r.transcript ? parseTranscript(r.transcript) : [],
+    video: null, real: true, status: m.status,
+  };
+}
+
 /* ----------------------------- helpers ----------------------------- */
 const daysAgo = (iso) => {
   const a = new Date(iso + "T00:00:00"), b = new Date(REF_TODAY + "T00:00:00");
@@ -398,7 +420,9 @@ function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge 
   const onLeave = () => { const v = ref.current; if (v) { try { v.pause(); } catch (e) {} } };
   return (
     <div className={"relative shrink-0 overflow-hidden bg-slate-900 " + rounded} style={{ width: size, height: size }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      <video ref={ref} src={src} muted loop playsInline preload="metadata" className="h-full w-full object-cover" />
+      {src
+        ? <video ref={ref} src={src} muted loop playsInline preload="metadata" className="h-full w-full object-cover" />
+        : <div className="h-full w-full bg-gradient-to-br from-indigo-400 to-violet-500" />}
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15">
         <span className="flex items-center justify-center rounded-full bg-black/45" style={{ width: size * 0.4, height: size * 0.4 }}>
           <Play size={size * 0.22} className="ml-px text-white" fill="white" />
@@ -474,6 +498,14 @@ export default function App() {
   const [calTab, setCalTab] = useState("upcoming");
   const [authed, setAuthed] = useState(null);
   const [user, setUser] = useState(null);
+  const [realMeetings, setRealMeetings] = useState([]);
+
+  const loadReal = async () => {
+    try {
+      const mr = await fetch("/api/meetings", { cache: "no-store" });
+      if (mr.ok) { const md = await mr.json(); setRealMeetings((md.meetings || []).map(adaptReal)); }
+    } catch (e) { /* not connected */ }
+  };
 
   useEffect(() => {
     (async () => {
@@ -486,7 +518,7 @@ export default function App() {
       try {
         const r = await fetch("/api/me", { cache: "no-store" });
         const d = await r.json();
-        if (d && d.user) { setUser(d.user); setAuthed(true); store.set("octomeet:authed", true); return; }
+        if (d && d.user) { setUser(d.user); setAuthed(true); store.set("octomeet:authed", true); loadReal(); return; }
       } catch (e) { /* backend not configured yet */ }
       setAuthed(localAuthed);
     })();
@@ -500,8 +532,14 @@ export default function App() {
   };
   const setLang = (l) => { setLangState(l); store.set("octomeet:lang", l); };
   const t = (k) => (TR[lang] && TR[lang][k]) || TR.en[k] || k;
-  const persist = async (next) => { setMeetings(next); await store.set("octomeet:meetings:v1", next); };
-  const active = useMemo(() => (meetings || []).find((m) => m.id === activeId), [meetings, activeId]);
+  const persist = async (next) => {
+    const demo = next.filter((m) => !m.real);
+    const real = next.filter((m) => m.real);
+    setMeetings(demo); await store.set("octomeet:meetings:v1", demo);
+    setRealMeetings(real);
+  };
+  const allMeetings = useMemo(() => [...realMeetings, ...(meetings || [])], [realMeetings, meetings]);
+  const active = useMemo(() => allMeetings.find((m) => m.id === activeId), [allMeetings, activeId]);
   const openMeeting = (id) => { setActiveId(id); setView("meeting"); };
   const goAsk = (q) => { setAskSeed(q || ""); setView("ask"); };
 
@@ -520,9 +558,9 @@ export default function App() {
       <Toaster />
       <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
       <main className="flex flex-1 flex-col overflow-hidden">
-        {view === "reports" && <ReportsList meetings={meetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} t={t} />}
-        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={meetings} />}
-        {view === "ask" && <ChatView meetings={meetings} onOpen={openMeeting} seed={askSeed} />}
+        {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setView("upload")} onAsk={goAsk} t={t} onRefresh={loadReal} />}
+        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} />}
+        {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "upload" && <UploadView onSave={async (m) => { await persist([m, ...meetings]); openMeeting(m.id); }} onCancel={() => setView("reports")} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
         {view === "plans" && <PlansView onBack={() => setView("reports")} />}
@@ -734,7 +772,7 @@ function FilterBtn({ label, icon: Icon, onClick }) {
   );
 }
 
-function ReportsList({ meetings, onOpen, onUpload, onAsk, t }) {
+function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
   const [tab, setTab] = useState("reports");
@@ -778,7 +816,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t }) {
             ))}
           </div>
           <div className="flex items-center gap-3 pb-1.5">
-            <span className="flex items-center gap-1.5 text-[13px] text-slate-400"><RefreshCw size={13} /> {t("lastRefreshed")}</span>
+            <button onClick={() => { if (onRefresh) onRefresh(); toast("Refreshed"); }} className="flex items-center gap-1.5 text-[13px] text-slate-400 transition hover:text-slate-600"><RefreshCw size={13} /> {t("lastRefreshed")}</button>
             <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-500">
               <Upload size={15} /> {t("upload")}
             </button>
@@ -2171,9 +2209,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
       </div>
 
       <div className="mx-auto max-w-5xl px-6 py-5">
-        <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
-          <video key={meeting.id} src={meeting.video} controls preload="metadata" className="aspect-video w-full bg-black" />
-        </div>
+        {meeting.video ? (
+          <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
+            <video key={meeting.id} src={meeting.video} controls preload="metadata" className="aspect-video w-full bg-black" />
+          </div>
+        ) : (
+          <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-violet-50 text-center text-sm text-slate-500">
+            <div><Video size={28} className="mx-auto mb-2 text-indigo-300" />{meeting.status && meeting.status !== "done" ? "Recording in progress…" : "Recording will appear here once processed."}</div>
+          </div>
+        )}
 
         <div className="mb-5 grid grid-cols-3 gap-3">
           {[{ l: "Read Score", v: meeting.scores.overall }, { l: "Engagement", v: meeting.scores.engagement }, { l: "Sentiment", v: meeting.scores.sentiment }].map((s) => (
