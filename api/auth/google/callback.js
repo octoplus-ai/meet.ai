@@ -10,6 +10,7 @@ const ALLOWLIST = ["santiago@octoplusteam.com"];
 export default async function handler(req, res) {
   try {
     const code = new URL(req.url, "http://x").searchParams.get("code");
+    const isAddon = new URL(req.url, "http://x").searchParams.get("state") === "addon";
     if (!code) throw new Error("missing code");
     if (!process.env.GOOGLE_CLIENT_SECRET) throw new Error("GOOGLE_CLIENT_SECRET no está configurada en Vercel");
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY no está configurada en Vercel");
@@ -69,6 +70,15 @@ export default async function handler(req, res) {
     });
 
     res.setHeader("Set-Cookie", `om_session=${t}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`);
+    if (isAddon) {
+      // Meet add-on popup: hand the session token back to the add-on panel and close.
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(`<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;background:#14122e;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">Connecting OctoMeet…<script>
+        try { (window.opener||window.parent).postMessage({ type: "octomeet-token", token: ${JSON.stringify(t)} }, "*"); } catch (e) {}
+        setTimeout(function(){ try { window.close(); } catch(e){} }, 300);
+      </script></body>`);
+      return;
+    }
     res.writeHead(302, { Location: "/" });
     res.end();
   } catch (e) {

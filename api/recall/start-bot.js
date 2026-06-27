@@ -7,11 +7,15 @@ import { scheduleBot } from "../lib/schedule.js";
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
   try {
-    const t = parseCookies(req).om_session;
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+    // Accept the session token via Authorization: Bearer, body.token, or cookie.
+    // (The Meet add-on panel runs in a partitioned iframe where the cookie isn't sent.)
+    const auth = req.headers.authorization || "";
+    const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : null;
+    const t = bearer || body.token || parseCookies(req).om_session;
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t || "")}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (!s.length) return res.status(401).json({ error: "not authenticated" });
 
-    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     if (!body.meetingUrl) return res.status(400).json({ error: "meetingUrl required" });
     if (!process.env.RECALL_API_KEY) return res.status(400).json({ error: "RECALL_API_KEY not configured in Vercel" });
 

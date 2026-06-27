@@ -4,30 +4,41 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OctoMeet AI — Meet Add-on</title>
-  <!-- Google Meet Add-ons Web SDK (must be the gstatic build, not a CDN module). -->
   <script src="https://www.gstatic.com/meetjs/addons/1.1.0/meet.addons.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #14122e; color: #fff; }
-    .wrap { display: flex; flex-direction: column; min-height: 100vh; padding: 18px 16px; }
+    body { margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #14122e; color: #fff; overflow: hidden; }
+    /* faded logo watermark behind everything */
+    .bg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; }
+    .bg svg { width: 92%; max-width: 380px; opacity: 0.07; }
+    .wrap { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; padding: 18px 16px; }
     .brand { display: flex; align-items: center; gap: 10px; }
     .brand h1 { font-size: 16px; font-weight: 800; margin: 0; }
     .sub { font-size: 12px; color: #b9a9e6; margin-top: 2px; }
-    .card { margin-top: 16px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 14px; }
+    .card { margin-top: 16px; background: rgba(124,58,237,.12); border: 1px solid rgba(168,85,247,.25); border-radius: 16px; padding: 16px; backdrop-filter: blur(4px); }
     .status { display: flex; align-items: center; gap: 8px; font-size: 13px; }
     .dot { width: 9px; height: 9px; border-radius: 50%; background: #64748b; }
     .dot.rec { background: #f43f5e; animation: pulse 1.4s infinite; }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(244,63,94,.6);} 70% { box-shadow: 0 0 0 8px rgba(244,63,94,0);} 100%{ box-shadow:0 0 0 0 rgba(244,63,94,0);} }
-    button { width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 12px; }
+    button { width: 100%; border: 0; border-radius: 12px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 14px; }
     .start { background: #7c3aed; color: #fff; } .start:hover { background: #6d28d9; }
     .stop { background: #f43f5e; color: #fff; }
-    .muted { font-size: 11px; color: #8b80b0; margin-top: 14px; line-height: 1.5; }
-    a { color: #c084fc; }
     .feat { font-size: 12px; color: #cbb9f0; margin-top: 8px; }
     .feat span { display: inline-block; margin-right: 8px; }
+    .muted { font-size: 11px; color: #8b80b0; margin-top: 14px; line-height: 1.5; }
+    a { color: #c084fc; }
   </style>
 </head>
 <body>
+  <div class="bg">
+    <svg viewBox="0 0 64 64" aria-hidden>
+      <defs><linearGradient id="bgg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#C084FC"/><stop offset="100%" stop-color="#7C3AED"/></linearGradient></defs>
+      <path d="M44 19 L58 12 Q61 10.5 61 14.5 V37.5 Q61 41.5 58 40 L44 33 Z" fill="url(#bgg)"/>
+      <path d="M10 27 C10 16 19 8 28 8 C37 8 46 16 46 27 L46 40 Q43.5 46 41 46 Q38.5 46 36.5 40 Q34 46 32 46 Q29.5 46 27.5 40 Q25 46 23 46 Q20.5 46 18.5 40 Q16 46 14 46 Q11 46 10 40 Z" fill="url(#bgg)"/>
+      <rect x="25" y="16" width="6" height="20" rx="3" fill="#fff"/><rect x="18" y="23" width="20" height="6" rx="3" fill="#fff"/>
+    </svg>
+  </div>
+
   <div class="wrap">
     <div class="brand">
       <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden>
@@ -48,12 +59,13 @@
 
     <div class="muted" id="ctx">Connecting to this meeting…</div>
     <div style="flex:1"></div>
-    <div class="muted">OctoMeet joins, records & transcribes this call, then generates the full AI report. Reports: <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noopener">open OctoMeet</a>.</div>
+    <div class="muted">OctoMeet joins, records &amp; transcribes this call, then generates the full AI report. Reports: <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noopener">open OctoMeet</a>.</div>
   </div>
 
   <script>
     const CLOUD_PROJECT_NUMBER = "540014435995";
     const APP = "https://meet-ai-three-beige.vercel.app";
+    const TOK_KEY = "octomeet_addon_token";
     const $ = (id) => document.getElementById(id);
     let meetingUrl = null;
 
@@ -66,30 +78,64 @@
 
     async function init() {
       try {
-        // createAddonSession signals to Meet that the panel loaded (completes the handshake).
         const session = await window.meet.addon.createAddonSession({ cloudProjectNumber: CLOUD_PROJECT_NUMBER });
         const sidePanel = await session.createSidePanelClient();
         const info = await sidePanel.getMeetingInfo();
         const code = info && (info.meetingCode || info.meetingId);
         meetingUrl = code ? ("https://meet.google.com/" + String(code).replace(/^https?:\/\/meet\.google\.com\//, "")) : null;
-        $("ctx").textContent = "Connected to this meeting ✓";
+        $("ctx").textContent = meetingUrl ? "Connected to this meeting ✓" : "Open this from inside a Meet call.";
       } catch (e) {
-        $("ctx").textContent = "Loaded. (If it says reconnect, refresh the panel.)";
+        $("ctx").textContent = "Loaded.";
         console.error("addon init error", e);
       }
     }
 
+    // Sign-in popup → returns a session token the add-on can use (cookies are blocked in the iframe).
+    function authPopup() {
+      return new Promise((resolve, reject) => {
+        const w = window.open(APP + "/api/auth/google/start?addon=1", "octoauth", "width=480,height=660,menubar=no,toolbar=no");
+        let done = false;
+        function onMsg(e) {
+          if (e.origin !== APP) return;
+          if (e.data && e.data.type === "octomeet-token" && e.data.token) {
+            done = true; window.removeEventListener("message", onMsg);
+            try { w && w.close(); } catch (_) {}
+            localStorage.setItem(TOK_KEY, e.data.token);
+            resolve(e.data.token);
+          }
+        }
+        window.addEventListener("message", onMsg);
+        const iv = setInterval(() => {
+          if (w && w.closed && !done) { clearInterval(iv); window.removeEventListener("message", onMsg); reject(new Error("cancelled")); }
+        }, 500);
+      });
+    }
+    async function ensureToken(force) {
+      const tk = force ? null : localStorage.getItem(TOK_KEY);
+      if (tk) return tk;
+      return await authPopup();
+    }
+    function callStart(tk) {
+      return fetch(APP + "/api/recall/start-bot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tk },
+        body: JSON.stringify({ meetingUrl: meetingUrl, title: "Live meeting", botName: "OctoMeet AI Notetaker" }),
+      });
+    }
+
     $("startBtn").onclick = async () => {
-      setRecording(true, "Joining the meeting…");
+      if (!meetingUrl) { $("ctx").textContent = "Open this from inside a Google Meet call."; return; }
+      setRecording(true, "Connecting…");
       try {
-        const r = await fetch(APP + "/api/recall/start-bot", {
-          method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-          body: JSON.stringify({ meetingUrl: meetingUrl, title: "Live meeting", botName: "OctoMeet AI Notetaker" }),
-        });
+        let tk = await ensureToken(false);
+        let r = await callStart(tk);
+        if (r.status === 401) { localStorage.removeItem(TOK_KEY); tk = await ensureToken(true); r = await callStart(tk); }
         const d = await r.json().catch(() => ({}));
-        if (r.status === 401) { setRecording(false, "Open OctoMeet & sign in first, then retry"); return; }
-        setRecording(r.ok, r.ok ? "OctoMeet is recording this meeting" : ("Error: " + (d.error || "failed")));
-      } catch (e) { setRecording(false, "Network error — try again"); }
+        if (r.ok) setRecording(true, "OctoMeet is recording this meeting 🔴");
+        else setRecording(false, "Error: " + (d.error || "failed"));
+      } catch (e) {
+        setRecording(false, e && e.message === "cancelled" ? "Sign-in cancelled — tap Start again" : "Couldn't start — try again");
+      }
     };
     $("stopBtn").onclick = () => setRecording(false, "Recording stopped");
 
