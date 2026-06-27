@@ -351,21 +351,39 @@ function adaptReal(m) {
   const sc = r.scores || {};
   const done = m.status === "done";
   const overall = r.read_score || sc.overall || 0;
-  const ppl = Array.isArray(m.participants) ? m.participants.filter(Boolean) : [];
   const start = m.start_time || m.created_at;
+  const richParts = (Array.isArray(r.participants) && r.participants.length)
+    ? r.participants
+    : (Array.isArray(m.participants) ? m.participants.map((n) => ({ name: typeof n === "string" ? n : (n && n.name), talkPct: 0, role: "", sentiment: "Neutral" })) : []);
+  const kq = (r.key_questions || []).map((k) => (typeof k === "string" ? { q: k, a: "" } : { q: k.q || "", a: k.a || "" }));
+  let balance = sc.balance || 0;
+  if (!balance && richParts.length > 1) {
+    const pcts = richParts.map((p) => p.talkPct || 0);
+    const avg = pcts.reduce((a, b) => a + b, 0) / pcts.length;
+    const dev = Math.sqrt(pcts.reduce((a, b) => a + (b - avg) ** 2, 0) / pcts.length);
+    balance = Math.max(0, Math.round(100 - dev * 1.5));
+  }
   return {
     id: m.id, title: m.title || "Meeting", source: m.source || "Recall",
     date: String(start || REF_TODAY).slice(0, 10),
     timeStart: hhmm(start), timeEnd: hhmm(m.end_time), durationMin: m.duration_min || 0,
-    folder: "Meetings", folderLocked: false, owner: "NB", participantsCount: ppl.length,
-    scores: { overall, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: 0, clarity: 0 },
-    sentimentLabel: "Positive", sentimentTimeline: [0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.7, 0.7],
+    folder: "Meetings", folderLocked: false, owner: "NB", participantsCount: richParts.length,
+    scores: { overall, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance, clarity: sc.clarity || 0 },
+    sentimentLabel: r.sentiment_label || "Neutral",
+    sentimentTimeline: (Array.isArray(r.sentiment_timeline) && r.sentiment_timeline.length) ? r.sentiment_timeline : [0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.7, 0.7],
     summary: r.summary || (done ? "" : statusSummary(m.status)),
-    topics: r.topics || [], keyQuestions: r.key_questions || [],
+    topics: r.topics || [],
+    keyQuestions: kq.map((k) => k.q),
+    keyQA: kq,
     actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", done: false })),
-    nextSteps: [], participants: ppl.map((name) => ({ name, initials: (name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
+    chapters: r.chapters || [],
+    highlights: r.highlights || [],
+    coaching: r.coaching || null,
+    nextSteps: [],
+    participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
-    video: null, real: true, status: m.status, error: m.error || null,
+    video: (done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null,
+    real: true, status: m.status, error: m.error || null,
   };
 }
 
@@ -2332,9 +2350,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               </div>
             </Card>
             <Card title="Key Questions" icon={Quote}>
-              <ul className="space-y-2">
-                {meeting.keyQuestions.map((qq, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-slate-600"><span className="text-indigo-400">{String(i + 1).padStart(2, "0")}</span>{qq}</li>
+              <ul className="space-y-3">
+                {(meeting.keyQA && meeting.keyQA.length ? meeting.keyQA : meeting.keyQuestions.map((q) => ({ q, a: "" }))).map((qq, i) => (
+                  <li key={i} className="flex gap-2 text-sm">
+                    <span className="text-indigo-400">{String(i + 1).padStart(2, "0")}</span>
+                    <div className="flex-1">
+                      <div className="font-medium text-slate-700">{qq.q}</div>
+                      {qq.a && <div className="mt-0.5 text-[13px] text-slate-500"><span className="font-semibold text-emerald-600">Suggested answer:</span> {qq.a}</div>}
+                    </div>
+                  </li>
                 ))}
                 {!meeting.keyQuestions.length && <p className="text-sm text-slate-400">No key questions detected.</p>}
               </ul>
@@ -2411,9 +2435,22 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
 
         {tab === "coaching" && (
           <div className="space-y-5">
+            {meeting.coaching && (meeting.coaching.strengths?.length || meeting.coaching.improvements?.length || meeting.coaching.tips?.length) && (
+              <div className="grid gap-5 md:grid-cols-3">
+                <Card title="Strengths" icon={ThumbsUp}>
+                  <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.strengths || []).map((x, i) => <li key={i} className="flex gap-2"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-500" />{x}</li>)}</ul>
+                </Card>
+                <Card title="Areas to improve" icon={Target}>
+                  <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.improvements || []).map((x, i) => <li key={i} className="flex gap-2"><Circle size={15} className="mt-0.5 shrink-0 text-amber-500" />{x}</li>)}</ul>
+                </Card>
+                <Card title="Tips" icon={Lightbulb}>
+                  <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.tips || []).map((x, i) => <li key={i} className="flex gap-2"><Sparkles size={15} className="mt-0.5 shrink-0 text-indigo-500" />{x}</li>)}</ul>
+                </Card>
+              </div>
+            )}
             <Card title="Talking Pace" icon={Activity}>
               <div className="flex items-center gap-4">
-                <span className="text-3xl font-bold text-slate-900">{140 + (meeting.scores.overall % 30)}</span>
+                <span className="text-3xl font-bold text-slate-900">{(meeting.participants && meeting.participants.find((p) => p.wpm) ? Math.round(meeting.participants.reduce((s, p) => s + (p.wpm || 0), 0) / meeting.participants.filter((p) => p.wpm).length) : 140 + (meeting.scores.overall % 30))}</span>
                 <span className="text-sm text-slate-400">wpm · recommended range 130–175</span>
               </div>
             </Card>
@@ -2436,6 +2473,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
 
         {tab === "highlights" && (
           <div className="space-y-3">
+            {(meeting.highlights || []).map((h, i) => (
+              <div key={"h" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} />
+                <div className="flex-1">
+                  <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Highlight</span>
+                  <p className="mt-1 text-sm text-slate-700">{h}</p>
+                </div>
+              </div>
+            ))}
             {meeting.actionItems.map((it, i) => (
               <div key={"a" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
                 <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} />
@@ -2468,7 +2514,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
 
         {tab === "chapters" && (
           <div className="space-y-2">
-            {meeting.topics.length ? meeting.topics.map((t, i) => (
+            {meeting.chapters && meeting.chapters.length ? meeting.chapters.map((c, i) => (
+              <button key={i} onClick={() => toast("Jump to: " + (c.title || c))} className="flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-200">
+                <span className="mt-0.5 text-[12px] font-mono text-indigo-500">{String(i + 1).padStart(2, "0")}</span>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-slate-800">{c.title || c}</div>
+                  {c.summary && <div className="mt-0.5 text-[13px] text-slate-500">{c.summary}</div>}
+                </div>
+              </button>
+            )) : meeting.topics.length ? meeting.topics.map((t, i) => (
               <button key={i} onClick={() => toast("Jump to: " + t)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-200">
                 <VideoThumb src={meeting.video} source={meeting.source} size={48} showBadge={false} />
                 <span className="text-[12px] font-mono text-indigo-500">{String(i).padStart(2, "0")}:{String((i * 7) % 60).padStart(2, "0")}</span>

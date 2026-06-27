@@ -1,33 +1,9 @@
 // Recall.ai webhook: fires when a bot finishes / transcript is ready.
-// Fetches the transcript, analyzes it with Claude, captures participants + duration,
-// and saves a full report. Also reflects live bot-status changes onto the meeting.
+// On transcript.done it builds the full report (transcript from media_shortcuts,
+// rich AI analysis, participants, duration). Bot-status events update live status.
 import { sb } from "../lib/supa.js";
-import { recallBase, getBot, latestCode, mapStatus, durationMin, participants } from "../lib/recall.js";
-
-const RECALL_BASE = recallBase();
-
-async function analyze(transcriptText, title) {
-  const sys =
-    "You are a meeting-intelligence analyst. Read the transcript and return ONLY a JSON object (no markdown) with this shape:\n" +
-    `{"summary": string (3-4 sentences), "topics": string[] (max 6), "keyQuestions": string[] (max 5), "actionItems": [{"owner": string, "task": string}] (max 8), "scores": {"overall": int, "engagement": int, "sentiment": int} (0-100)}.\n` +
-    "Infer owners from the transcript. Keep strings short.";
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      system: sys,
-      messages: [{ role: "user", content: `Title: ${title}\n\nTranscript:\n${(transcriptText || "").slice(0, 40000)}` }],
-    }),
-  });
-  const d = await r.json();
-  let text = (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-  text = text.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
-  const a = text.indexOf("{"), b = text.lastIndexOf("}");
-  if (a >= 0 && b >= 0) text = text.slice(a, b + 1);
-  try { return JSON.parse(text); } catch { return { summary: "(analysis unavailable)", topics: [], keyQuestions: [], actionItems: [], scores: {} }; }
-}
+import { mapStatus } from "../lib/recall.js";
+import { processMeeting } from "../lib/process.js";
 
 export default async function handler(req, res) {
   try {
@@ -47,12 +23,11 @@ export default async function handler(req, res) {
 
     const isTranscriptDone = /transcript[._-]?(done|complete|completed)/i.test(type);
 
-    // --- Bot status events (optional): keep the live status fresh without polling. ---
+    // --- Bot status events (optional): keep the live status fresh. ---
     if (!isTranscriptDone) {
       const code = (type.includes(".") ? type.split(".").pop() : type).trim().toLowerCase();
       const mapped = mapStatus(code);
       if (mapped) {
-        // Re-read current status to avoid downgrading a meeting that already finished.
         const cur = await sb(`meetings?id=eq.${meeting.id}&select=status`);
         if ((cur[0]?.status || meeting.status) !== "done") {
           const patch = { status: mapped, status_synced_at: new Date().toISOString() };
@@ -66,45 +41,8 @@ export default async function handler(req, res) {
 
     // --- Transcript ready: build the full report. ---
     if (meeting.status === "done") return res.status(200).json({ ok: true, alreadyDone: true });
-
-    let text = "";
-    try {
-      const tr = await fetch(`${RECALL_BASE}/api/v1/bot/${botId}/transcript/`, { headers: { Authorization: `Token ${process.env.RECALL_API_KEY}` } });
-      const segs = await tr.json();
-      if (Array.isArray(segs)) {
-        text = segs.map((s) => `${s.speaker || "Speaker"}: ${s.words ? s.words.map((w) => w.text).join(" ") : (s.text || "")}`).join("\n");
-      }
-    } catch (e) { /* transcript fetch failed */ }
-
-    // Capture real participants + duration from the bot.
-    let ppl = [], dur = null;
-    try {
-      const bot = await getBot(botId);
-      if (bot) { ppl = participants(bot); dur = durationMin(bot); }
-    } catch (e) { /* bot fetch failed */ }
-    // Fall back to transcript speakers for participants.
-    if (!ppl.length && text) ppl = [...new Set(text.split("\n").map((l) => (l.split(":")[0] || "").trim()).filter((s) => s && s.length < 40))];
-
-    const ai = await analyze(text, meeting.title);
-    // Insert the report. A UNIQUE(meeting_id) constraint dedupes racing deliveries.
-    try {
-      await sb("reports", {
-        method: "POST",
-        body: {
-          meeting_id: meeting.id, user_id: meeting.user_id,
-          summary: ai.summary || "", action_items: ai.actionItems || [], key_questions: ai.keyQuestions || [],
-          topics: ai.topics || [], transcript: text, scores: ai.scores || {}, read_score: (ai.scores && ai.scores.overall) || 80,
-        },
-      });
-    } catch (e) {
-      // 23505 = unique_violation -> another delivery already wrote the report; safe to continue.
-      if (!/23505|duplicate/i.test(String(e.message || ""))) throw e;
-    }
-    const mpatch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString() };
-    if (ppl.length) mpatch.participants = ppl;
-    if (dur) mpatch.duration_min = dur;
-    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: mpatch });
-    res.status(200).json({ ok: true });
+    const result = await processMeeting(meeting);
+    res.status(200).json({ ok: true, ...result });
   } catch (e) {
     // Return 5xx on transient failures so Recall retries; status stays != 'done'.
     console.error("Recall webhook error:", e && (e.stack || e.message || e));
