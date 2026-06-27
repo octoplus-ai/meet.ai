@@ -98,6 +98,12 @@ const store = {
   },
 };
 
+const POLICY_KEY = "octomeet:meeting-policy:v1";
+// Synchronous read of the configured notetaker display name (used when launching bots).
+function notetakerName() {
+  try { const v = JSON.parse(window.localStorage.getItem(POLICY_KEY) || "null"); return (v && v.notetakerName) || "OctoMeet AI Notetaker"; } catch { return "OctoMeet AI Notetaker"; }
+}
+
 /* ---------------------------- Claude API --------------------------- */
 async function callClaude(messages, system) {
   const res = await fetch("/api/anthropic", {
@@ -379,7 +385,7 @@ function adaptReal(m) {
     chapters: r.chapters || [],
     highlights: r.highlights || [],
     coaching: r.coaching || null,
-    nextSteps: [],
+    nextSteps: r.next_steps || [],
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
     video: (done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null,
@@ -551,6 +557,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [realMeetings, setRealMeetings] = useState([]);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [folderFilter, setFolderFilter] = useState(null);
 
   const loadReal = useCallback(async () => {
     try {
@@ -586,7 +593,7 @@ export default function App() {
     return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [authed, loadReal]);
 
-  const login = () => { setAuthed(true); store.set("octomeet:authed", true); };
+  const login = () => { setAuthed(true); store.set("octomeet:authed", true); loadReal(); };
   const loginGoogle = () => { window.location.href = "/api/auth/google/start"; };
   const logout = async () => {
     try { await fetch("/api/auth/logout"); } catch (e) { /* ignore */ }
@@ -623,17 +630,18 @@ export default function App() {
       <Toaster />
       <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
       <main className="flex flex-1 flex-col overflow-hidden">
-        {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} />}
+        {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} />}
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
-        {view === "plans" && <PlansView onBack={() => setView("reports")} />}
+        {view === "plans" && <PlansView onBack={() => setView("plan-billing")} />}
+        {view === "plan-billing" && <PlanBillingView onBack={() => setView("reports")} onComparePlans={() => setView("plans")} user={user} />}
         {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} />}
         {view === "support" && <SupportView onBack={() => setView("reports")} />}
         {view === "logout" && <LogoutView onCancel={() => setView("reports")} onLogout={logout} />}
-        {view === "folders" && <FoldersView onAsk={goAsk} />}
+        {view === "folders" && <FoldersView onAsk={goAsk} meetings={allMeetings} onOpenFolder={(name) => { setFolderFilter(name); setView("reports"); }} />}
         {view === "calendar" && <CalendarView onAsk={goAsk} initialTab={calTab} />}
-        {view === "for-you" && <ForYouView meetings={meetings} onOpen={openMeeting} onAsk={goAsk} />}
+        {view === "for-you" && <ForYouView meetings={allMeetings} onOpen={openMeeting} onAsk={goAsk} user={user} />}
         {view === "coaching" && <CoachingView onAsk={goAsk} />}
         {view === "recommendations" && <RecommendationsView onAsk={goAsk} />}
         {view === "integrations" && <IntegrationsView onAsk={goAsk} />}
@@ -724,11 +732,11 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
       {/* enterprise */}
       <div className={"mx-3 mb-3 flex items-center rounded-lg px-1 " + (collapsed ? "justify-center" : "justify-between")}>
         {collapsed ? (
-          <button onClick={() => setView("plans")} title={t("enterprise")}><Rocket size={16} className="text-indigo-300 hover:text-indigo-200" /></button>
+          <button onClick={() => setView("plan-billing")} title={t("enterprise")}><Rocket size={16} className="text-indigo-300 hover:text-indigo-200" /></button>
         ) : (
           <>
-            <button onClick={() => setView("plans")} className="flex items-center gap-1.5 text-xs font-semibold text-white hover:text-indigo-200"><Rocket size={13} className="text-indigo-300" /> {t("enterprise")}</button>
-            <button onClick={() => setView("plans")} className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200">{t("manage")}</button>
+            <button onClick={() => setView("plan-billing")} className="flex items-center gap-1.5 text-xs font-semibold text-white hover:text-indigo-200"><Rocket size={13} className="text-indigo-300" /> {t("enterprise")}</button>
+            <button onClick={() => setView("plan-billing")} className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200">{t("manage")}</button>
           </>
         )}
       </div>
@@ -755,7 +763,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
             <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
             <div className="absolute bottom-1 left-full z-50 ml-2 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-2xl">
               <MenuItem icon={SlidersHorizontal} label="Account Settings" onClick={() => { setView("account"); setMenuOpen(false); }} />
-              <MenuItem icon={Rocket} label="Plan & Billing" onClick={() => { setView("plans"); setMenuOpen(false); }} />
+              <MenuItem icon={Rocket} label="Plan & Billing" onClick={() => { setView("plan-billing"); setMenuOpen(false); }} />
               <MenuItem icon={Users} label="Add People" onClick={() => { setView("add-people"); setMenuOpen(false); }} />
               <div className="my-1 border-t border-slate-100" />
               <MenuItem icon={HelpCircle} label="Support" onClick={() => { setView("support"); setMenuOpen(false); }} />
@@ -780,7 +788,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
                     const url = liveUrl.trim(); setLiveOpen(false); setLiveUrl("");
                     toast("Sending OctoMeet to the meeting…");
                     try {
-                      const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url }) });
+                      const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, botName: notetakerName() }) });
                       const d = await r.json();
                       toast(r.ok ? "OctoMeet is joining the meeting 🎥" : ("Error: " + (d.error || "failed")));
                     } catch (er) { toast("Network error"); }
@@ -837,7 +845,7 @@ function FilterBtn({ label, icon: Icon, onClick }) {
   );
 }
 
-function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
+function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
   const [tab, setTab] = useState("reports");
@@ -846,9 +854,10 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
   const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing", "error"];
   const filtered = useMemo(
     () => (tab === "incomplete" ? meetings.filter((m) => m.real && INCOMPLETE.includes(m.status)) : meetings)
+      .filter((m) => !folderFilter || m.folder === folderFilter)
       .filter((m) => !q || m.title.toLowerCase().includes(q.toLowerCase()))
       .sort((a, b) => (b.date + b.timeStart).localeCompare(a.date + a.timeStart)),
-    [meetings, q, tab]
+    [meetings, q, tab, folderFilter]
   );
   const groups = useMemo(() => {
     const order = ["TODAY", "THIS WEEK", "THIS MONTH", "EARLIER"];
@@ -924,6 +933,9 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh }) {
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("filterByTitle")}
                   className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400" />
               </div>
+              {folderFilter && (
+                <span className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-2 text-[13px] font-semibold text-indigo-700"><Folder size={13} /> {folderFilter}<button onClick={onClearFolder} className="ml-1 text-indigo-400 hover:text-indigo-700"><X size={13} /></button></span>
+              )}
               <FilterBtn label={t("allReports")} icon={ClipboardList} />
               <FilterBtn label={t("anytime")} icon={Calendar} />
               <FilterBtn label={t("type")} />
@@ -1152,18 +1164,34 @@ function SectionTop({ title, onAsk, right }) {
 }
 
 /* ============================ FOLDERS ============================= */
-function FoldersView({ onAsk }) {
+const FOLDERS_KEY = "octomeet:folders:v1";
+const FOLDER_DESCS = {
+  "Partnership Alignment": "Discussions aimed at strengthening collaboration and alignment with partners.",
+  "Job Interview": "Interviews evaluating candidates for open roles.",
+  "One-on-One": "Two-person meetings for feedback, mentorship, or alignment.",
+  "Sales Call": "Conversations with prospects focused on pitching or selling.",
+  "Meetings": "Your recorded meetings.",
+};
+function FoldersView({ onAsk, meetings, onOpenFolder }) {
   const [q, setQ] = useState("");
-  const folders = [
-    { name: "Partnership Alignment Meeting", desc: "Discussions aimed at strengthening collaboration and ensuring mutual alignment with partners.", reports: 52, date: "Jun 26, 2026" },
-    { name: "Job Interview", desc: "Interviews evaluating candidates for open roles or positions.", reports: 23, date: "Jun 25, 2026" },
-    { name: "One-on-One", desc: "Direct, two-person meetings for feedback, mentorship, or alignment.", reports: 3, date: "Jun 25, 2026" },
-    { name: "Sales Call", desc: "Conversations with prospective customers focused on pitching or selling products and services.", reports: 112, date: "Jun 24, 2026" },
-    { name: "Sales Strategy", desc: "Internal discussions planning sales tactics, messaging, and pursuit strategies.", reports: 8, date: "Jun 22, 2026" },
-    { name: "Training", desc: "Sessions focused on developing professional skills, workplace competencies, or job-related abilities.", reports: 11, date: "Jun 22, 2026" },
-    { name: "Planning Meeting", desc: "Meetings that coordinate goals, timelines, and action plans for upcoming projects.", reports: 17, date: "Jun 18, 2026" },
-    { name: "Educational", desc: "Sessions focused on teaching or sharing knowledge on a subject.", reports: 1, date: "Jun 10, 2026" },
-  ].filter((f) => !q || f.name.toLowerCase().includes(q.toLowerCase()));
+  const [custom, setCustom] = useState([]);
+  useEffect(() => { (async () => setCustom((await store.get(FOLDERS_KEY, [])) || []))(); }, []);
+
+  const counts = {}; const lastDate = {};
+  (meetings || []).forEach((m) => { const f = m.folder || "Meetings"; counts[f] = (counts[f] || 0) + 1; if (!lastDate[f] || m.date > lastDate[f]) lastDate[f] = m.date; });
+  const names = [...new Set([...Object.keys(counts), ...custom])];
+  const folders = names.map((name) => ({ name, reports: counts[name] || 0, date: lastDate[name] || "", desc: FOLDER_DESCS[name] || "Custom folder." }))
+    .filter((f) => !q || f.name.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => b.reports - a.reports);
+
+  const newFolder = async () => {
+    const name = window.prompt("New folder name");
+    if (!name || !name.trim()) return;
+    const n = name.trim();
+    const next = [...new Set([...custom, n])];
+    setCustom(next); await store.set(FOLDERS_KEY, next);
+    toast("Folder created: " + n);
+  };
   return (
     <>
       <SectionTop title="Folders" onAsk={onAsk} />
@@ -1174,42 +1202,49 @@ function FoldersView({ onAsk }) {
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by folder title..." className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400" />
             </div>
-            <FilterBtn label="Folder Types" icon={Folder} />
           </div>
-          <button onClick={() => toast("New folder — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><FolderPlus size={15} /> New Folder</button>
+          <button onClick={newFolder} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><FolderPlus size={15} /> New Folder</button>
         </div>
-        <div className="grid grid-cols-[1fr_120px_90px_140px_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
-          <div>Folder</div><div>Members</div><div>Reports</div><div>Last Updated</div><div></div>
+        <div className="grid grid-cols-[1fr_120px_90px_140px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+          <div>Folder</div><div>Members</div><div>Reports</div><div>Last Updated</div>
         </div>
         {folders.map((f) => (
-          <div key={f.name} className="grid grid-cols-[1fr_120px_90px_140px_40px] items-center border-b border-slate-100 px-3 py-3.5 transition hover:bg-indigo-50/40">
+          <button key={f.name} onClick={() => onOpenFolder && onOpenFolder(f.name)} className="grid w-full grid-cols-[1fr_120px_90px_140px] items-center border-b border-slate-100 px-3 py-3.5 text-left transition hover:bg-indigo-50/40">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500"><Folder size={18} /></div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">{f.name} <Lock size={11} className="text-slate-400" /></div>
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">{f.name}</div>
                 <div className="truncate text-[12px] text-slate-500">{f.desc}</div>
               </div>
             </div>
             <div><span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</span></div>
             <div className="text-sm text-slate-600">{f.reports}</div>
-            <div className="text-[13px] text-slate-500">{f.date}</div>
-            <div className="flex justify-center"><MoreHorizontal size={16} className="text-slate-300" /></div>
-          </div>
+            <div className="text-[13px] text-slate-500">{f.date ? fmtDateFull(f.date) : "—"}</div>
+          </button>
         ))}
+        {!folders.length && <div className="py-16 text-center text-sm text-slate-400">No folders yet. Create one with “New Folder”.</div>}
       </div>
     </>
   );
 }
 
 /* ============================ CALENDAR ============================ */
+const CAL_ARMED_KEY = "octomeet:calendar-armed:v1";
 function CalendarView({ onAsk, initialTab }) {
   const [tab, setTab] = useState(initialTab || "upcoming");
   const [realEvents, setRealEvents] = useState(null);
+  const [armed, setArmed] = useState({});
   useEffect(() => {
     (async () => {
       try { const r = await fetch("/api/calendar/events"); if (r.ok) { const d = await r.json(); if (Array.isArray(d.events)) setRealEvents(d.events); } } catch (e) { /* not connected */ }
+      setArmed((await store.get(CAL_ARMED_KEY, {})) || {});
     })();
   }, []);
+  const arm = (e, key, val) => {
+    setArmed((s) => { const next = { ...s, [key]: val }; store.set(CAL_ARMED_KEY, next); return next; });
+    if (val) startBot(e.url, e.name, e.startIso, e.eventId);
+    else toast("OctoMeet won't join this one.");
+  };
   const events = [
     { name: "Morning Meeting", ppl: 39, date: "Sun, Jun 28", time: "3:30 AM - 4:30 AM", add: false, role: null },
     { name: "Acme Corp — Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
@@ -1232,7 +1267,7 @@ function CalendarView({ onAsk, initialTab }) {
     const future = joinAt && new Date(joinAt).getTime() > Date.now() + 30 * 1000;
     toast(future ? "Scheduling OctoMeet…" : "Sending OctoMeet to the meeting…");
     try {
-      const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, title, joinAt, calendarEventId }) });
+      const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, title, joinAt, calendarEventId, botName: notetakerName() }) });
       const d = await r.json();
       toast(r.ok ? (d.already ? "OctoMeet is already set for this meeting ✓" : future ? "OctoMeet will join automatically at the start time 🗓️" : "OctoMeet is joining 🎥") : ("Error: " + (d.error || "failed")));
     } catch (e) { toast("Network error"); }
@@ -1266,7 +1301,7 @@ function CalendarView({ onAsk, initialTab }) {
                   </div>
                 </div>
                 <div className="leading-tight"><div className="text-[13px] text-slate-700">{e.date}</div><div className="text-[12px] text-slate-400">{e.time}</div></div>
-                <div><CalToggle on={e.add} onChange={(val) => { if (val) startBot(e.url, e.name, e.startIso, e.eventId); }} /></div>
+                <div><CalToggle on={armed[e.eventId || (e.name + "|" + e.date)] ?? e.add} onChange={(val) => arm(e, e.eventId || (e.name + "|" + e.date), val)} /></div>
                 <div><CalToggle on={false} /></div>
               </div>
             ))}
@@ -1300,41 +1335,61 @@ function CalendarView({ onAsk, initialTab }) {
 }
 function CalToggle({ on, onChange }) {
   const [v, setV] = useState(on);
+  useEffect(() => { setV(on); }, [on]);
   const toggle = () => { const n = !v; setV(n); if (onChange) onChange(n); };
   return <button onClick={toggle} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (v ? "bg-emerald-500" : "bg-slate-200")}><span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (v ? "left-[22px]" : "left-0.5")} /></button>;
 }
 
 /* ============================ FOR YOU ============================= */
-function ForYouView({ meetings, onOpen, onAsk }) {
+function ForYouView({ meetings, onOpen, onAsk, user }) {
   const [aiFilter, setAiFilter] = useState("all");
-  const allActions = meetings.flatMap((m) => m.actionItems.map((a) => ({ ...a, meeting: m.title, id: m.id })));
-  const actions = (aiFilter === "me" ? allActions.filter((a) => /nicolas/i.test(a.owner || "")) : allActions).slice(0, 8);
+  const uName = ((user && user.name) || "Nicolas").split(" ")[0];
+  const meRe = new RegExp(uName.replace(/[^a-z0-9]/gi, ""), "i");
+  const allActions = meetings.flatMap((m) => (m.actionItems || []).map((a) => ({ ...a, meeting: m.title, id: m.id, date: m.date })));
+  const actions = (aiFilter === "me" ? allActions.filter((a) => meRe.test(a.owner || "")) : allActions).slice(0, 8);
+  const topicCount = {};
+  meetings.forEach((m) => (m.topics || []).forEach((t) => { topicCount[t] = (topicCount[t] || 0) + 1; }));
+  const topTopics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const summaries = meetings.filter((m) => m.summary && m.summary.length > 30);
+  const lead = summaries[0];
+  const hi = (() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; })();
   return (
     <>
-      <SectionTop title="For You" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> Jun 12 - 25, 2026</span>} />
+      <SectionTop title="For You" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> {meetings.length} meeting{meetings.length === 1 ? "" : "s"}</span>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
           <div className="space-y-5">
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
-              <h2 className="text-2xl font-bold text-indigo-700">Good afternoon, Nicolas</h2>
-              <p className="mt-1 text-sm font-medium text-slate-500">Here's what happened Jun 12 - Jun 25</p>
+              <h2 className="text-2xl font-bold text-indigo-700">{hi}, {uName}</h2>
+              <p className="mt-1 text-sm font-medium text-slate-500">A digest from your {meetings.length} most recent meeting{meetings.length === 1 ? "" : "s"}</p>
               <div className="mt-3 flex gap-4">
-                <p className="flex-1 text-sm leading-relaxed text-slate-600">You focused on expanding into new markets, emphasizing growth from partner interest. The team is working with multiple brands and is optimistic about securing additional clients this year. You also discussed the importance of multilingual skills to serve a diverse customer base, and walked through the platform's internal communication advantages over traditional messaging tools.</p>
-                <VideoThumb src={VIDEOS[0]} source="Google Meet" size={120} rounded="rounded-xl" showBadge={false} />
+                <p className="flex-1 text-sm leading-relaxed text-slate-600">{lead ? lead.summary : "Once your meetings are analyzed, your personalized digest — top topics, summaries and action items across meetings — will appear here."}</p>
+                <VideoThumb src={(lead && lead.video) || VIDEOS[0]} source={(lead && lead.source) || "Google Meet"} size={120} rounded="rounded-xl" showBadge={false} />
               </div>
             </div>
             <Card title="Topics" icon={MessageSquareText}>
-              <p className="mb-3 text-[13px] text-slate-400">Topic progression from meetings you own or were invited to</p>
-              <div className="rounded-xl bg-indigo-50/60 p-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-slate-800">Retail operations and growth strategies in Latin America</h4>
-                  <div className="flex -space-x-1.5">{["NB", "CR", "DD"].map((x, i) => <span key={i} className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white" style={{ background: SPEAKER_COLORS[i] }}>{x}</span>)}<span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-bold text-slate-600">+6</span></div>
-                </div>
-                <div className="mt-1 text-[12px] text-slate-400">38% of meetings · From 11 meetings · Jun 15 - Jun 25, 2026</div>
-              </div>
+              <p className="mb-3 text-[13px] text-slate-400">Topic progression across your meetings</p>
+              {topTopics.length ? <div className="space-y-2">
+                {topTopics.map(([t, n], i) => (
+                  <div key={i} className="rounded-xl bg-indigo-50/60 p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-slate-800">{t}</h4>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-indigo-600">{Math.round((n / meetings.length) * 100)}% of meetings</span>
+                    </div>
+                    <div className="mt-1 text-[12px] text-slate-400">From {n} meeting{n === 1 ? "" : "s"}</div>
+                  </div>
+                ))}
+              </div> : <p className="text-sm text-slate-400">No topics yet — analyze a meeting to see topic trends.</p>}
             </Card>
             <Card title="Summary" icon={Sparkles}>
-              <p className="text-sm leading-relaxed text-slate-600">In recent meetings, discussions centered on the operations and growth strategies of a retail business overseeing 200 stores across the region. The team highlighted partnerships with various brands and emphasized expansion into new markets, where they are currently piloting projects with local retailers, while also exploring opportunities in the U.S. market.</p>
+              {summaries.length ? <div className="space-y-3">
+                {summaries.slice(0, 3).map((m, i) => (
+                  <button key={i} onClick={() => onOpen(m.id)} className="block w-full text-left">
+                    <div className="text-[13px] font-semibold text-slate-700">{m.title}</div>
+                    <p className="text-sm leading-relaxed text-slate-600">{m.summary}</p>
+                  </button>
+                ))}
+              </div> : <p className="text-sm text-slate-400">No summaries yet.</p>}
             </Card>
           </div>
 
@@ -1352,7 +1407,7 @@ function ForYouView({ meetings, onOpen, onAsk }) {
                 {actions.map((a, i) => (
                   <button key={i} onClick={() => onOpen(a.id)} className="block w-full border-b border-slate-100 pb-3 text-left last:border-0">
                     <div className="text-[13px] text-slate-700">{a.task} <span className="font-semibold text-indigo-600">Ask Octo</span></div>
-                    <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><Calendar size={11} /> Jun 25, 2026 · <FileText size={11} /> {a.meeting}</div>
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><Calendar size={11} /> {a.date ? fmtDateFull(a.date) : ""} · <FileText size={11} /> {a.meeting}</div>
                   </button>
                 ))}
               </div>
@@ -1508,9 +1563,11 @@ function RecommendationsView({ onAsk }) {
 }
 
 /* ============================ INTEGRATIONS ======================= */
+const INTEGRATIONS_KEY = "octomeet:integrations:v1";
 function IntegrationsView({ onAsk }) {
   const [conn, setConn] = useState({ "Google Calendar": true, "Google Meet": true, "Octomeet Web Extension": true });
-  const toggle = (name) => setConn((c) => ({ ...c, [name]: !c[name] }));
+  useEffect(() => { (async () => { const saved = await store.get(INTEGRATIONS_KEY, null); if (saved) setConn((c) => ({ ...c, ...saved })); })(); }, []);
+  const toggle = (name) => setConn((c) => { const next = { ...c, [name]: !c[name] }; store.set(INTEGRATIONS_KEY, next); toast(next[name] ? name + " connected" : name + " disconnected"); return next; });
   const Group = ({ title, desc, items }) => (
     <div>
       <div className="text-sm font-bold text-slate-800">{title}</div>
@@ -1570,12 +1627,12 @@ function IntegrationsView({ onAsk }) {
 }
 
 /* ============================ MEETING POLICY ===================== */
+const DEFAULT_POLICY = { autoJoin: true, recording: true, consent: true, affective: true, externalShare: false, lockMembers: false, which: "all", who: "any", retention: "90", notetakerName: "OctoMeet AI Notetaker" };
 function MeetingPolicyView({ onAsk }) {
-  const [p, setP] = useState({ autoJoin: true, recording: true, consent: true, affective: true, externalShare: false, lockMembers: false });
-  const [which, setWhich] = useState("all");
-  const [who, setWho] = useState("any");
-  const [retention, setRetention] = useState("90");
-  const set1 = (k, v) => setP((s) => ({ ...s, [k]: v }));
+  const [p, setP] = useState(DEFAULT_POLICY);
+  useEffect(() => { (async () => { const saved = await store.get(POLICY_KEY, null); if (saved) setP({ ...DEFAULT_POLICY, ...saved }); })(); }, []);
+  const set1 = (k, v) => setP((s) => { const next = { ...s, [k]: v }; store.set(POLICY_KEY, next); toast("Policy saved"); return next; });
+  const which = p.which, who = p.who, retention = p.retention;
   return (
     <>
       <SectionTop title="Meeting Policy" onAsk={onAsk} />
@@ -1590,13 +1647,13 @@ function MeetingPolicyView({ onAsk }) {
               <div className="mt-3 space-y-3">
                 <div>
                   <div className="mb-1 text-[13px] font-semibold text-slate-700">Which meetings</div>
-                  <Radio label="All calendar events" desc="Join every meeting on members' calendars" def checked={which === "all"} onClick={() => setWhich("all")} />
-                  <Radio label="Events the member is hosting" desc="Only join meetings the member created or owns" checked={which === "host"} onClick={() => setWhich("host")} />
+                  <Radio label="All calendar events" desc="Join every meeting on members' calendars" def checked={which === "all"} onClick={() => set1("which", "all")} />
+                  <Radio label="Events the member is hosting" desc="Only join meetings the member created or owns" checked={which === "host"} onClick={() => set1("which", "host")} />
                 </div>
                 <div>
                   <div className="mb-1 text-[13px] font-semibold text-slate-700">Who's invited</div>
-                  <Radio label="Any participants" desc="Join regardless of who is invited" def checked={who === "any"} onClick={() => setWho("any")} />
-                  <Radio label="Internal only" desc="Only when all invitees are @octomeet.ai" checked={who === "internal"} onClick={() => setWho("internal")} />
+                  <Radio label="Any participants" desc="Join regardless of who is invited" def checked={who === "any"} onClick={() => set1("who", "any")} />
+                  <Radio label="Internal only" desc="Only when all invitees are @octomeet.ai" checked={who === "internal"} onClick={() => set1("who", "internal")} />
                 </div>
               </div>
             )}
@@ -1609,9 +1666,14 @@ function MeetingPolicyView({ onAsk }) {
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="text-sm font-semibold text-slate-800">Data retention</div>
             <p className="mb-2 text-[13px] text-slate-500">How long meeting data is kept before automatic deletion.</p>
-            <select value={retention} onChange={(e) => setRetention(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
+            <select value={retention} onChange={(e) => set1("retention", e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
               <option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="forever">Keep forever</option>
             </select>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-800">Notetaker display name</div>
+            <p className="mb-2 text-[13px] text-slate-500">The name the bot shows as when it joins your meetings.</p>
+            <input value={p.notetakerName} onChange={(e) => set1("notetakerName", e.target.value)} placeholder="OctoMeet AI Notetaker" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
           </div>
 
           <div className="text-sm font-bold text-slate-800">Permissions</div>
@@ -1815,6 +1877,86 @@ function LogoutView({ onCancel, onLogout }) {
 }
 
 /* ============================ PLANS / PRICING ===================== */
+function PlanBillingView({ onBack, onComparePlans, user }) {
+  const planName = (user && user.plan && user.plan[0] ? user.plan[0].toUpperCase() + user.plan.slice(1) : "Enterprise");
+  const history = [
+    { date: "Jun 4, 2026", period: "Jun 4 - Jul 4, 2026" },
+    { date: "May 4, 2026", period: "May 4 - Jun 4, 2026" },
+    { date: "Apr 4, 2026", period: "Apr 4 - May 4, 2026" },
+    { date: "Mar 4, 2026", period: "Mar 4 - Apr 4, 2026" },
+  ];
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
+        <button onClick={onBack}><ChevronLeft size={18} className="text-slate-400" /></button>
+        <h1 className="text-lg font-bold text-slate-900">Plan &amp; Billing</h1>
+      </div>
+      <div className="mx-auto max-w-5xl px-6 py-6">
+        <div className="grid gap-5 lg:grid-cols-2">
+          {/* Current Plan */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-900">Current Plan</h2>
+              <button onClick={onComparePlans} className="flex items-center gap-1 text-[13px] font-semibold text-indigo-600 hover:text-indigo-800">Compare plans <ArrowDown size={13} className="-rotate-90" /></button>
+            </div>
+            <div className="flex items-center gap-2"><span className="text-xl font-bold text-slate-900">{planName}</span><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">Monthly</span></div>
+            <p className="mt-1 text-[13px] text-slate-500">Next invoice July 4, 2026. ($29.75)</p>
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+              <button onClick={onComparePlans} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Change plan</button>
+              <button onClick={() => toast("Create a Workspace — coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Create a Workspace</button>
+              <button onClick={() => { if (window.confirm("Cancel your plan? You'll keep access until the end of the billing period.")) toast("Plan cancellation requested"); }} className="rounded-lg px-4 py-2 text-[13px] font-semibold text-rose-600 hover:bg-rose-50">Cancel plan</button>
+            </div>
+          </div>
+          {/* License Usage */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-3 text-base font-bold text-slate-900">License Usage</h2>
+            <p className="text-sm text-slate-600">1 of 1 license is in use</p>
+            <div className="mt-2 h-2 w-full rounded-full bg-slate-100"><div className="h-2 rounded-full bg-indigo-600" style={{ width: "100%" }} /></div>
+            <button onClick={() => toast("Add licenses — coming soon")} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Add licenses</button>
+          </div>
+          {/* File Upload Credits */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-3 text-base font-bold text-slate-900">File Upload Credits</h2>
+            <div className="flex gap-8">
+              <div><div className="text-[12px] text-slate-400">Monthly credits</div><div className="text-xl font-bold text-slate-900">200 minutes</div></div>
+              <div><div className="text-[12px] text-slate-400">Purchased credits</div><div className="text-xl font-bold text-slate-900">0 minutes</div></div>
+            </div>
+            <p className="mt-1 text-[12px] text-slate-400">Resets Jul 1, 2026</p>
+            <button onClick={() => toast("Buy file upload credits — coming soon")} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Buy file upload credits</button>
+          </div>
+          {/* Payment Method */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-3 text-base font-bold text-slate-900">Payment Method</h2>
+            <div className="flex items-center justify-between rounded-xl border border-slate-100 p-3">
+              <span className="flex items-center gap-2 text-sm text-slate-700">Visa ending in 9878 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">Default</span></span>
+              <span className="text-[13px] text-slate-400">Expires 1/2030</span>
+            </div>
+            <div className="mt-4 flex items-center gap-3">
+              <button onClick={() => toast("Update payment method — coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Update payment method</button>
+              <button onClick={() => toast("Add Tax ID — coming soon")} className="flex items-center gap-1 rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-indigo-600 hover:bg-slate-50"><Plus size={14} /> Add Tax ID</button>
+            </div>
+          </div>
+        </div>
+        {/* Billing History */}
+        <h2 className="mb-2 mt-7 text-base font-bold text-slate-900">Billing History</h2>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="grid grid-cols-[1fr_1.4fr_0.6fr_1fr_40px] border-b border-slate-200 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+            <div>Invoice Date</div><div>Description</div><div>Qty</div><div>Billing Period</div><div></div>
+          </div>
+          {history.map((h) => (
+            <div key={h.date} className="grid grid-cols-[1fr_1.4fr_0.6fr_1fr_40px] items-center border-b border-slate-100 px-4 py-3 text-[13px] text-slate-600 last:border-0">
+              <div>{h.date}</div><div>{planName} Plan</div><div>1</div><div>{h.period}</div>
+              <div className="flex justify-end gap-2 text-[12px] font-semibold text-indigo-600">
+                <button onClick={() => toast("Opening invoice…")}>Invoice</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlansView({ onBack }) {
   const [annual, setAnnual] = useState(true);
   const plans = [
@@ -2242,6 +2384,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   const speakerIdx = {};
   meeting.participants.forEach((p, i) => (speakerIdx[p.name] = i));
 
+  // Deterministic coaching metrics from the real transcript.
+  const transcriptText = meeting.transcript.map((t) => t.text).join(" ");
+  const totalWords = transcriptText.split(/\s+/).filter(Boolean).length;
+  const fillerCount = (transcriptText.match(/\b(um+|uh+|er+|like|you know|sort of|kind of|basically|actually|literally|i mean)\b/gi) || []).length;
+  const fillerPct = totalWords ? Math.round((fillerCount / totalWords) * 1000) / 10 : 0;
+  const questionsAsked = (transcriptText.match(/\?/g) || []).length || meeting.keyQuestions.length;
+  const wpmParts = meeting.participants.filter((p) => p.wpm);
+  const avgWpm = wpmParts.length ? Math.round(wpmParts.reduce((s, p) => s + p.wpm, 0) / wpmParts.length) : (140 + (meeting.scores.overall % 30));
+
   const TABS = [
     { k: "notes", label: "Notes", icon: FileText },
     { k: "transcript", label: "Transcript", icon: MessageSquareText },
@@ -2349,6 +2500,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 {!meeting.actionItems.length && <p className="text-sm text-slate-400">No action items detected.</p>}
               </div>
             </Card>
+            {meeting.nextSteps && meeting.nextSteps.length > 0 && (
+              <Card title="Next Steps" icon={Target}>
+                <ul className="space-y-2">
+                  {meeting.nextSteps.map((s, i) => (
+                    <li key={i} className="flex gap-2 text-sm text-slate-600"><ChevronRight size={16} className="mt-0.5 shrink-0 text-indigo-400" />{s}</li>
+                  ))}
+                </ul>
+              </Card>
+            )}
             <Card title="Key Questions" icon={Quote}>
               <ul className="space-y-3">
                 {(meeting.keyQA && meeting.keyQA.length ? meeting.keyQA : meeting.keyQuestions.map((q) => ({ q, a: "" }))).map((qq, i) => (
@@ -2456,18 +2616,34 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             </Card>
             <div className="grid gap-5 md:grid-cols-2">
               <Card title="Clarity" icon={Sparkles}>
-                <Metric label="Filler words" value={(meeting.scores.overall % 5) + "%"} ok />
-                <Metric label="Talking pace" value="In range" ok />
+                <Metric label="Filler words" value={fillerPct + "%"} ok={fillerPct < 5} />
+                <Metric label="Talking pace" value={avgWpm + " wpm"} ok={avgWpm >= 130 && avgWpm <= 175} />
+                <Metric label="Clarity score" value={meeting.scores.clarity} ok={meeting.scores.clarity >= 80} />
               </Card>
               <Card title="Impact" icon={Target}>
                 <Metric label="Charisma" value={meeting.scores.engagement} ok={meeting.scores.engagement >= 80} />
-                <Metric label="Bias" value={meeting.scores.sentiment} ok={meeting.scores.sentiment >= 80} />
-                <Metric label="Questions asked" value={meeting.keyQuestions.length} ok />
+                <Metric label="Sentiment" value={meeting.scores.sentiment} ok={meeting.scores.sentiment >= 70} />
+                <Metric label="Questions asked" value={questionsAsked} ok />
+                <Metric label="Talk-time balance" value={meeting.scores.balance} ok={meeting.scores.balance >= 60} />
               </Card>
             </div>
-            <div className="rounded-xl bg-indigo-50 p-4 text-sm text-indigo-700">
-              💡 Detailed speaker coaching (clarity / inclusion / impact, with history for employee training) is coming soon.
-            </div>
+            {meeting.participants && meeting.participants.length > 0 && (
+              <Card title="Per-speaker breakdown" icon={Users}>
+                <div className="space-y-2">
+                  {meeting.participants.map((p, i) => (
+                    <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: SPEAKER_COLORS[i % SPEAKER_COLORS.length] }}>{p.initials || initialsOf(p.name)}</span>
+                      <div className="min-w-0 flex-1"><div className="text-sm font-semibold text-slate-700">{p.name}</div><div className="text-[11px] text-slate-400">{p.role || "Participant"}</div></div>
+                      <div className="flex gap-4 text-right text-[12px]">
+                        <div><div className="font-semibold text-slate-700">{p.talkPct}%</div><div className="text-[10px] text-slate-400">talk</div></div>
+                        <div><div className="font-semibold text-slate-700">{p.wpm || "—"}</div><div className="text-[10px] text-slate-400">wpm</div></div>
+                        <div><div className="font-semibold" style={{ color: p.sentiment === "Positive" ? "#10B981" : p.sentiment === "Negative" ? "#F43F5E" : "#64748B" }}>{p.sentiment || "Neutral"}</div><div className="text-[10px] text-slate-400">tone</div></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
           </div>
         )}
 
@@ -2667,7 +2843,8 @@ function ChatView({ meetings, onOpen, seed }) {
                 ))}
               </div>
               <div className="mt-12 text-center">
-                <div className="mb-2.5 text-xs font-bold text-slate-500">Your sources</div>
+                <div className="mb-1 text-xs font-bold text-slate-500">Your sources</div>
+                <div className="mb-2.5 text-[11px] text-slate-400">{(() => { const rc = meetings.filter((m) => m.real).length; return rc ? `Searching ${meetings.length} meetings · ${rc} from your account` : `Searching ${meetings.length} meetings`; })()}</div>
                 <div className="flex items-center justify-center gap-2">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm"><Calendar size={18} className="text-sky-500" /></div>
                   <div className="h-10 w-10 rounded-lg border border-dashed border-slate-200 bg-white" />
