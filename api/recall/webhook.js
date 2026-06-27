@@ -35,11 +35,13 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "unauthorized" });
     }
     const ev = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const botId = ev?.data?.bot_id || ev?.bot?.id || ev?.data?.bot?.id || ev?.data?.id;
+    const botId = ev?.data?.bot_id || ev?.bot?.id || ev?.data?.bot?.id || ev?.data?.data?.bot?.id || ev?.data?.id;
     const type = ev?.event || ev?.type || "";
     if (!botId) return res.status(200).json({ ok: true, ignored: true });
-    // Only act when the recording/transcript is complete.
-    if (type && !/done|complete|transcript|ended|analysis/i.test(type)) return res.status(200).json({ ok: true, skipped: type });
+    // Only act when the TRANSCRIPT is ready. Other "*.done" events (bot/recording)
+    // fire before the transcript exists and would create an empty report.
+    const isTranscriptDone = /transcript[._-]?(done|complete|completed)/i.test(type);
+    if (type && !isTranscriptDone) return res.status(200).json({ ok: true, skipped: type });
 
     const meetings = await sb(`meetings?bot_id=eq.${botId}&select=*`);
     const meeting = meetings[0];
