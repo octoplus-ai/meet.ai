@@ -17,6 +17,9 @@ export default function handler(req, res) {
       // Write access so OctoMeet can annotate events (e.g. "OctoMeet will record"
       // + post-meeting score/report link) inside the user's real Google Calendar.
       "https://www.googleapis.com/auth/calendar.events",
+      // Meet Media API (botless capture): read the space + receive conference audio.
+      "https://www.googleapis.com/auth/meetings.space.readonly",
+      "https://www.googleapis.com/auth/meetings.conference.media.audio.readonly",
     ].join(" "),
   });
   if (addon) { params.set("state", "addon"); params.delete("prompt"); } // silent re-auth for the add-on once already authorized

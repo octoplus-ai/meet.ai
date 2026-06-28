@@ -115,7 +115,8 @@
       if (tk) return tk;
       return await authPopup();
     }
-    function callStart(tk) {
+    // ---- Bot path (fallback): a Recall notetaker joins + records.
+    function callBotStart(tk) {
       return fetch(APP + "/api/recall/start-bot", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tk },
@@ -123,21 +124,60 @@
       });
     }
 
+    // ---- Botless path (Meet Media API): OctoMeet captures media directly, NO bot joins.
+    let pc = null, audioTracks = [];
+    async function startBotless() {
+      const tk = await ensureToken(false);                                  // OctoMeet session token
+      const gt = await fetch(APP + "/api/media/google-token", { headers: { Authorization: "Bearer " + tk } }).then((r) => r.json()).catch(() => ({}));
+      if (!gt.access_token) throw new Error("reconnect");                    // needs re-login w/ Media scopes
+      const at = gt.access_token;
+      const sp = await fetch("https://meet.googleapis.com/v2/spaces/" + meetingCode, { headers: { Authorization: "Bearer " + at } });
+      const spd = await sp.json().catch(() => ({}));
+      if (!sp.ok || !spd.name) throw new Error("space:" + ((spd.error && spd.error.message) || sp.status));
+      const spaceId = spd.name.split("/")[1];
+
+      pc = new RTCPeerConnection();
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.createDataChannel("session-control");
+      pc.createDataChannel("media-stats");
+      audioTracks = [];
+      pc.ontrack = (ev) => { if (ev.track && ev.track.kind === "audio") audioTracks.push(ev.track); };
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+
+      const r = await fetch("https://meet.googleapis.com/v2beta/spaces/" + spaceId + ":connectActiveConference", {
+        method: "POST", headers: { Authorization: "Bearer " + at, "Content-Type": "application/json" },
+        body: JSON.stringify({ offer: pc.localDescription.sdp }),
+      });
+      const ans = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error("connect:" + ((ans.error && ans.error.message) || JSON.stringify(ans).slice(0, 100)));
+      await pc.setRemoteDescription({ type: "answer", sdp: ans.answer });
+      return true; // Google now shows the native "OctoMeet is collecting media" consent + banner — no participant.
+    }
+
     $("startBtn").onclick = async () => {
       if (!meetingUrl) { $("ctx").textContent = "Open this from inside a Google Meet call."; return; }
-      setRecording(true, "Connecting…");
+      setRecording(true, "Connecting (botless)…");
       try {
-        let tk = await ensureToken(false);
-        let r = await callStart(tk);
-        if (r.status === 401) { localStorage.removeItem(TOK_KEY); tk = await ensureToken(true); r = await callStart(tk); }
-        const d = await r.json().catch(() => ({}));
-        if (r.ok) setRecording(true, "OctoMeet is recording this meeting 🔴");
-        else setRecording(false, "Error: " + (d.error || "failed"));
+        await startBotless();
+        setRecording(true, "OctoMeet is recording 🔴 (botless — no participant)");
+        $("ctx").textContent = "Connected via Meet Media API ✓";
       } catch (e) {
-        setRecording(false, e && e.message === "cancelled" ? "Sign-in cancelled — tap Start again" : "Couldn't start — try again");
+        const msg = String((e && e.message) || e);
+        if (msg === "reconnect") { setRecording(false, "Re-connect Google to enable botless (new permissions) — open OctoMeet & sign in again"); return; }
+        // Fallback: use the bot so recording still works while we debug botless.
+        setRecording(true, "Botless unavailable (" + msg.slice(0, 70) + ") — joining with notetaker…");
+        try {
+          let tk = await ensureToken(false);
+          let r = await callBotStart(tk);
+          if (r.status === 401) { localStorage.removeItem(TOK_KEY); tk = await ensureToken(true); r = await callBotStart(tk); }
+          setRecording(r.ok, r.ok ? "OctoMeet is recording this meeting 🔴" : "Couldn't start");
+        } catch (e2) { setRecording(false, "Couldn't start — try again"); }
       }
     };
-    $("stopBtn").onclick = () => setRecording(false, "Recording stopped");
+    $("stopBtn").onclick = () => { try { if (pc) pc.close(); } catch (_) {} setRecording(false, "Recording stopped"); };
 
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
     else init();
