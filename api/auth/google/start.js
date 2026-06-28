@@ -19,7 +19,7 @@ export default function handler(req, res) {
       "https://www.googleapis.com/auth/calendar.events",
     ].join(" "),
   });
-  if (addon) params.set("state", "addon");
+  if (addon) { params.set("state", "addon"); params.delete("prompt"); } // silent re-auth for the add-on once already authorized
   res.writeHead(302, { Location: "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString() });
   res.end();
 }
