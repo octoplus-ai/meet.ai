@@ -10,10 +10,12 @@ export default async function handler(req, res) {
     const isCron = req.headers["x-vercel-cron"] || (process.env.RECALL_WEBHOOK_SECRET && key === process.env.RECALL_WEBHOOK_SECRET);
     if (!isCron) return res.status(401).json({ error: "unauthorized" });
 
-    const users = await sb(`app_users?auto_join=eq.true&select=id,notetaker_name`);
+    const users = await sb(`app_users?auto_join=eq.true&select=id,notetaker_name,recall_calendar_id`);
     const results = [];
     for (const u of users) {
       try {
+        // Recall-Calendar users are handled by the calendar webhook (V2) — skip V1 to avoid duplicates.
+        if (u.recall_calendar_id) { results.push({ user: u.id, via: "recall_calendar", armed: 0 }); continue; }
         const r = await armUserCalendar(u.id, { botName: u.notetaker_name || "OctoMeet AI", days: 7 });
         results.push({ user: u.id, ...r });
       } catch (e) {

@@ -67,7 +67,7 @@
     const APP = "https://meet-ai-three-beige.vercel.app";
     const TOK_KEY = "octomeet_addon_token";
     const $ = (id) => document.getElementById(id);
-    let meetingUrl = null;
+    let meetingUrl = null, meetingCode = null;
 
     function setRecording(on, text) {
       $("dot").className = "dot" + (on ? " rec" : "");
@@ -82,6 +82,7 @@
         const sidePanel = await session.createSidePanelClient();
         const info = await sidePanel.getMeetingInfo();
         const code = info && (info.meetingCode || info.meetingId);
+        meetingCode = info && info.meetingCode ? String(info.meetingCode).replace(/^https?:\/\/meet\.google\.com\//, "") : null;
         meetingUrl = code ? ("https://meet.google.com/" + String(code).replace(/^https?:\/\/meet\.google\.com\//, "")) : null;
         $("ctx").textContent = meetingUrl ? "Connected to this meeting ✓" : "Open this from inside a Meet call.";
       } catch (e) {

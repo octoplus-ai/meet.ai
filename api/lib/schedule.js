@@ -22,6 +22,9 @@ export async function syncRecallCalendar(userId, calendarId, { botName, sinceTs 
   for (const e of events) {
     if (e.is_deleted || !e.meeting_url) continue;
     if (e.end_time && new Date(e.end_time).getTime() < now - 5 * 60000) continue; // already ended
+    const gid = googleEventId(e);
+    // Early dedup: one row per calendar event (also enforced atomically by a DB unique index).
+    if (gid) { const exEvt = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(gid)}&select=id`); if (exEvt.length) continue; }
     const dup = await sb(`meetings?user_id=eq.${userId}&meeting_url=eq.${encodeURIComponent(e.meeting_url)}&status=in.(scheduled,joining,in_call,recording,processing)&select=id`);
     if (dup.length) continue;
     const r = await scheduleBotForEvent(e.id, { dedupKey: `${e.start_time || ""}-${e.meeting_url}`, botName: botName || "OctoMeet AI" });
@@ -29,15 +32,15 @@ export async function syncRecallCalendar(userId, calendarId, { botName, sinceTs 
     if (!botId) continue;
     const exBot = await sb(`meetings?bot_id=eq.${encodeURIComponent(botId)}&select=id`);
     if (exBot.length) continue; // a row for this bot already exists
-    const gid = googleEventId(e);
-    await sb("meetings", {
-      method: "POST",
-      body: {
-        user_id: userId, title: e.title || (e.raw && e.raw.summary) || "Meeting", source: "Recall", meeting_url: e.meeting_url,
-        bot_id: botId, status: "scheduled", start_time: e.start_time || null, calendar_event_id: gid,
-      },
-    });
-    // Annotate the real Google Calendar event so OctoMeet shows up in the invite.
+    try {
+      await sb("meetings", {
+        method: "POST",
+        body: {
+          user_id: userId, title: e.title || (e.raw && e.raw.summary) || "Meeting", source: "Recall", meeting_url: e.meeting_url,
+          bot_id: botId, status: "scheduled", start_time: e.start_time || null, calendar_event_id: gid,
+        },
+      });
+    } catch (err) { if (/23505|duplicate/i.test(String(err.message || ""))) continue; throw err; } // race lost → another path already inserted it
     if (gid) annotateEvent(userId, gid, "🐙 OctoMeet AI will join and record this meeting, then add the AI summary & report link here.").catch(() => {});
     scheduled++;
   }

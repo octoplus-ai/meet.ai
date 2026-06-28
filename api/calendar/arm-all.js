@@ -12,9 +12,12 @@ export default async function handler(req, res) {
     if (!s.length) return res.status(401).json({ error: "not authenticated" });
     const uid = s[0].user_id;
 
-    const u = await sb(`app_users?id=eq.${uid}&select=auto_join,notetaker_name`);
+    const u = await sb(`app_users?id=eq.${uid}&select=auto_join,notetaker_name,recall_calendar_id`);
     if (u[0] && u[0].auto_join === false) return res.status(200).json({ ok: true, autoJoin: false, armed: 0 });
-    // V1 and V2 coexist safely: scheduleBot dedups on meeting_url so no meeting gets two bots.
+    // Single scheduling path: if the Recall Calendar (V2) is connected, IT handles
+    // every meeting (via connect-recall + the calendar webhook). Running V1 too would
+    // race V2 and create duplicate bots/rows, so we skip it here.
+    if (u[0] && u[0].recall_calendar_id) return res.status(200).json({ ok: true, via: "recall_calendar", armed: 0 });
 
     const result = await armUserCalendar(uid, { botName: (u[0] && u[0].notetaker_name) || "OctoMeet AI", days: 7 });
     res.status(200).json({ ok: true, ...result });

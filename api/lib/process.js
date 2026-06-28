@@ -76,6 +76,16 @@ export async function processMeeting(meeting, { force = false } = {}) {
   const tr = bot ? await getTranscript(bot) : { text: "", participants: [], stats: [], turns: [] };
   const dur = bot ? durationMin(bot) : null;
 
+  // No report unless OctoMeet actually captured content. If nothing was transcribed
+  // (recorder not admitted, or no one spoke), mark the meeting as error — never a blank report.
+  if (!(tr.text || "").trim()) {
+    await sb(`meetings?id=eq.${meeting.id}`, {
+      method: "PATCH",
+      body: { status: "error", error: "OctoMeet didn't capture this meeting — it wasn't admitted, or no audio was recorded.", status_synced_at: new Date().toISOString() },
+    });
+    return { skipped: "no transcript" };
+  }
+
   const ai = await analyzeTranscript(tr.text, meeting.title, tr.participants);
   const participants = mergeParticipants(tr.stats, ai.participants);
   const sc = ai.scores || {};
