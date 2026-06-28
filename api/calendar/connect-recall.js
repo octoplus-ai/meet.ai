@@ -36,7 +36,7 @@ export default async function handler(req, res) {
 
     // Initial sync: schedule bots for any already-synced upcoming meetings.
     let sync = { events: 0, scheduled: 0 };
-    try { sync = await syncRecallCalendar(uid, calendarId, { botName: u.notetaker_name || "OctoMeet AI Notetaker" }); } catch (e) { /* webhook will cover it */ }
+    try { sync = await syncRecallCalendar(uid, calendarId, { botName: u.notetaker_name || "OctoMeet AI" }); } catch (e) { /* webhook will cover it */ }
     res.status(200).json({ ok: true, calendar_id: calendarId, connected, ...sync });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });

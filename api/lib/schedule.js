@@ -24,7 +24,7 @@ export async function syncRecallCalendar(userId, calendarId, { botName, sinceTs 
     if (e.end_time && new Date(e.end_time).getTime() < now - 5 * 60000) continue; // already ended
     const dup = await sb(`meetings?user_id=eq.${userId}&meeting_url=eq.${encodeURIComponent(e.meeting_url)}&status=in.(scheduled,joining,in_call,recording,processing)&select=id`);
     if (dup.length) continue;
-    const r = await scheduleBotForEvent(e.id, { dedupKey: `${e.start_time || ""}-${e.meeting_url}`, botName: botName || "OctoMeet AI Notetaker" });
+    const r = await scheduleBotForEvent(e.id, { dedupKey: `${e.start_time || ""}-${e.meeting_url}`, botName: botName || "OctoMeet AI" });
     const botId = botIdFromEvent(r.data) || botIdFromEvent(e);
     if (!botId) continue;
     const exBot = await sb(`meetings?bot_id=eq.${encodeURIComponent(botId)}&select=id`);
@@ -81,7 +81,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
   const scheduled = joinDate && joinDate.getTime() > Date.now() + 30 * 1000;
   const recallBody = {
     meeting_url: meetingUrl,
-    bot_name: botName || "OctoMeet AI Notetaker",
+    bot_name: botName || "OctoMeet AI",
     recording_config: { transcript: { provider: { meeting_captions: {} } } },
   };
   if (scheduled) recallBody.join_at = joinDate.toISOString();

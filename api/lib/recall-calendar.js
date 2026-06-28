@@ -56,7 +56,7 @@ export async function scheduleBotForEvent(eventId, { dedupKey, botName }) {
   const base = {
     deduplication_key: dedupKey,
     bot_config: {
-      bot_name: botName || "OctoMeet AI Notetaker",
+      bot_name: botName || "OctoMeet AI",
       recording_config: { transcript: { provider: { meeting_captions: {} } } },
     },
   };

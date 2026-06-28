@@ -101,7 +101,7 @@ const store = {
 const POLICY_KEY = "octomeet:meeting-policy:v1";
 // Synchronous read of the configured notetaker display name (used when launching bots).
 function notetakerName() {
-  try { const v = JSON.parse(window.localStorage.getItem(POLICY_KEY) || "null"); return (v && v.notetakerName) || "OctoMeet AI Notetaker"; } catch { return "OctoMeet AI Notetaker"; }
+  try { const v = JSON.parse(window.localStorage.getItem(POLICY_KEY) || "null"); return (v && v.notetakerName) || "OctoMeet AI"; } catch { return "OctoMeet AI"; }
 }
 
 /* ---------------------------- Claude API --------------------------- */
@@ -1751,7 +1751,7 @@ function IntegrationsView({ onAsk }) {
 }
 
 /* ============================ MEETING POLICY ===================== */
-const DEFAULT_POLICY = { autoJoin: true, recording: true, consent: true, affective: true, externalShare: false, lockMembers: false, which: "all", who: "any", retention: "90", notetakerName: "OctoMeet AI Notetaker" };
+const DEFAULT_POLICY = { autoJoin: true, recording: true, consent: true, affective: true, externalShare: false, lockMembers: false, which: "all", who: "any", retention: "90", notetakerName: "OctoMeet AI" };
 function MeetingPolicyView({ onAsk }) {
   const [p, setP] = useState(DEFAULT_POLICY);
   useEffect(() => { (async () => { const saved = await store.get(POLICY_KEY, null); if (saved) setP({ ...DEFAULT_POLICY, ...saved }); })(); }, []);
@@ -1797,7 +1797,7 @@ function MeetingPolicyView({ onAsk }) {
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="text-sm font-semibold text-slate-800">Notetaker display name</div>
             <p className="mb-2 text-[13px] text-slate-500">The name the bot shows as when it joins your meetings.</p>
-            <input value={p.notetakerName} onChange={(e) => set1("notetakerName", e.target.value)} placeholder="OctoMeet AI Notetaker" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
+            <input value={p.notetakerName} onChange={(e) => set1("notetakerName", e.target.value)} placeholder="OctoMeet AI" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
           </div>
 
           <div className="text-sm font-bold text-slate-800">Permissions</div>

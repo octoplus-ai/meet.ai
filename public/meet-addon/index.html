@@ -119,7 +119,7 @@
       return fetch(APP + "/api/recall/start-bot", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tk },
-        body: JSON.stringify({ meetingUrl: meetingUrl, title: "Live meeting", botName: "OctoMeet AI Notetaker" }),
+        body: JSON.stringify({ meetingUrl: meetingUrl, title: "Live meeting", botName: "OctoMeet AI" }),
       });
     }
 

@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     const results = [];
     for (const u of users) {
       try {
-        const r = await armUserCalendar(u.id, { botName: u.notetaker_name || "OctoMeet AI Notetaker", days: 7 });
+        const r = await armUserCalendar(u.id, { botName: u.notetaker_name || "OctoMeet AI", days: 7 });
         results.push({ user: u.id, ...r });
       } catch (e) {
         results.push({ user: u.id, error: String(e.message || e) });

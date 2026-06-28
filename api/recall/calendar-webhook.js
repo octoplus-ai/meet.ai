@@ -27,7 +27,7 @@ export default async function handler(req, res) {
 
     // calendar.sync_events → schedule bots for new/updated meetings.
     if (u.auto_join === false) return res.status(200).json({ ok: true, autoJoinOff: true });
-    const result = await syncRecallCalendar(u.id, calId, { botName: u.notetaker_name || "OctoMeet AI Notetaker", sinceTs: ev?.data?.last_updated_ts });
+    const result = await syncRecallCalendar(u.id, calId, { botName: u.notetaker_name || "OctoMeet AI", sinceTs: ev?.data?.last_updated_ts });
     res.status(200).json({ ok: true, ...result });
   } catch (e) {
     console.error("calendar webhook error:", e && (e.stack || e.message || e));
