@@ -27,6 +27,8 @@ export async function syncRecallCalendar(userId, calendarId, { botName, sinceTs 
     const r = await scheduleBotForEvent(e.id, { dedupKey: `${e.start_time || ""}-${e.meeting_url}`, botName: botName || "OctoMeet AI Notetaker" });
     const botId = botIdFromEvent(r.data) || botIdFromEvent(e);
     if (!botId) continue;
+    const exBot = await sb(`meetings?bot_id=eq.${encodeURIComponent(botId)}&select=id`);
+    if (exBot.length) continue; // a row for this bot already exists
     const gid = googleEventId(e);
     await sb("meetings", {
       method: "POST",
