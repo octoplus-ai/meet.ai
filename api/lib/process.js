@@ -9,7 +9,43 @@ const APP_URL = "https://meet-ai-three-beige.vercel.app/";
 // Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
 // with a lower report_version are re-analyzed automatically (from their STORED transcript,
 // no Recall needed) so every past meeting reflects the latest improvements without re-recording.
-export const ANALYSIS_VERSION = 5;
+export const ANALYSIS_VERSION = 6;
+
+// Parse a stored transcript string ("[mm:ss] Name: text") into {t,text} turns.
+function parseStoredTurns(text) {
+  return String(text || "").split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const m = line.match(/^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*(.*)$/);
+    let t = "", rest = line;
+    if (m) { t = m[1]; rest = m[2]; }
+    const ci = rest.indexOf(":");
+    return { t, text: ci > 0 && ci < 40 ? rest.slice(ci + 1).trim() : rest };
+  });
+}
+const _tok = (s) => (String(s || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length > 3);
+// Find the timestamp of the transcript turn that best matches a piece of AI text
+// (word overlap). This is how we get ACCURATE, DISTINCT timestamps instead of the
+// LLM's unreliable guesses (which often repeat the same time for everything).
+function bestTurnTime(text, turns) {
+  const set = new Set(_tok(text));
+  if (!set.size) return null;
+  let best = null, bs = 0;
+  for (const tn of turns) {
+    if (!tn.t) continue;
+    let sc = 0; for (const w of _tok(tn.text)) if (set.has(w)) sc++;
+    if (sc > bs) { bs = sc; best = tn; }
+  }
+  return bs >= 2 && best ? best.t : null;
+}
+// Override each AI item's timestamp with the real moment it occurs in the transcript.
+function assignTimestamps(ai, turns) {
+  if (!Array.isArray(turns) || !turns.length || !ai) return ai;
+  const fix = (arr, key) => { if (Array.isArray(arr)) arr.forEach((it) => { if (it && typeof it === "object") { const m = bestTurnTime(it[key], turns); if (m) it.t = m; } }); };
+  fix(ai.highlights, "text");
+  fix(ai.keyQuestions, "q");
+  fix(ai.actionItems, "task");
+  if (Array.isArray(ai.chapters)) ai.chapters.forEach((c) => { if (c && typeof c === "object") { const m = bestTurnTime((c.title || "") + " " + (c.summary || ""), turns); if (m) c.t = m; } });
+  return ai;
+}
 
 // Belt-and-suspenders: strip em/en dashes from every string in the AI output (user
 // preference: only normal hyphens). Applied to the analysis before it's persisted.
@@ -119,8 +155,9 @@ export async function processMeeting(meeting, { force = false } = {}) {
   // report. Keep the meeting in "processing" so the next poll retries cleanly.
   if (!(ai.summary && ai.summary.trim())) {
     await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { status: "processing", status_synced_at: new Date().toISOString() } });
-    return { skipped: "analysis empty — will retry" };
+    return { skipped: "analysis empty - will retry" };
   }
+  assignTimestamps(ai, tr.turns); // accurate per-item timestamps from the transcript
   const participants = mergeParticipants(tr.stats, ai.participants);
   const sc = ai.scores || {};
 
@@ -185,6 +222,7 @@ export async function reanalyzeStored(meeting) {
     await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION } });
     return { skipped: "analysis empty" };
   }
+  assignTimestamps(ai, parseStoredTurns(text)); // accurate per-item timestamps from the stored transcript
   const sc = ai.scores || {};
   const patch = {
     summary: ai.summary || rep.summary || "",

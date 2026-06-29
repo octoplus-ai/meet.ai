@@ -2682,7 +2682,14 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
   // live total is passed in; segments come straight from the marker timestamps.
   const buildSegments = (kind, total) => {
     const cap = total && isFinite(total) && total > 0 ? total : Infinity;
-    const ats = uniqAts.filter((s) => s < cap - 0.5);
+    let ats = uniqAts.filter((s) => s < cap - 0.5);
+    // Sparse/degenerate markers (very short meeting, or the AI clustered timestamps) →
+    // sample points evenly so the montage still traverses the whole meeting.
+    if (cap !== Infinity && ats.length < 3) {
+      const want = kind === "trailer" ? 6 : 9;
+      const extra = Array.from({ length: want }, (_, i) => Math.round((cap * (i + 0.6)) / (want + 0.2)));
+      ats = [...new Set([...ats, ...extra])].filter((s) => s < cap - 0.5).sort((a, b) => a - b);
+    }
     if (!ats.length) return [];
     if (kind === "trailer") {
       const pick = ats.length <= 7 ? ats : Array.from({ length: 7 }, (_, i) => ats[Math.floor((i * ats.length) / 7)]);
