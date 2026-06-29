@@ -5,8 +5,8 @@ import {
   Search, ChevronDown, RefreshCw, Upload, Lock, MoreHorizontal, ArrowDown,
   ArrowLeft, Send, Loader2, CheckCircle2, Circle, Clock, Video, Hash, Target,
   ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
-  Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play, Pause, Maximize2,
-  Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type,
+  Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play, Pause, Maximize2, Volume2, VolumeX, PictureInPicture2,
+  Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type, Copy, Pencil,
   HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, KeyRound,
 } from "lucide-react";
 import {
@@ -2731,6 +2731,8 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const [hovering, setHovering] = useState(false);
   const [mode, setMode] = useState(null);
   const [fading, setFading] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [rate, setRate] = useState(1);
   const barRef = useRef(null), wrapRef = useRef(null);
   const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null), transRef = useRef(false);
 
@@ -2807,6 +2809,15 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const onBar = (e) => { const b = barRef.current, v = videoRef.current; if (!b || !v || !dur) return; const r = b.getBoundingClientRect(); clearMode(); v.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
   const fs = () => { const w = wrapRef.current; if (!w) return; try { document.fullscreenElement ? document.exitFullscreen() : w.requestFullscreen(); } catch (e) {} };
   const setD = (e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDur(d); };
+  const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); };
+  const cycleRate = () => { const v = videoRef.current; if (!v) return; const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1; v.playbackRate = next; setRate(next); };
+  const pip = async () => { const v = videoRef.current; if (!v) return; try { document.pictureInPictureElement ? await document.exitPictureInPicture() : await v.requestPictureInPicture(); } catch (e) {} };
+
+  // Chapter-segmented progress track + current chapter name (Read.ai-style).
+  const chapAts = dur ? [...new Set((markers || []).filter((m) => m.type === "chapter" && m.at != null && m.at < dur).map((m) => Math.round(m.at)))].sort((a, b) => a - b) : [];
+  const bounds = [0, ...chapAts, dur];
+  const segs2 = []; for (let i = 0; i < bounds.length - 1; i++) if (bounds[i + 1] > bounds[i]) segs2.push({ start: bounds[i], end: bounds[i + 1] });
+  let curChapter = ""; { const cm = (markers || []).filter((m) => m.type === "chapter" && m.at != null).sort((a, b) => a.at - b.at); for (const c of cm) { if (c.at <= cur) curChapter = c.label; else break; } }
 
   const MENU = [
     { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
@@ -2850,22 +2861,40 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
             <span className="text-white/85"> · {hover.label}</span>
           </div>
         )}
-        <div ref={barRef} onClick={onBar} className="relative h-3 cursor-pointer">
-          <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/30" />
-          <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-indigo-500" style={{ width: barPct + "%" }} />
-          {/* Markers (dots) shown everywhere EXCEPT the trailer (which is a clean single clip). */}
-          {!isTrailer && dur > 0 && markers.map((mk, i) => (
-            <button key={i} onMouseEnter={() => setHover(mk)} onMouseLeave={() => setHover(null)}
-              onClick={(e) => { e.stopPropagation(); clearMode(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
-              className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 transition hover:scale-150"
-              style={{ left: `${(mk.at / dur) * 100}%`, background: MARKER_STYLE[mk.type].color }} aria-label={mk.label} />
-          ))}
-        </div>
+        {isTrailer ? (
+          /* Trailer: one continuous clean line, no dots. */
+          <div ref={barRef} onClick={onBar} className="relative h-3 cursor-pointer">
+            <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/30" />
+            <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-indigo-500" style={{ width: barPct + "%" }} />
+          </div>
+        ) : (
+          /* Recording / Highlights: chapter-segmented track with colored dots ABOVE it. */
+          <div ref={barRef} onClick={onBar} className="relative h-4 cursor-pointer">
+            {dur > 0 && markers.map((mk, i) => (
+              <button key={i} onMouseEnter={() => setHover(mk)} onMouseLeave={() => setHover(null)}
+                onClick={(e) => { e.stopPropagation(); clearMode(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
+                className="absolute top-0 h-2 w-2 -translate-x-1/2 rounded-full border border-white/70 transition hover:scale-150"
+                style={{ left: `${(mk.at / dur) * 100}%`, background: MARKER_STYLE[mk.type].color }} aria-label={mk.label} />
+            ))}
+            {(dur > 0 ? (segs2.length ? segs2 : [{ start: 0, end: dur }]) : []).map((sg, i) => {
+              const f = Math.min(1, Math.max(0, (cur - sg.start) / Math.max(0.5, sg.end - sg.start)));
+              return (
+                <div key={i} className="absolute bottom-0.5 h-1 overflow-hidden rounded-full bg-white/30" style={{ left: `calc(${(sg.start / dur) * 100}% + 1.5px)`, width: `calc(${((sg.end - sg.start) / dur) * 100}% - 3px)` }}>
+                  <div className="h-full rounded-full bg-indigo-500" style={{ width: f * 100 + "%" }} />
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="mt-1.5 flex items-center gap-3 text-white">
           <button onClick={toggle} className="hover:text-indigo-300">{playing ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}</button>
-          <span className="font-mono text-[12px] text-white/90">{tLeft} / {tRight}</span>
-          {mode && mode !== "full" && <span className="rounded bg-indigo-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
+          <span className="whitespace-nowrap font-mono text-[12px] text-white/90">{tLeft} / {tRight}</span>
+          {!isTrailer && curChapter && <span className="truncate text-[12px] text-white/70">• {curChapter}</span>}
+          {mode && mode !== "full" && <span className="shrink-0 rounded bg-indigo-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
           <div className="flex-1" />
+          <button onClick={toggleMute} title="Mute" className="hover:text-indigo-300">{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
+          <button onClick={cycleRate} title="Playback speed" className="flex items-center gap-0.5 hover:text-indigo-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
+          <button onClick={pip} title="Picture in picture" className="hover:text-indigo-300"><PictureInPicture2 size={16} /></button>
           <button onClick={fs} title="Fullscreen" className="hover:text-indigo-300"><Maximize2 size={16} /></button>
         </div>
       </div>
@@ -2961,6 +2990,40 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
     try { v.currentTime = sec; const p = v.play(); if (p && p.catch) p.catch(() => {}); v.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
   };
 
+  const [summaryMode, setSummaryMode] = useState("standard");
+  const [menu, setMenu] = useState(null); // header dropdown: "download" | "push" | null
+  const [shareOpen, setShareOpen] = useState(false);
+  const [addPeople, setAddPeople] = useState([]); // people invited via the Share modal
+  const [shareQuery, setShareQuery] = useState("");
+  const [linkAccess, setLinkAccess] = useState("restricted"); // "restricted" | "public"
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [shareStep, setShareStep] = useState(1);
+  const [shareMsg, setShareMsg] = useState("");
+  const [shareRole, setShareRole] = useState("Viewer");
+  const [roleOpen, setRoleOpen] = useState(false);
+  const [notify, setNotify] = useState(true);
+  const closeShare = () => { setShareOpen(false); setShareStep(1); setShareQuery(""); setShareMsg(""); setAccessOpen(false); setRoleOpen(false); };
+  const doShare = () => { const n = addPeople.length; closeShare(); toast(n ? `Report shared with ${n} ${n > 1 ? "people" : "person"}` : "Report shared"); };
+  const shortSummary = (meeting.summary || "").split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
+  // People you can share with: meeting participants + a few company teammates.
+  const COMPANY = ["santiago@octoplusteam.com", "nicolas@octoplusteam.com", "team@octoplusteam.com"];
+  const shareCandidates = [...new Set([...meeting.participants.map((p) => p.name), ...COMPANY])].filter((n) => !addPeople.includes(n));
+  const shareMatches = shareQuery.trim() ? shareCandidates.filter((n) => n.toLowerCase().includes(shareQuery.trim().toLowerCase())) : [];
+
+  // Persist a manual edit to a report section (one item per line) + optimistic UI update.
+  const editField = async (field, raw) => {
+    const lines = (typeof raw === "string" ? raw.split("\n") : (raw || [])).map((s) => String(s).trim()).filter(Boolean);
+    let value, local;
+    if (field === "summary") { value = (typeof raw === "string" ? raw : lines.join("\n")).trim(); local = { summary: value }; }
+    else if (field === "next_steps") { value = lines; local = { nextSteps: lines }; }
+    else if (field === "action_items") { value = lines.map((task, i) => ({ owner: (meeting.actionItems[i] || {}).owner || "", task, due: (meeting.actionItems[i] || {}).due || "", t: (meeting.actionItems[i] || {}).t || "" })); local = { actionItems: value.map((a) => ({ ...a, at: tsToSeconds(a.t), done: false })) }; }
+    else if (field === "key_questions") { value = lines.map((qq, i) => ({ q: qq, a: (meeting.keyQA[i] || {}).a || "", t: (meeting.keyQA[i] || {}).t || "" })); local = { keyQA: value.map((k) => ({ ...k, at: tsToSeconds(k.t) })), keyQuestions: value.map((k) => k.q) }; }
+    else return;
+    try { await fetch("/api/report-field", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, field, value }) }); } catch (e) {}
+    if (onUpdate) onUpdate(meetings.map((m) => (m.id === meeting.id ? { ...m, ...local } : m)));
+    toast("Saved");
+  };
+
   // Colored markers for the video timeline - chapters, key questions, action items, highlights.
   const markers = useMemo(() => [
     ...(meeting.chapters || []).filter((c) => c.at != null).map((c) => ({ at: c.at, type: "chapter", label: c.title })),
@@ -3002,22 +3065,44 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
     { k: "chapters", label: "Chapters & Topics", icon: ListChecks },
   ];
 
-  const downloadReport = () => {
-    const lines = [
-      `# ${meeting.title}`,
-      `${fmtDateShort(meeting.date)} · ${meeting.timeStart} - ${meeting.timeEnd} · ${meeting.source}`,
-      `Read Score ${meeting.scores.overall} · Engagement ${meeting.scores.engagement} · Sentiment ${meeting.scores.sentiment}`,
-      "", "## Summary", meeting.summary,
-      "", "## Action Items", ...meeting.actionItems.map((a) => `- ${a.task} (${a.owner})`),
-      "", "## Key Questions", ...meeting.keyQuestions.map((q) => `- ${q}`),
-      "", "## Transcript", ...meeting.transcript.map((tt) => `[${tt.t}] ${tt.speaker}: ${tt.text}`),
-    ].join("\n");
-    const url = URL.createObjectURL(new Blob([lines], { type: "text/plain" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = meeting.title.replace(/[^a-z0-9]+/gi, "_") + ".txt"; a.click();
-    URL.revokeObjectURL(url);
-    toast("Report downloaded");
+  const fileBase = () => meeting.title.replace(/[^a-z0-9]+/gi, "_");
+  const reportLines = () => [
+    `# ${meeting.title}`,
+    `${fmtDateShort(meeting.date)} · ${meeting.timeStart} - ${meeting.timeEnd} · ${meeting.source}`,
+    `Read Score ${meeting.scores.overall} · Engagement ${meeting.scores.engagement} · Sentiment ${meeting.scores.sentiment}`,
+    "", "## Summary", meeting.summary,
+    "", "## Action Items", ...meeting.actionItems.map((a) => `- ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`),
+    "", "## Key Questions", ...meeting.keyQuestions.map((q) => `- ${q}`),
+    "", "## Transcript", ...meeting.transcript.map((tt) => `[${tt.t}] ${tt.speaker}: ${tt.text}`),
+  ].join("\n");
+  const esc = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const reportHtml = () => `<html><head><meta charset="utf-8"><title>${esc(meeting.title)}</title><style>body{font-family:Arial,Helvetica,sans-serif;color:#1e1b2e;max-width:760px;margin:28px auto;line-height:1.55;padding:0 16px}h1{color:#5b21b6;margin-bottom:2px}h2{color:#6d28d9;border-bottom:1px solid #eee;padding-bottom:4px;margin-top:22px}.meta{color:#666;font-size:13px}li{margin:3px 0}</style></head><body>`
+    + `<h1>${esc(meeting.title)}</h1><div class="meta">${esc(fmtDateShort(meeting.date))} · ${esc(meeting.timeStart)} - ${esc(meeting.timeEnd)} · ${esc(meeting.source)} · Read Score ${meeting.scores.overall}</div>`
+    + `<h2>Summary</h2><p>${esc(meeting.summary).replace(/\n/g, "<br>")}</p>`
+    + `<h2>Action Items</h2><ul>${meeting.actionItems.map((a) => `<li>${esc(a.task)}${a.owner ? " (" + esc(a.owner) + ")" : ""}</li>`).join("")}</ul>`
+    + `<h2>Key Questions</h2><ul>${meeting.keyQuestions.map((qq) => `<li>${esc(qq)}</li>`).join("")}</ul>`
+    + `<h2>Transcript</h2>${meeting.transcript.map((tt) => `<p><b>${esc(tt.speaker)}</b> <span class="meta">${esc(tt.t)}</span><br>${esc(tt.text)}</p>`).join("")}`
+    + `</body></html>`;
+  const dl = (name, content, mime) => { const url = URL.createObjectURL(new Blob([content], { type: mime })); const a = document.createElement("a"); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+  const doDownload = (kind) => {
+    setMenu(null);
+    const base = fileBase();
+    if (kind === "md") dl(base + ".md", reportLines(), "text/markdown");
+    else if (kind === "txt") dl(base + ".txt", reportLines(), "text/plain");
+    else if (kind === "doc") dl(base + ".doc", reportHtml(), "application/msword");
+    else if (kind === "transcript") dl(base + "_transcript.txt", meeting.transcript.map((tt) => `[${tt.t}] ${tt.speaker}: ${tt.text}`).join("\n"), "text/plain");
+    else if (kind === "video") { if (meeting.video) { const a = document.createElement("a"); a.href = meeting.video; a.download = base + ".mp4"; a.target = "_blank"; a.click(); } else toast("No recording to download"); return; }
+    else if (kind === "pdf") { const w = window.open("", "_blank"); if (w) { w.document.write(reportHtml()); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350); } toast("Opening printable report - choose 'Save as PDF'"); return; }
+    toast("Downloaded");
   };
+  const DOWNLOAD_OPTS = [
+    { k: "pdf", label: "PDF (print / save)" }, { k: "doc", label: "Word (.doc)" }, { k: "md", label: "Markdown (.md)" },
+    { k: "txt", label: "Plain text (.txt)" }, { k: "transcript", label: "Transcript (.txt)" }, { k: "video", label: "Video (.mp4)" },
+  ];
+  const PUSH_OPTS = [
+    { name: "Confluence", brand: "confluence" }, { name: "HubSpot", brand: "hubspot" }, { name: "Notion", brand: "notion" },
+    { name: "Salesforce", brand: "salesforce" }, { name: "Slack", brand: "slack" }, { name: "Webhooks", brand: "zapier" },
+  ];
   const shareReport = async () => { try { await navigator.clipboard.writeText(window.location.href); } catch (e) {} toast("Report link copied"); };
 
   return (
@@ -3027,9 +3112,31 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
         <div className="flex items-center justify-between">
           <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>
           <div className="flex items-center gap-2">
-            <button onClick={downloadReport} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download</button>
-            <button onClick={() => toast("Push to Slack/Notion/CRM - coming soon")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Share2 size={14} /> Push to…</button>
-            <button onClick={shareReport} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500"><Share2 size={14} /> Share</button>
+            {/* Download dropdown */}
+            <div className="relative">
+              <button onClick={() => setMenu(menu === "download" ? null : "download")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download <ChevronDown size={13} /></button>
+              {menu === "download" && (<>
+                <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+                <div className="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl">
+                  {DOWNLOAD_OPTS.map((o) => <button key={o.k} onClick={() => doDownload(o.k)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Download size={13} className="text-indigo-400" /> {o.label}</button>)}
+                </div></>)}
+            </div>
+            {/* Push to dropdown */}
+            <div className="relative">
+              <button onClick={() => setMenu(menu === "push" ? null : "push")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Send size={14} /> Push to… <ChevronDown size={13} /></button>
+              {menu === "push" && (<>
+                <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+                <div className="absolute right-0 z-50 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl">
+                  {PUSH_OPTS.map((o) => (
+                    <div key={o.name} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50">{o.brand === "confluence" ? <LayoutGrid size={16} className="text-sky-600" /> : o.brand === "zapier" ? <Zap size={16} className="text-orange-500" /> : <BrandIcon name={o.brand} size={18} />}</span>
+                      <span className="flex-1 text-[13px] font-medium text-slate-700">{o.name}</span>
+                      <button onClick={() => { setMenu(null); toast(`Connect ${o.name} in Integrations to push reports there.`); }} className="rounded-lg border border-slate-200 px-3 py-1 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">Add</button>
+                    </div>
+                  ))}
+                </div></>)}
+            </div>
+            <button onClick={() => { setShareOpen(true); setShareStep(1); }} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500"><Share2 size={14} /> Share</button>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-400">
@@ -3039,6 +3146,100 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
           <span className="flex items-center gap-1"><Users size={12} /> {meeting.participants.map((p) => p.name).join(", ")}</span>
         </div>
       </div>
+
+      {shareOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={closeShare}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center gap-3">
+              {shareStep === 2 && <button onClick={() => setShareStep(1)} className="text-slate-400 hover:text-slate-700"><ArrowLeft size={18} /></button>}
+              <h3 className="text-base font-bold text-slate-900">Share Report</h3>
+              <button onClick={closeShare} className="ml-auto text-slate-400 hover:text-slate-700"><X size={18} /></button>
+            </div>
+            {shareStep === 1 ? (
+              <>
+                <div className="relative mb-3">
+                  <input value={shareQuery} onChange={(e) => setShareQuery(e.target.value)} placeholder="Add people by name or email…" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
+                  {shareMatches.length > 0 && (
+                    <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
+                      {shareMatches.map((n) => <button key={n} onClick={() => { setAddPeople((p) => [...p, n]); setShareQuery(""); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700">{initialsOf(n)}</span>{n}</button>)}
+                    </div>
+                  )}
+                </div>
+                {addPeople.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {addPeople.map((n) => <span key={n} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[12px] font-medium text-indigo-700">{n}<button onClick={() => setAddPeople((p) => p.filter((x) => x !== n))}><X size={12} /></button></span>)}
+                  </div>
+                )}
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who has access</div>
+                <div className="mb-4 max-h-40 space-y-1 overflow-y-auto">
+                  <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-pink-400 text-[10px] font-bold text-white">NB</span>
+                    <div className="flex-1"><div className="text-[13px] font-medium text-slate-700">You</div><div className="text-[11px] text-slate-400">Owner</div></div>
+                    <span className="text-[12px] text-slate-400">Owner</span>
+                  </div>
+                  {meeting.participants.map((p) => (
+                    <div key={p.name} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">{p.initials || initialsOf(p.name)}</span>
+                      <div className="flex-1"><div className="text-[13px] font-medium text-slate-700">{p.name}</div><div className="text-[11px] text-slate-400">Participant</div></div>
+                      <span className="text-[12px] text-slate-400">Can view</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Link Access</div>
+                <div className="relative">
+                  <button onClick={() => setAccessOpen((o) => !o)} className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left hover:bg-slate-50">
+                    {linkAccess === "restricted" ? <Lock size={15} className="text-slate-500" /> : <Globe size={15} className="text-emerald-600" />}
+                    <div className="flex-1"><div className="text-[13px] font-medium text-slate-700">{linkAccess === "restricted" ? "Restricted access" : "Anyone with the link"}</div><div className="text-[11px] text-slate-400">{linkAccess === "restricted" ? "Only people with access can view via link" : "Public to anyone with the link"}</div></div>
+                    <ChevronDown size={15} className="text-slate-400" />
+                  </button>
+                  {accessOpen && (
+                    <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
+                      {[{ k: "restricted", t: "Restricted access", d: "Only people with access", ic: <Lock size={15} className="text-slate-500" /> }, { k: "public", t: "Anyone with the link", d: "Public to anyone with the link", ic: <Globe size={15} className="text-emerald-600" /> }].map((o) => (
+                        <button key={o.k} onClick={() => { setLinkAccess(o.k); setAccessOpen(false); }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                          {o.ic}<div className="flex-1"><div className="text-[13px] font-medium text-slate-700">{o.t}</div><div className="text-[11px] text-slate-400">{o.d}</div></div>{linkAccess === o.k && <Check size={15} className="text-indigo-600" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-5 flex items-center justify-between">
+                  <button onClick={shareReport} className="flex items-center gap-1.5 text-[13px] font-medium text-indigo-600 hover:text-indigo-700"><Link2 size={14} /> Copy link</button>
+                  <button onClick={() => (addPeople.length ? setShareStep(2) : doShare())} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">{addPeople.length ? "Next" : "Done"}</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap gap-1.5 rounded-lg border border-slate-200 p-2">
+                  {addPeople.length ? addPeople.map((n) => <span key={n} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-medium text-slate-700">{n}<button onClick={() => setAddPeople((p) => p.filter((x) => x !== n))}><X size={12} /></button></span>) : <span className="px-1 text-[13px] text-slate-400">No one selected</span>}
+                </div>
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="relative">
+                    <button onClick={() => setRoleOpen((o) => !o)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50"><HelpCircle size={14} className="text-slate-400" />{shareRole} <ChevronDown size={13} /></button>
+                    {roleOpen && (<div className="absolute z-10 mt-1 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-xl">{["Viewer", "Commenter", "Editor"].map((r) => <button key={r} onClick={() => { setShareRole(r); setRoleOpen(false); }} className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px] text-slate-700 hover:bg-slate-50">{r}{shareRole === r && <Check size={14} className="text-indigo-600" />}</button>)}</div>)}
+                  </div>
+                  <button onClick={() => setNotify((v) => !v)} className="flex items-center gap-2 text-[13px] text-slate-600">
+                    <span className={"flex h-4 w-4 items-center justify-center rounded border " + (notify ? "border-indigo-600 bg-indigo-600" : "border-slate-300")}>{notify && <Check size={11} className="text-white" />}</span> Notify via email
+                  </button>
+                </div>
+                <textarea value={shareMsg} onChange={(e) => setShareMsg(e.target.value)} placeholder="Add a message (optional)" rows={3} className="mb-4 w-full rounded-lg border border-slate-200 p-2.5 text-sm outline-none focus:border-indigo-400" />
+                {shareCandidates.length > 0 && (
+                  <>
+                    <div className="mb-2 border-t border-slate-100 pt-3 text-[13px] font-bold text-slate-800">More Sharing Suggestions</div>
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {shareCandidates.slice(0, 6).map((n) => (
+                        <button key={n} onClick={() => setAddPeople((p) => [...p, n])} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[9px] font-bold text-slate-500">{initialsOf(n)}</span><span className="max-w-[130px] truncate">{n}</span><Plus size={13} className="text-slate-400" /></button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
+                  <button onClick={doShare} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Share Report</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {meeting.status && meeting.status !== "done" && (
         <div className={"flex items-center gap-3 border-b px-6 py-3 " + (["recording", "error"].includes(meeting.status) ? "border-rose-200 bg-rose-50" : "border-indigo-200 bg-indigo-50")}>
@@ -3096,8 +3297,17 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
 
         {tab === "notes" && (
           <div className="space-y-5">
-            <Card title="Summary" icon={Sparkles}>{meeting.summary ? <p className="text-sm leading-relaxed text-slate-600">{meeting.summary}</p> : <p className="text-sm text-slate-400">No summary available for this meeting.</p>}</Card>
-            <Card title="Action Items" icon={ListChecks}>
+            <Card title="Summary" icon={Sparkles}
+              copyText={meeting.summary} editText={meeting.summary} onSaveEdit={(v) => editField("summary", v)}
+              right={meeting.summary ? (
+                <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]">
+                  {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-indigo-700 shadow-sm" : "text-slate-500")}>{m}</button>)}
+                </div>) : null}>
+              {meeting.summary ? <p className="text-sm leading-relaxed text-slate-600">{summaryMode === "short" ? shortSummary : meeting.summary}</p> : <p className="text-sm text-slate-400">No summary available for this meeting.</p>}
+            </Card>
+            <Card title="Action Items" icon={ListChecks}
+              copyText={meeting.actionItems.map((a) => `- ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`).join("\n")}
+              editText={meeting.actionItems.map((a) => a.task).join("\n")} onSaveEdit={(v) => editField("action_items", v)}>
               <div className="space-y-2">
                 {meeting.actionItems.map((it, i) => (
                   <div key={i} className={"flex items-center gap-3 rounded-xl border p-3 " + (it.done ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white")}>
@@ -3116,16 +3326,17 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 {!meeting.actionItems.length && <p className="text-sm text-slate-400">No action items detected.</p>}
               </div>
             </Card>
-            {meeting.nextSteps && meeting.nextSteps.length > 0 && (
-              <Card title="Next Steps" icon={Target}>
-                <ul className="space-y-2">
-                  {meeting.nextSteps.map((s, i) => (
-                    <li key={i} className="flex gap-2 text-sm text-slate-600"><ChevronRight size={16} className="mt-0.5 shrink-0 text-indigo-400" />{s}</li>
-                  ))}
-                </ul>
-              </Card>
-            )}
-            <Card title="Key Questions" icon={Quote}>
+            <Card title="Next Steps" icon={Target}
+              copyText={(meeting.nextSteps || []).join("\n")} editText={(meeting.nextSteps || []).join("\n")} onSaveEdit={(v) => editField("next_steps", v)}>
+              <ul className="space-y-2">
+                {(meeting.nextSteps || []).map((s, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-slate-600"><ChevronRight size={16} className="mt-0.5 shrink-0 text-indigo-400" />{s}</li>
+                ))}
+                {!(meeting.nextSteps && meeting.nextSteps.length) && <p className="text-sm text-slate-400">No next steps detected.</p>}
+              </ul>
+            </Card>
+            <Card title="Key Questions" icon={Quote}
+              copyText={meeting.keyQuestions.join("\n")} editText={meeting.keyQuestions.join("\n")} onSaveEdit={(v) => editField("key_questions", v)}>
               <ul className="space-y-3">
                 {(meeting.keyQA && meeting.keyQA.length ? meeting.keyQA : meeting.keyQuestions.map((q) => ({ q, a: "" }))).map((qq, i) => (
                   <li key={i} className="flex gap-2.5 text-sm">
@@ -3339,11 +3550,36 @@ function Metric({ label, value, ok }) {
   );
 }
 
-function Card({ title, icon: Icon, children, right }) {
+function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEdit }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState("");
+  const copy = () => { try { navigator.clipboard.writeText(copyText || ""); toast("Copied"); } catch (e) {} };
+  const start = () => { setVal(editText || ""); setEditing(true); };
+  const save = () => { if (onSaveEdit) onSaveEdit(val); setEditing(false); };
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">{Icon && <Icon size={15} className="text-indigo-500" />}<h3 className="text-sm font-bold text-slate-900">{title}</h3>{right && <div className="ml-auto">{right}</div>}</div>
-      {children}
+    <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        {Icon && <Icon size={15} className="text-indigo-500" />}
+        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+        {!editing && (copyText != null || onSaveEdit) && (
+          <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+            {copyText != null && <button onClick={copy} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100"><Copy size={12} /> Copy</button>}
+            {onSaveEdit && <button onClick={start} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100"><Pencil size={12} /> Edit</button>}
+          </div>
+        )}
+        {right && <div className="ml-auto">{right}</div>}
+      </div>
+      {editing ? (
+        <div>
+          <textarea value={val} onChange={(e) => setVal(e.target.value)} autoFocus rows={Math.min(16, Math.max(3, val.split("\n").length + 1))}
+            className="w-full rounded-lg border border-slate-200 p-2.5 text-sm leading-relaxed text-slate-700 outline-none focus:border-indigo-400" />
+          <div className="mt-2 flex gap-2">
+            <button onClick={save} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500">Save</button>
+            <button onClick={() => setEditing(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+          </div>
+          {onSaveEdit && <p className="mt-1.5 text-[11px] text-slate-400">One item per line.</p>}
+        </div>
+      ) : children}
     </div>
   );
 }
