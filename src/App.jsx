@@ -434,7 +434,7 @@ function adaptReal(m) {
     id: m.id, title: m.title || "Meeting", source: platformFromUrl(m.meeting_url) || m.source || "Google Meet",
     date: String(start || REF_TODAY).slice(0, 10),
     timeStart: hhmm(start), timeEnd: hhmm(m.end_time), durationMin: m.duration_min || 0,
-    folder: "Meetings", folderLocked: false, owner: "NB", participantsCount: richParts.length,
+    folder: m.folder || r.category || "Meetings", folderLocked: false, owner: "NB", participantsCount: richParts.length,
     scores: { overall, engagement, sentiment, balance, clarity, charisma: sc.charisma || 0 },
     sentimentLabel: r.sentiment_label || "Neutral",
     sentimentTimeline: (Array.isArray(r.sentiment_timeline) && r.sentiment_timeline.length) ? r.sentiment_timeline : [],
@@ -1007,6 +1007,53 @@ function FilterDropdown({ label, icon: Icon, value, onChange, options }) {
   );
 }
 
+// Base folder catalog (meeting types) — the system auto-files meetings into these via AI,
+// and the user can pick/create more. Mirrors Read.ai's folder set.
+const BASE_FOLDERS = ["Sales Call", "Sales Strategy", "Customer Success", "Customer Support", "Customer Feedback", "Onboarding", "One-on-One", "Planning Meeting", "Partnership Alignment", "Product Demo", "Job Interview", "Program Interview", "Professional Consultation", "Technical Troubleshooting", "Training", "Educational", "Standup", "Kickoff", "Team Meeting", "Meetings"];
+
+// Per-row folder dropdown: shows the current folder, lets you search / pick another /
+// create a new one. Assignment persists (manual override of the AI auto-classification).
+function FolderPicker({ meeting, folders, onAssign, onCreate }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const cur = meeting.folder;
+  const list = folders.filter((f) => !q || f.toLowerCase().includes(q.toLowerCase()));
+  const canCreate = q.trim() && !folders.some((f) => f.toLowerCase() === q.trim().toLowerCase());
+  return (
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
+      <button onClick={() => setOpen((o) => !o)} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600 transition hover:bg-slate-200">
+        <Folder size={12} className="shrink-0 text-indigo-400" />
+        <span className="truncate">{cur}</span>
+        <ChevronDown size={12} className="shrink-0 text-slate-400" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-50 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl">
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search folders..." autoFocus
+              className="mb-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-indigo-400" />
+            <div className="max-h-56 overflow-y-auto">
+              {list.map((f) => (
+                <button key={f} onClick={() => { onAssign(meeting.id, f); setOpen(false); }}
+                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[13px] text-slate-700 transition hover:bg-slate-50">
+                  <span className="flex items-center gap-2 truncate"><Folder size={13} className="shrink-0 text-indigo-400" />{f}</span>
+                  {cur === f && <Check size={14} className="shrink-0 text-indigo-600" />}
+                </button>
+              ))}
+              {canCreate && (
+                <button onClick={() => { onCreate(q.trim()); onAssign(meeting.id, q.trim()); setOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] font-medium text-indigo-600 transition hover:bg-indigo-50">
+                  <FolderPlus size={13} /> Create &ldquo;{q.trim()}&rdquo;
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
@@ -1017,6 +1064,15 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const [fType, setFType] = useState("all");
   const [fSource, setFSource] = useState("all");
   const [fFolder, setFFolder] = useState("all");
+  const [manualFolders, setManualFolders] = useState([]);
+  useEffect(() => { store.get("octomeet:folders", []).then((f) => setManualFolders(Array.isArray(f) ? f : [])); }, []);
+  // All folders: base catalog ∪ folders already in use (AI-assigned) ∪ manually created.
+  const allFolders = useMemo(() => [...new Set([...BASE_FOLDERS, ...meetings.map((m) => m.folder).filter(Boolean), ...manualFolders])].sort(), [meetings, manualFolders]);
+  const assignFolder = async (meetingId, folder) => {
+    try { await fetch("/api/meeting-folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId, folder }) }); } catch (e) { /* ignore */ }
+    toast("Moved to " + folder); if (onRefresh) onRefresh();
+  };
+  const createFolder = (name) => setManualFolders((prev) => { const next = [...new Set([...prev, name])]; store.set("octomeet:folders", next); return next; });
 
   // "error" is intentionally excluded: a failed capture never shows anywhere -
   // it's either a real report (recorded) or nothing at all.
@@ -1142,8 +1198,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 <div key={g.label}>
                   <div className="bg-slate-50/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t(BUCKET_TKEY[g.label] || "today")}</div>
                   {g.items.map((m) => (
-                    <button key={m.id} onClick={() => onOpen(m.id)}
-                      className="grid w-full grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-indigo-50/40">
+                    <div key={m.id} onClick={() => onOpen(m.id)} role="button" tabIndex={0}
+                      className="grid w-full cursor-pointer grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-indigo-50/40">
                       <div className="flex min-w-0 items-center gap-4">
                         <VideoThumb src={m.video} source={m.source} size={44} at={m.coverAt} />
                         <div className="min-w-0">
@@ -1159,17 +1215,15 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                         <div className="text-[12px] text-slate-400">{m.timeStart} - {m.timeEnd}</div>
                       </div>
                       <div>
-                        <span className="inline-flex max-w-[90%] items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600">
-                          <Folder size={12} className="shrink-0 text-indigo-400" />
-                          <span className="truncate">{m.folder}</span>
-                          {m.folderLocked && <Lock size={10} className="shrink-0 text-slate-400" />}
-                        </span>
+                        {m.real
+                          ? <FolderPicker meeting={m} folders={allFolders} onAssign={assignFolder} onCreate={createFolder} />
+                          : <span className="inline-flex max-w-[90%] items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600"><Folder size={12} className="shrink-0 text-indigo-400" /><span className="truncate">{m.folder}</span>{m.folderLocked && <Lock size={10} className="shrink-0 text-slate-400" />}</span>}
                       </div>
                       <div>
                         <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(m.owner) }}>{m.owner}</span>
                       </div>
                       <div className="flex justify-center"><MoreHorizontal size={16} className="text-slate-300" /></div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               ))}

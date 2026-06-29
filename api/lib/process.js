@@ -9,7 +9,7 @@ const APP_URL = "https://meet-ai-three-beige.vercel.app/";
 // Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
 // with a lower report_version are re-analyzed automatically (from their STORED transcript,
 // no Recall needed) so every past meeting reflects the latest improvements without re-recording.
-export const ANALYSIS_VERSION = 6;
+export const ANALYSIS_VERSION = 7;
 
 // Parse a stored transcript string ("[mm:ss] Name: text") into {t,text} turns.
 function parseStoredTurns(text) {
@@ -72,7 +72,8 @@ export async function analyzeTranscript(text, title, participantNames) {
   "coaching": {"strengths": string[] (2-4), "improvements": string[] (2-4), "tips": string[] (2-4)},
   "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int, "charisma": int} (0-100; overall = meeting quality/Read Score, balance = how evenly people talked, clarity = how clear the communication was, charisma = speaker presence/persuasiveness),
   "sentimentLabel": "Positive"|"Neutral"|"Negative",
-  "sentimentTimeline": number[] (8 values from -1 to 1, sentiment across the meeting)
+  "sentimentTimeline": number[] (8 values from -1 to 1, sentiment across the meeting),
+  "category": string (classify the meeting into ONE concise folder category, Title Case, 1-3 words. Prefer one of: "Sales Call", "Sales Strategy", "Customer Success", "Customer Support", "Customer Feedback", "Onboarding", "One-on-One", "Planning Meeting", "Partnership Alignment", "Product Demo", "Job Interview", "Program Interview", "Professional Consultation", "Technical Troubleshooting", "Training", "Educational", "Standup", "Kickoff", "Team Meeting"; if none fits, invent a fitting concise category. This is the meeting TYPE, used to auto-file it into a folder.)
 }\n` +
     "Infer speaker names/roles from the transcript. If the transcript is very short or empty, still return the object with best-effort/empty values and low scores. Keep every string concise.\n\n" +
     "LANGUAGE — CRITICAL: First detect the dominant language actually spoken in the transcript (it can be ANY language). Write EVERY human-readable text value (summary, topics, keyQuestions q & a, actionItems owner/task/due, nextSteps, chapters title/summary, highlights, coaching strengths/improvements/tips, participants role) in THAT SAME language as the meeting. Examples: a Portuguese meeting → the whole report in Portuguese; English → English; Spanish → Spanish; French → French; etc. NEVER translate the content to another language — always match the meeting. " +
@@ -177,6 +178,7 @@ export async function processMeeting(meeting, { force = false } = {}) {
     transcript: tr.text,
     scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
     read_score: sc.overall || 0,
+    category: ai.category || null,
     report_version: ANALYSIS_VERSION,
   };
 
@@ -231,6 +233,7 @@ export async function reanalyzeStored(meeting) {
     coaching: ai.coaching || {}, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
     scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
     read_score: sc.overall || rep.read_score || 0,
+    category: ai.category || rep.category || null,
     report_version: ANALYSIS_VERSION,
   };
   // Keep existing per-speaker talk-time; refresh role/sentiment from the new analysis.
