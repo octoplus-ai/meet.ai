@@ -1016,20 +1016,33 @@ const BASE_FOLDERS = ["Sales Call", "Sales Strategy", "Customer Success", "Custo
 function FolderPicker({ meeting, folders, onAssign, onCreate }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
   const cur = meeting.folder;
   const list = folders.filter((f) => !q || f.toLowerCase().includes(q.toLowerCase()));
   const canCreate = q.trim() && !folders.some((f) => f.toLowerCase() === q.trim().toLowerCase());
+  // The reports list scrolls (overflow), so position the menu with FIXED coords from the
+  // trigger's rect — it never gets clipped, and flips upward if there's no room below.
+  const toggle = () => {
+    if (open) { setOpen(false); return; }
+    const r = btnRef.current && btnRef.current.getBoundingClientRect();
+    if (r) {
+      const W = 240, below = window.innerHeight - r.bottom;
+      setPos({ left: Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8)), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 });
+    }
+    setQ(""); setOpen(true);
+  };
   return (
     <div className="relative" onClick={(e) => e.stopPropagation()}>
-      <button onClick={() => setOpen((o) => !o)} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600 transition hover:bg-slate-200">
+      <button ref={btnRef} onClick={toggle} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600 transition hover:bg-slate-200">
         <Folder size={12} className="shrink-0 text-indigo-400" />
         <span className="truncate">{cur}</span>
         <ChevronDown size={12} className="shrink-0 text-slate-400" />
       </button>
-      {open && (
+      {open && pos && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl">
+          <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
+          <div className="fixed z-[56] w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search folders..." autoFocus
               className="mb-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-indigo-400" />
             <div className="max-h-56 overflow-y-auto">
@@ -3003,7 +3016,41 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   const [roleOpen, setRoleOpen] = useState(false);
   const [notify, setNotify] = useState(true);
   const closeShare = () => { setShareOpen(false); setShareStep(1); setShareQuery(""); setShareMsg(""); setAccessOpen(false); setRoleOpen(false); };
-  const doShare = () => { const n = addPeople.length; closeShare(); toast(n ? `Report shared with ${n} ${n > 1 ? "people" : "person"}` : "Report shared"); };
+  const doShare = () => {
+    const emails = addPeople.filter((p) => /@/.test(p));
+    const n = addPeople.length;
+    if (notify && emails.length) {
+      const subj = encodeURIComponent(`Shared report: ${meeting.title}`);
+      const bodyTxt = encodeURIComponent(`${shareMsg ? shareMsg + "\n\n" : ""}View the meeting report:\n${window.location.href}\n\n- shared via OctoMeet`);
+      try { window.open(`mailto:${emails.join(",")}?subject=${subj}&body=${bodyTxt}`, "_blank"); } catch (e) {}
+    }
+    closeShare();
+    toast(n ? `Report shared with ${n} ${n > 1 ? "people" : "person"}` : "Report shared");
+  };
+
+  // Push-to integrations (free: webhooks + Notion token).
+  const [conn, setConn] = useState({});
+  const [cfg, setCfg] = useState(null); // integration being configured
+  const [cfgA, setCfgA] = useState(""); // webhook URL or Notion token
+  const [cfgB, setCfgB] = useState(""); // Notion parent page id
+  useEffect(() => { fetch("/api/integrations").then((r) => (r.ok ? r.json() : {})).then((d) => setConn(d.connected || {})).catch(() => {}); }, []);
+  const doPush = async (target) => {
+    setMenu(null); toast("Pushing…");
+    try {
+      const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, target }) });
+      const d = await r.json();
+      toast(r.ok ? "Sent ✓" : (d.error === "not_connected" ? "Connect it first" : "Push failed - check the URL/token"));
+    } catch (e) { toast("Push failed"); }
+  };
+  const saveIntegration = async () => {
+    if (!cfg) return;
+    const config = cfg.kind === "notion" ? { token: cfgA.trim(), parent: cfgB.trim() } : { url: cfgA.trim() };
+    if (!(config.url || config.token)) { toast("Paste the URL / token first"); return; }
+    try { await fetch("/api/integrations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target: cfg.key, config }) }); } catch (e) {}
+    setConn((c) => ({ ...c, [cfg.key]: true }));
+    const k = cfg.key, name = cfg.name; setCfg(null); setCfgA(""); setCfgB("");
+    toast(name + " connected"); doPush(k);
+  };
   const shortSummary = (meeting.summary || "").split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
   // People you can share with: meeting participants + a few company teammates.
   const COMPANY = ["santiago@octoplusteam.com", "nicolas@octoplusteam.com", "team@octoplusteam.com"];
@@ -3100,8 +3147,12 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
     { k: "txt", label: "Plain text (.txt)" }, { k: "transcript", label: "Transcript (.txt)" }, { k: "video", label: "Video (.mp4)" },
   ];
   const PUSH_OPTS = [
-    { name: "Confluence", brand: "confluence" }, { name: "HubSpot", brand: "hubspot" }, { name: "Notion", brand: "notion" },
-    { name: "Salesforce", brand: "salesforce" }, { name: "Slack", brand: "slack" }, { name: "Webhooks", brand: "zapier" },
+    { key: "confluence", name: "Confluence", brand: "confluence", kind: "webhook" },
+    { key: "hubspot", name: "HubSpot", brand: "hubspot", kind: "webhook" },
+    { key: "notion", name: "Notion", brand: "notion", kind: "notion" },
+    { key: "salesforce", name: "Salesforce", brand: "salesforce", kind: "webhook" },
+    { key: "slack", name: "Slack", brand: "slack", kind: "slack" },
+    { key: "webhooks", name: "Webhooks", brand: "zapier", kind: "webhook" },
   ];
   const shareReport = async () => { try { await navigator.clipboard.writeText(window.location.href); } catch (e) {} toast("Report link copied"); };
 
@@ -3128,10 +3179,12 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
                 <div className="absolute right-0 z-50 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl">
                   {PUSH_OPTS.map((o) => (
-                    <div key={o.name} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50">
+                    <div key={o.key} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50">
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50">{o.brand === "confluence" ? <LayoutGrid size={16} className="text-sky-600" /> : o.brand === "zapier" ? <Zap size={16} className="text-orange-500" /> : <BrandIcon name={o.brand} size={18} />}</span>
-                      <span className="flex-1 text-[13px] font-medium text-slate-700">{o.name}</span>
-                      <button onClick={() => { setMenu(null); toast(`Connect ${o.name} in Integrations to push reports there.`); }} className="rounded-lg border border-slate-200 px-3 py-1 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">Add</button>
+                      <span className="flex-1 text-[13px] font-medium text-slate-700">{o.name}{conn[o.key] && <span className="ml-1.5 text-[10px] font-semibold text-emerald-600">connected</span>}</span>
+                      {conn[o.key]
+                        ? <button onClick={() => doPush(o.key)} className="rounded-lg bg-indigo-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-indigo-500">Push</button>
+                        : <button onClick={() => { setMenu(null); setCfg(o); setCfgA(""); setCfgB(""); }} className="rounded-lg border border-slate-200 px-3 py-1 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">Add</button>}
                     </div>
                   ))}
                 </div></>)}
@@ -3237,6 +3290,37 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {cfg && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setCfg(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50">{cfg.brand === "confluence" ? <LayoutGrid size={18} className="text-sky-600" /> : cfg.brand === "zapier" ? <Zap size={18} className="text-orange-500" /> : <BrandIcon name={cfg.brand} size={20} />}</span>
+              <h3 className="text-base font-bold text-slate-900">Connect {cfg.name}</h3>
+              <button onClick={() => setCfg(null)} className="ml-auto text-slate-400 hover:text-slate-700"><X size={18} /></button>
+            </div>
+            {cfg.kind === "notion" ? (
+              <>
+                <label className="text-[12px] font-medium text-slate-500">Notion integration token</label>
+                <input value={cfgA} onChange={(e) => setCfgA(e.target.value)} placeholder="secret_…" className="mb-3 mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                <label className="text-[12px] font-medium text-slate-500">Parent page ID</label>
+                <input value={cfgB} onChange={(e) => setCfgB(e.target.value)} placeholder="paste the 32-char page id" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">Free: create an integration at notion.so/my-integrations, share a page with it, and paste the token + that page's ID. OctoMeet will add a report sub-page.</p>
+              </>
+            ) : (
+              <>
+                <label className="text-[12px] font-medium text-slate-500">{cfg.kind === "slack" ? "Slack Incoming Webhook URL" : "Webhook URL"}</label>
+                <input value={cfgA} onChange={(e) => setCfgA(e.target.value)} placeholder="https://…" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{cfg.kind === "slack" ? "Free: create a Slack Incoming Webhook (api.slack.com/messaging/webhooks) and paste it here." : cfg.key === "webhooks" ? "Any endpoint that accepts a POST (Discord webhook, your server, etc.). The report is sent as JSON." : `Free: paste a Zapier/Make webhook that creates the ${cfg.name} record. The report is POSTed as JSON.`}</p>
+              </>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setCfg(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={saveIntegration} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Connect &amp; push</button>
+            </div>
           </div>
         </div>
       )}
