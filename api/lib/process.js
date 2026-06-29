@@ -13,10 +13,10 @@ export async function analyzeTranscript(text, title, participantNames) {
     `{
   "summary": string (3-5 sentences, neutral, specific),
   "topics": string[] (3-8 short topic phrases),
-  "keyQuestions": [{"q": string, "a": string}] (max 6 important questions raised + a suggested answer; [] if none),
-  "actionItems": [{"owner": string, "task": string, "due": string}] (max 10; due "" if unknown),
+  "keyQuestions": [{"q": string, "a": string, "t": string}] (max 6 important questions raised + a suggested answer; t = "mm:ss" or "h:mm:ss" when the question was asked; [] if none),
+  "actionItems": [{"owner": string, "task": string, "due": string, "t": string}] (max 10; due "" if unknown; t = timestamp "mm:ss" or "h:mm:ss" in the meeting when this was discussed/agreed, "" if unclear),
   "nextSteps": string[] (2-6 concrete next steps / follow-ups agreed or implied),
-  "chapters": [{"title": string, "summary": string}] (3-7 chronological chapters),
+  "chapters": [{"title": string, "summary": string, "t": string, "points": string[]}] (3-7 chronological chapters; t = "mm:ss" or "h:mm:ss" start time; summary = 1-2 sentence description; points = 1-4 short key topics/takeaways covered in that chapter),
   "highlights": [{"text": string, "t": string}] (3-6 standout quotes/moments; t = approximate timestamp in the meeting when it happened, format "mm:ss" or "h:mm:ss"),
   "participants": [{"name": string, "role": string, "sentiment": "Positive"|"Neutral"|"Negative"}] (one per distinct speaker),
   "coaching": {"strengths": string[] (2-4), "improvements": string[] (2-4), "tips": string[] (2-4)},

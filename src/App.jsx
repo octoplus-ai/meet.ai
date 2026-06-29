@@ -5,7 +5,7 @@ import {
   Search, ChevronDown, RefreshCw, Upload, Lock, MoreHorizontal, ArrowDown,
   ArrowLeft, Send, Loader2, CheckCircle2, Circle, Clock, Video, Hash, Target,
   ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
-  Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play,
+  Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play, Pause, Maximize2,
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type,
   HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, KeyRound,
 } from "lucide-react";
@@ -403,7 +403,7 @@ function adaptReal(m) {
   const richParts = (Array.isArray(r.participants) && r.participants.length)
     ? r.participants
     : (Array.isArray(m.participants) ? m.participants.map((n) => ({ name: typeof n === "string" ? n : (n && n.name), talkPct: 0, role: "", sentiment: "Neutral" })) : []);
-  const kq = (r.key_questions || []).map((k) => (typeof k === "string" ? { q: k, a: "" } : { q: k.q || "", a: k.a || "" }));
+  const kq = (r.key_questions || []).map((k) => (typeof k === "string" ? { q: k, a: "", t: "", at: null } : { q: k.q || "", a: k.a || "", t: k.t || "", at: tsToSeconds(k.t) }));
   let balance = sc.balance || 0;
   // Only derive balance from talk-time when participation data is real (shares sum ~100),
   // so we never show a perfect "100" when there's no talk-time data at all.
@@ -442,8 +442,10 @@ function adaptReal(m) {
     topics: r.topics || [],
     keyQuestions: kq.map((k) => k.q),
     keyQA: kq,
-    actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", done: false })),
-    chapters: r.chapters || [],
+    actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", t: a.t || "", at: tsToSeconds(a.t), done: false })),
+    chapters: (r.chapters || []).map((c) => (typeof c === "string"
+      ? { title: c, summary: "", t: "", at: null, points: [] }
+      : { title: c.title || "", summary: c.summary || "", t: c.t || "", at: tsToSeconds(c.t), points: Array.isArray(c.points) ? c.points : [] })),
     highlights: hl,
     coverAt,
     coaching: r.coaching || null,
@@ -718,11 +720,11 @@ export default function App() {
   if (!authed) return <LoginView onLogin={login} onGoogle={loginGoogle} />;
 
   return (
-    <div dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
+    <div dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body relative flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
       <StyleInject />
       <Toaster />
       <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <main className="flex flex-1 flex-col overflow-hidden pl-[68px]">
         {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} />}
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
@@ -772,12 +774,15 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
   const uEmail = user?.email || "nicolas@octomeet.ai";
   const uInit = initialsOf(uName);
   const [copied, setCopied] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [pinned, setPinned] = useState(false);   // user toggled it open (stays open)
+  const [hovered, setHovered] = useState(false);  // mouse over → temporary expand
   const [langOpen, setLangOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [durOpen, setDurOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveUrl, setLiveUrl] = useState("");
+  // Collapsed by default; expands on hover or when pinned, and stays open while any popup is active.
+  const collapsed = !(pinned || hovered || langOpen || menuOpen || durOpen || liveOpen);
   const copyLink = async () => {
     try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch {}
     setCopied(true); setTimeout(() => setCopied(false), 1600);
@@ -789,23 +794,21 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
   };
 
   return (
-    <aside className={"relative flex shrink-0 flex-col rai-sidebar text-slate-300 transition-all duration-200 " + (collapsed ? "w-[68px]" : "w-60")}>
+    <aside onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      className={"absolute inset-y-0 left-0 z-30 flex shrink-0 flex-col rai-sidebar text-slate-300 shadow-xl transition-all duration-200 " + (collapsed ? "w-[68px]" : "w-60")}>
       {/* header */}
       <div className={"flex items-center px-3 pt-4 pb-3 " + (collapsed ? "justify-center" : "gap-2")}>
-        <button onClick={() => collapsed && setCollapsed(false)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
+        <button onClick={() => setView("reports")} title="OctoMeet — all reports" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
           <OctoLogo size={24} />
         </button>
         {!collapsed && <span className="whitespace-nowrap text-[15px] font-bold text-white">OctoMeet AI</span>}
         {!collapsed && (
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <button onClick={() => setLangOpen((v) => !v)} className="flex items-center gap-0.5 rounded px-1 text-[11px] font-semibold text-slate-300 hover:text-white">{LCODE[lang]}<ChevronDown size={11} /></button>
-            <button onClick={() => setCollapsed(true)} title="Collapse"><PanelRightClose size={16} className="text-slate-400 hover:text-white" /></button>
+            <button onClick={() => setPinned((v) => !v)} title={pinned ? "Unpin (auto-collapse)" : "Keep open"}><PanelRightClose size={16} className={"hover:text-white " + (pinned ? "text-indigo-300" : "text-slate-400")} /></button>
           </div>
         )}
       </div>
-      {collapsed && (
-        <button onClick={() => setCollapsed(false)} title="Expand" className="mx-auto mb-2 text-slate-400 hover:text-white"><PanelRightClose size={16} className="rotate-180" /></button>
-      )}
 
       {/* language dropdown */}
       {langOpen && !collapsed && (
@@ -2579,9 +2582,184 @@ function Radio({ label, desc, def, checked, onClick }) {
 }
 
 /* ========================= MEETING DETAIL ========================== */
+// Build an 8-point series for a metric's sparkline: hovers around the metric's value,
+// using the real sentiment timeline as the wiggle shape (gentle, Read.ai-style).
+function metricSeries(value, sentimentTimeline) {
+  const base = (Array.isArray(sentimentTimeline) && sentimentTimeline.length) ? sentimentTimeline : [0, 0.08, 0.04, 0.12, 0.08, 0.16, 0.12, 0.18];
+  const mean = base.reduce((a, b) => a + b, 0) / base.length;
+  const v = Number.isFinite(value) ? value : 60;
+  return base.map((x) => Math.max(0, Math.min(100, v + (x - mean) * 10)));
+}
+
+// Lightweight inline sparkline (line + soft gradient fill) that stretches to its container.
+function Sparkline({ data, color = "#4F46E5", className = "h-9 w-full" }) {
+  const vals = (Array.isArray(data) && data.length > 1) ? data : [50, 52, 51, 53, 52, 54, 53, 55];
+  const n = vals.length, W = 100, H = 30, pad = 3;
+  const min = Math.min(...vals), max = Math.max(...vals), range = (max - min) || 1;
+  const pts = vals.map((v, i) => [(i / (n - 1)) * W, H - pad - ((v - min) / range) * (H - pad * 2)]);
+  const line = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const area = `${line} L ${W} ${H} L 0 ${H} Z`;
+  const gid = "spk_" + color.replace(/[^a-z0-9]/gi, "");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={className} aria-hidden>
+      <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.18" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+      <path d={area} fill={`url(#${gid})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function fmtClock(s) {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(ss).padStart(2, "0");
+}
+const MARKER_STYLE = {
+  chapter: { color: "#6366F1", label: "Chapter" },
+  question: { color: "#0EA5E9", label: "Key Question" },
+  action: { color: "#F59E0B", label: "Action Item" },
+  highlight: { color: "#8B5CF6", label: "Highlight" },
+};
+
+// Custom video player with a marker timeline (chapters / questions / action items /
+// highlights as colored dots — hover to preview, click to jump), like Read.ai.
+function MeetingVideo({ videoRef, src, coverAt, markers }) {
+  const [dur, setDur] = useState(0);
+  const [cur, setCur] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [hover, setHover] = useState(null);
+  const barRef = useRef(null), wrapRef = useRef(null);
+  const toggle = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play().catch(() => {}); else v.pause(); };
+  const onBar = (e) => { const b = barRef.current, v = videoRef.current; if (!b || !v || !dur) return; const r = b.getBoundingClientRect(); v.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
+  const fs = () => { const w = wrapRef.current; if (!w) return; try { document.fullscreenElement ? document.exitFullscreen() : w.requestFullscreen(); } catch (e) {} };
+  const setD = (e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDur(d); };
+  return (
+    <div ref={wrapRef} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
+      <video ref={videoRef} src={src + "#t=" + (coverAt || 8)} preload="metadata" playsInline onClick={toggle}
+        onLoadedMetadata={setD} onDurationChange={setD} onTimeUpdate={(e) => setCur(e.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} className="aspect-video w-full bg-black" />
+      {!playing && <button onClick={toggle} className="absolute inset-0 flex items-center justify-center"><span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 transition group-hover:bg-black/60"><Play size={26} className="ml-1 text-white" fill="white" /></span></button>}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-10">
+        {hover && dur > 0 && (
+          <div className="pointer-events-none absolute bottom-12 z-10 max-w-[260px] -translate-x-1/2 rounded-lg bg-slate-900/95 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg" style={{ left: `${(hover.at / dur) * 100}%` }}>
+            <span className="font-semibold" style={{ color: MARKER_STYLE[hover.type].color }}>{MARKER_STYLE[hover.type].label}</span>
+            <span className="text-white/85"> · {hover.label}</span>
+          </div>
+        )}
+        <div ref={barRef} onClick={onBar} className="relative h-3 cursor-pointer">
+          <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/30" />
+          <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-indigo-500" style={{ width: (dur ? (cur / dur) * 100 : 0) + "%" }} />
+          {dur > 0 && markers.map((mk, i) => (
+            <button key={i} onMouseEnter={() => setHover(mk)} onMouseLeave={() => setHover(null)}
+              onClick={(e) => { e.stopPropagation(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
+              className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 transition hover:scale-150"
+              style={{ left: `${(mk.at / dur) * 100}%`, background: MARKER_STYLE[mk.type].color }} aria-label={mk.label} />
+          ))}
+        </div>
+        <div className="mt-1.5 flex items-center gap-3 text-white">
+          <button onClick={toggle} className="hover:text-indigo-300">{playing ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}</button>
+          <span className="font-mono text-[12px] text-white/90">{fmtClock(cur)} / {fmtClock(dur)}</span>
+          <div className="flex-1" />
+          <button onClick={fs} title="Fullscreen" className="hover:text-indigo-300"><Maximize2 size={16} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Clickable timestamp pill — jumps the meeting video to that moment.
+function TimeChip({ t, onClick, className = "" }) {
+  if (!t) return null;
+  return (
+    <button onClick={onClick} title="Jump to this moment in the video"
+      className={"inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-indigo-600 transition hover:bg-indigo-100 " + className}>
+      <Play size={9} fill="currentColor" />{t}
+    </button>
+  );
+}
+
+// Side chat — answers questions about THIS meeting from its transcript + report.
+function AskPanel({ meeting }) {
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+
+  const suggested = (meeting.keyQA || []).map((q) => q.q).filter(Boolean).slice(0, 4);
+  const sug = suggested.length ? suggested : ["Summarize the key decisions", "What are the action items and who owns them?", "What are the next steps?", "What questions were left open?"];
+
+  const buildContext = () => {
+    const tr = (meeting.transcript || []).map((t) => `${t.speaker}: ${t.text}`).join("\n").slice(0, 70000);
+    const ai = (meeting.actionItems || []).map((a) => `- ${a.task} (${a.owner})`).join("\n");
+    return `Meeting: ${meeting.title}\nSummary: ${meeting.summary || ""}\nAction items:\n${ai}\n\nTranscript:\n${tr || "(no transcript)"}`;
+  };
+
+  const ask = async (textArg) => {
+    const question = (textArg ?? input).trim();
+    if (!question || busy) return;
+    setInput(""); setMsgs((m) => [...m, { role: "user", text: question }]); setBusy(true);
+    try {
+      const sys = "You are Octo, answering questions about ONE meeting. Use ONLY the meeting data below. Be concise and specific; mention who said what when useful. Reply in the SAME language as the question. If the answer isn't in the meeting, say you couldn't find it in this meeting.\n\n=== MEETING ===\n" + buildContext();
+      const ans = await callClaude([{ role: "user", content: question }], sys);
+      setMsgs((m) => [...m, { role: "assistant", text: ans || "—" }]);
+    } catch (e) {
+      setMsgs((m) => [...m, { role: "assistant", text: "I couldn't analyze the meeting right now — make sure the report finished, then try again." }]);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <aside className="hidden w-[340px] shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
+      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3"><Sparkles size={16} className="text-indigo-500" /><span className="text-sm font-bold text-slate-900">Ask Octo</span></div>
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        {msgs.length === 0 && <p className="text-[13px] leading-relaxed text-slate-400">Ask anything about this meeting — Octo answers from the transcript & report.</p>}
+        {msgs.map((m, i) => (
+          <div key={i} className={m.role === "user"
+            ? "ml-auto max-w-[88%] rounded-2xl bg-indigo-600 px-3 py-2 text-sm text-white"
+            : "mr-auto max-w-[92%] whitespace-pre-wrap rounded-2xl bg-slate-100 px-3 py-2 text-sm leading-relaxed text-slate-700"}>{m.text}</div>
+        ))}
+        {busy && <div className="mr-auto flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" />Octo is thinking…</div>}
+        <div ref={endRef} />
+      </div>
+      {msgs.length === 0 && (
+        <div className="space-y-2 px-4 pb-1">
+          {sug.map((q, i) => (
+            <button key={i} onClick={() => ask(q)} className="flex w-full items-start gap-2 rounded-xl border border-slate-200 px-3 py-2 text-left text-[13px] text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50/50"><Sparkles size={13} className="mt-0.5 shrink-0 text-indigo-400" />{q}</button>
+          ))}
+        </div>
+      )}
+      <div className="border-t border-slate-200 p-3">
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 focus-within:border-indigo-400">
+          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} placeholder="Ask Octo anything…" className="flex-1 bg-transparent text-sm outline-none" />
+          <button onClick={() => ask()} disabled={busy} className="text-indigo-600 transition disabled:text-slate-300"><Send size={16} /></button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   const [tab, setTab] = useState("notes");
   const [q, setQ] = useState("");
+  const [showDesc, setShowDesc] = useState(true);
+
+  // Jump the meeting video to a given second (used by clickable timestamps on action
+  // items, highlights, etc.) and scroll it into view.
+  const videoRef = useRef(null);
+  const seekTo = (sec) => {
+    if (sec == null || !Number.isFinite(sec)) return;
+    const v = videoRef.current;
+    if (!v) return;
+    try { v.currentTime = sec; const p = v.play(); if (p && p.catch) p.catch(() => {}); v.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+  };
+
+  // Colored markers for the video timeline — chapters, key questions, action items, highlights.
+  const markers = useMemo(() => [
+    ...(meeting.chapters || []).filter((c) => c.at != null).map((c) => ({ at: c.at, type: "chapter", label: c.title })),
+    ...(meeting.keyQA || []).filter((q2) => q2.at != null).map((q2) => ({ at: q2.at, type: "question", label: q2.q })),
+    ...(meeting.actionItems || []).filter((a) => a.at != null).map((a) => ({ at: a.at, type: "action", label: a.task })),
+    ...(meeting.highlights || []).filter((h) => h.at != null).map((h) => ({ at: h.at, type: "highlight", label: h.text })),
+  ].sort((a, b) => a.at - b.at), [meeting]);
 
   const toggleItem = (idx) => {
     const next = meetings.map((m) => m.id === meeting.id
@@ -2613,7 +2791,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
     { k: "deepdive", label: "Deep Dive", icon: BarChart3 },
     { k: "coaching", label: "Coaching", icon: Presentation },
     { k: "highlights", label: "Highlights", icon: Sparkles },
-    { k: "chapters", label: "Chapters", icon: ListChecks },
+    { k: "chapters", label: "Chapters & Topics", icon: ListChecks },
   ];
 
   const downloadReport = () => {
@@ -2635,7 +2813,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   const shareReport = async () => { try { await navigator.clipboard.writeText(window.location.href); } catch (e) {} toast("Report link copied"); };
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
       <div className="border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between">
           <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>
@@ -2664,8 +2843,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
 
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
-          <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
-            <video key={meeting.id} src={meeting.video + "#t=" + (meeting.coverAt || 8)} controls preload="metadata" className="aspect-video w-full bg-black" />
+          <div className="mb-5">
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-violet-50 text-center text-sm text-slate-500">
@@ -2674,14 +2853,23 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
         )}
 
         <div className="mb-5 grid grid-cols-3 gap-3">
-          {[{ l: "Read Score", v: meeting.scores.overall }, { l: "Engagement", v: meeting.scores.engagement }, { l: "Sentiment", v: meeting.scores.sentiment }].map((s) => {
+          {[
+            { l: "Read Score", v: meeting.scores.overall, series: metricSeries(meeting.scores.overall, meeting.sentimentTimeline) },
+            { l: "Engagement", v: meeting.scores.engagement, series: metricSeries(meeting.scores.engagement, meeting.sentimentTimeline) },
+            { l: "Sentiment", v: meeting.scores.sentiment, series: (Array.isArray(meeting.sentimentTimeline) && meeting.sentimentTimeline.length) ? meeting.sentimentTimeline.map((x) => ((x + 1) / 2) * 100) : metricSeries(meeting.scores.sentiment, meeting.sentimentTimeline) },
+          ].map((s) => {
             const has = Number.isFinite(s.v) && s.v > 0;
+            const lab = s.v >= 80 ? "GOOD" : s.v >= 60 ? "OKAY" : "LOW";
+            const col = s.v >= 80 ? "#16A34A" : s.v >= 60 ? "#D97706" : "#E11D48";
             return (
             <div key={s.l} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.l}</div>
-              <div className="mt-0.5 flex items-end gap-2">
-                <span className="text-2xl font-bold text-slate-900">{has ? s.v : "—"}</span>
-                {has && <span className="mb-1 text-[11px] font-semibold uppercase" style={{ color: scoreColor(s.v) }}>{s.v >= 80 ? "Good" : s.v >= 70 ? "Avg" : "Low"}</span>}
+              <div className="mt-1 flex items-center gap-3">
+                <div className="flex shrink-0 items-end gap-1.5">
+                  <span className="text-2xl font-bold leading-none text-slate-900">{has ? s.v : "—"}</span>
+                  {has && <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: col }}>{lab}</span>}
+                </div>
+                {has && <div className="min-w-0 flex-1"><Sparkline data={s.series} /></div>}
               </div>
             </div>
             );
@@ -2710,7 +2898,10 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                     </button>
                     <div className="flex-1">
                       <div className={"text-sm " + (it.done ? "text-slate-400 line-through" : "text-slate-700")}>{it.task}</div>
-                      <div className="mt-0.5 text-[11px] text-slate-400">{it.owner}{it.due ? " · " + it.due : ""}</div>
+                      <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
+                        <span>{it.owner}{it.due ? " · " + it.due : ""}</span>
+                        {it.at != null && <TimeChip t={it.t} onClick={() => seekTo(it.at)} />}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -2729,8 +2920,10 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             <Card title="Key Questions" icon={Quote}>
               <ul className="space-y-3">
                 {(meeting.keyQA && meeting.keyQA.length ? meeting.keyQA : meeting.keyQuestions.map((q) => ({ q, a: "" }))).map((qq, i) => (
-                  <li key={i} className="flex gap-2 text-sm">
-                    <span className="text-indigo-400">{String(i + 1).padStart(2, "0")}</span>
+                  <li key={i} className="flex gap-2.5 text-sm">
+                    {qq.at != null
+                      ? <TimeChip t={qq.t} onClick={() => seekTo(qq.at)} className="mt-0.5" />
+                      : <span className="mt-0.5 font-mono text-[12px] text-indigo-400">{String(i + 1).padStart(2, "0")}</span>}
                     <div className="flex-1">
                       <div className="font-medium text-slate-700">{qq.q}</div>
                       {qq.a && <div className="mt-0.5 text-[13px] text-slate-500"><span className="font-semibold text-emerald-600">Suggested answer:</span> {qq.a}</div>}
@@ -2739,12 +2932,6 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 ))}
                 {!meeting.keyQuestions.length && <p className="text-sm text-slate-400">No key questions detected.</p>}
               </ul>
-            </Card>
-            <Card title="Topics" icon={Hash}>
-              <div className="flex flex-wrap gap-2">
-                {meeting.topics.map((t, i) => (<span key={i} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">{t}</span>))}
-                {!meeting.topics.length && <p className="text-sm text-slate-400">No topics detected.</p>}
-              </div>
             </Card>
           </div>
         )}
@@ -2879,7 +3066,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Highlight</span>
-                    {h.t && <span className="font-mono text-[11px] text-slate-400">{h.t}</span>}
+                    {h.at != null ? <TimeChip t={h.t} onClick={() => seekTo(h.at)} /> : (h.t && <span className="font-mono text-[11px] text-slate-400">{h.t}</span>)}
                   </div>
                   <p className="mt-1 text-sm text-slate-700">{h.text}</p>
                 </div>
@@ -2916,25 +3103,45 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
         )}
 
         {tab === "chapters" && (
-          <div className="space-y-2">
-            {meeting.chapters && meeting.chapters.length ? meeting.chapters.map((c, i) => (
-              <button key={i} onClick={() => toast("Jump to: " + (c.title || c))} className="flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-200">
-                <span className="mt-0.5 text-[12px] font-mono text-indigo-500">{String(i + 1).padStart(2, "0")}</span>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-slate-800">{c.title || c}</div>
-                  {c.summary && <div className="mt-0.5 text-[13px] text-slate-500">{c.summary}</div>}
-                </div>
+          <Card title="Chapters & Topics" icon={ListChecks} right={
+            (meeting.chapters && meeting.chapters.some((c) => c.summary)) ? (
+              <button onClick={() => setShowDesc((v) => !v)} className="flex items-center gap-2 text-[12px] font-medium text-slate-500">
+                Descriptions
+                <span className={"relative h-4 w-7 rounded-full transition " + (showDesc ? "bg-emerald-500" : "bg-slate-300")}>
+                  <span className={"absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all " + (showDesc ? "left-3.5" : "left-0.5")} />
+                </span>
               </button>
-            )) : meeting.topics.length ? meeting.topics.map((t, i) => (
-              <button key={i} onClick={() => toast("Jump to: " + t)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-200">
-                <VideoThumb src={meeting.video} source={meeting.source} size={48} showBadge={false} />
-                <span className="text-[12px] font-mono text-indigo-500">{String(i).padStart(2, "0")}:{String((i * 7) % 60).padStart(2, "0")}</span>
-                <span className="text-sm font-medium text-slate-700">{t}</span>
-              </button>
-            )) : <p className="text-sm text-slate-400">No chapters detected.</p>}
-          </div>
+            ) : null
+          }>
+            {meeting.chapters && meeting.chapters.length ? (
+              <div className="space-y-4">
+                {meeting.chapters.map((c, i) => (
+                  <div key={i}>
+                    <div className="flex items-center gap-2">
+                      {c.at != null ? <TimeChip t={c.t} onClick={() => seekTo(c.at)} /> : <span className="font-mono text-[12px] text-indigo-500">{String(i + 1).padStart(2, "0")}</span>}
+                      <span className="text-[15px] font-semibold text-slate-800">{c.title}</span>
+                    </div>
+                    {showDesc && c.summary && <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600">{c.summary}</p>}
+                    {c.points && c.points.length > 0 && (
+                      <ul className="mt-2 space-y-1.5 pl-1">
+                        {c.points.map((p, j) => (
+                          <li key={j} className="flex gap-2 text-[13px] text-slate-600"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-400" />{p}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : meeting.topics && meeting.topics.length ? (
+              <div className="flex flex-wrap gap-2">
+                {meeting.topics.map((t, i) => (<span key={i} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">{t}</span>))}
+              </div>
+            ) : <p className="text-sm text-slate-400">No chapters detected.</p>}
+          </Card>
         )}
       </div>
+      </div>
+      <AskPanel meeting={meeting} />
     </div>
   );
 }
@@ -2950,10 +3157,10 @@ function Metric({ label, value, ok }) {
   );
 }
 
-function Card({ title, icon: Icon, children }) {
+function Card({ title, icon: Icon, children, right }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">{Icon && <Icon size={15} className="text-indigo-500" />}<h3 className="text-sm font-bold text-slate-900">{title}</h3></div>
+      <div className="mb-3 flex items-center gap-2">{Icon && <Icon size={15} className="text-indigo-500" />}<h3 className="text-sm font-bold text-slate-900">{title}</h3>{right && <div className="ml-auto">{right}</div>}</div>
       {children}
     </div>
   );
