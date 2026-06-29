@@ -14,7 +14,7 @@ import {
 } from "recharts";
 
 /* ------------------------------------------------------------------ */
-/*  Octomeet.ai — Meeting Intelligence (Read.ai-style clone — Phase 0) */
+/*  Octomeet.ai - Meeting Intelligence (Read.ai-style clone - Phase 0) */
 /* ------------------------------------------------------------------ */
 
 const SPEAKER_COLORS = ["#6366F1", "#0EA5E9", "#10B981", "#F59E0B", "#F43F5E", "#14B8A6", "#8B5CF6", "#EC4899"];
@@ -34,7 +34,7 @@ const VIDEOS = [
 ];
 
 const SEED_RECENT = [
-  { bucket: "LAST WEEK", items: ["Which brands do they currently use?", "How is the sales vertical structured?", "Feedback recap — Acme & Vertex"] },
+  { bucket: "LAST WEEK", items: ["Which brands do they currently use?", "How is the sales vertical structured?", "Feedback recap - Acme & Vertex"] },
   { bucket: "LAST 30 DAYS", items: ["Which AI tools does he use?", "What are the two brands mentioned?", "What is the status of this deal?", "Maria Lopez"] },
   { bucket: "OLDER", items: ["Who participated? List names", "Northwind intro and next steps", "Pricing tiers discussed", "Pilot timeline"] },
 ];
@@ -125,7 +125,7 @@ function extractJSON(text) {
 
 /* ------------------------- transcript parsing ---------------------- */
 // Does the text before a colon look like a speaker label (a name or "Speaker 1")?
-// Accepts digits ("Speaker 1"), long/multi-part names, "(External)" tags — but rejects
+// Accepts digits ("Speaker 1"), long/multi-part names, "(External)" tags - but rejects
 // sentence colons ("the ratio is 3:1", "Note: ...") so transcript lines parse correctly.
 function looksLikeSpeaker(s) {
   if (!s || s.length > 48) return false;
@@ -176,7 +176,7 @@ function mk(o) {
 function seedMeetings() {
   const list = [
     mk({
-      id: "m_vertex", title: "Vertex Retail — Partnership", date: "2026-06-25",
+      id: "m_vertex", title: "Vertex Retail - Partnership", date: "2026-06-25",
       timeStart: "2:06 PM", timeEnd: "2:25 PM", durationMin: 19, source: "Google Meet",
       folder: "Partnership Alignment", owner: "NB", readScore: 89, participantsCount: 3,
       scores: { overall: 89, engagement: 96, sentiment: 82, balance: 78, clarity: 86 },
@@ -202,10 +202,10 @@ function seedMeetings() {
       ],
       transcript: parseTranscript(
 `[00:09] Nicolas Benech: Hi Alex, how are you? Thanks for rescheduling.
-[00:21] Alex Carter: All good — I'm based in Florida, so we're in a similar time zone.
-[01:22] Nicolas Benech: Great. So at a high level, we take the operations work teams were doing manually and use AI to improve all of it — prioritizing communication, task management, audits, inventory and KPI insights across mobile and desktop.
+[00:21] Alex Carter: All good - I'm based in Florida, so we're in a similar time zone.
+[01:22] Nicolas Benech: Great. So at a high level, we take the operations work teams were doing manually and use AI to improve all of it - prioritizing communication, task management, audits, inventory and KPI insights across mobile and desktop.
 [02:55] Nicolas Benech: We work with more than a hundred locations across several regions, and now we're opening this market through partners.
-[08:20] Alex Carter: And what would my role be — how would responsibilities be divided?
+[08:20] Alex Carter: And what would my role be - how would responsibilities be divided?
 [08:24] Nicolas Benech: Local partners open doors and make introductions; we handle pitching, POCs, integrations and closing, and partners earn a share of the subscription revenue for the deals they introduce.
 [17:28] Alex Carter: When can we schedule a demo?
 [17:58] Nicolas Benech: Let's do a 30-minute demo Tuesday at 9 a.m. Eastern. I'll book it.
@@ -213,7 +213,7 @@ function seedMeetings() {
       ),
     }),
     mk({
-      id: "m_acme", title: "Acme Corp — Intro Call", date: "2026-06-26",
+      id: "m_acme", title: "Acme Corp - Intro Call", date: "2026-06-26",
       timeStart: "12:00 PM", timeEnd: "12:37 PM", durationMin: 37, source: "Google Meet",
       folder: "Partnership Alignment", owner: "AS", readScore: 88, participantsCount: 3,
       summary: "Intro call with Acme Corp exploring a partnership to bring the platform to new accounts. Covered product capabilities, the ideal customer profile, and the partner revenue-share model. Agreed to align on a target list and a follow-up demo.",
@@ -232,11 +232,11 @@ function seedMeetings() {
       transcript: parseTranscript(
 `[00:10] Nicolas Benech: Thanks for joining, Maria. Let me give you a quick overview of the platform and how the partnership works.
 [00:40] Maria Lopez: Sounds great. I work with several groups here, so I'm curious about the fit.
-[01:20] Nicolas Benech: Perfect — we centralize operations with AI: communication, tasks, audits, inventory and KPIs. Partners open doors and we close.`
+[01:20] Nicolas Benech: Perfect - we centralize operations with AI: communication, tasks, audits, inventory and KPIs. Partners open doors and we close.`
       ),
     }),
     mk({
-      id: "m_northwind", title: "Northwind — Product Demo", date: "2026-06-26",
+      id: "m_northwind", title: "Northwind - Product Demo", date: "2026-06-26",
       timeStart: "10:00 AM", timeEnd: "10:58 AM", durationMin: 58, source: "Google Meet",
       folder: "Partnership Alignment", owner: "NB", readScore: 89, participantsCount: 2,
       summary: "Full product demo for Northwind covering the mobile and desktop experience: AI-prioritized communication, task auditing, image audits, and KPI dashboards. Strong interest; discussed a pilot scope and pricing.",
@@ -253,12 +253,12 @@ function seedMeetings() {
       ],
       transcript: parseTranscript(
 `[00:12] Nicolas Benech: Let me share my screen and walk you through the platform end to end.
-[00:45] Jordan Vela: Please do — I'm most interested in the audit workflows.
+[00:45] Jordan Vela: Please do - I'm most interested in the audit workflows.
 [01:10] Nicolas Benech: Great, that's one of our strongest features. Teams submit photos and AI scores compliance automatically.`
       ),
     }),
     mk({
-      id: "m_daniela", title: "Candidate Interview — Daniela R.", date: "2026-06-25",
+      id: "m_daniela", title: "Candidate Interview - Daniela R.", date: "2026-06-25",
       timeStart: "10:30 AM", timeEnd: "11:10 AM", durationMin: 40, source: "Google Meet",
       folder: "Job Interview", owner: "NB", readScore: 87, participantsCount: 3,
       summary: "Interview conversation covering background, experience and role expectations. Positive rapport; next round to be scheduled.",
@@ -272,11 +272,11 @@ function seedMeetings() {
       ],
       transcript: parseTranscript(
 `[00:08] Asaf B.: Thanks for coming in, Daniela. Tell me a bit about your background.
-[00:30] Daniela R.: Sure — I've spent the last few years in operations and analytics.`
+[00:30] Daniela R.: Sure - I've spent the last few years in operations and analytics.`
       ),
     }),
     mk({
-      id: "m_daniel", title: "Weekly 1:1 — Daniel M.", date: "2026-06-25",
+      id: "m_daniel", title: "Weekly 1:1 - Daniel M.", date: "2026-06-25",
       timeStart: "10:00 AM", timeEnd: "10:07 AM", durationMin: 7, source: "Google Meet",
       folder: "One-on-One", owner: "NB", readScore: 89, participantsCount: 2,
       summary: "Quick one-on-one sync to align on the week's priorities and outstanding follow-ups.",
@@ -288,10 +288,10 @@ function seedMeetings() {
         { name: "Nicolas Benech", role: "Octomeet (You)", talkPct: 55, sentiment: "Positive" },
         { name: "Daniel M.", role: "Teammate", talkPct: 45, sentiment: "Positive" },
       ],
-      transcript: parseTranscript(`[00:05] Nicolas Benech: Quick sync — what's top of your list this week?`),
+      transcript: parseTranscript(`[00:05] Nicolas Benech: Quick sync - what's top of your list this week?`),
     }),
     mk({
-      id: "m_globex", title: "Globex — Sales Call", date: "2026-06-24",
+      id: "m_globex", title: "Globex - Sales Call", date: "2026-06-24",
       timeStart: "4:30 PM", timeEnd: "5:27 PM", durationMin: 57, source: "Google Meet",
       folder: "Sales Call", owner: "AS", readScore: 85, participantsCount: 4,
       summary: "Sales conversation with the Globex team covering operational challenges and how the AI platform addresses communication, task management and compliance at scale.",
@@ -308,10 +308,10 @@ function seedMeetings() {
         { name: "Globex IT", role: "Prospect", talkPct: 15, sentiment: "Neutral" },
         { name: "Guest", role: "Guest", talkPct: 10, sentiment: "Neutral" },
       ],
-      transcript: parseTranscript(`[00:10] Anita S.: Thanks everyone — let's start with your biggest operational headaches today.`),
+      transcript: parseTranscript(`[00:10] Anita S.: Thanks everyone - let's start with your biggest operational headaches today.`),
     }),
     mk({
-      id: "m_initech", title: "Initech — Partnership", date: "2026-06-24",
+      id: "m_initech", title: "Initech - Partnership", date: "2026-06-24",
       timeStart: "3:00 PM", timeEnd: "3:23 PM", durationMin: 23, source: "Read",
       folder: "Partnership Alignment", owner: "SL", readScore: 84, participantsCount: 2,
       summary: "Partnership discussion about introducing the platform to a network of accounts and the revenue-share model for introduced deals.",
@@ -323,10 +323,10 @@ function seedMeetings() {
         { name: "Sol L.", role: "Octomeet", talkPct: 60, sentiment: "Positive" },
         { name: "Gilbert P.", role: "Partner Prospect", talkPct: 40, sentiment: "Positive" },
       ],
-      transcript: parseTranscript(`[00:08] Sol L.: Gilbert, great to connect — let me explain how our partner program works.`),
+      transcript: parseTranscript(`[00:08] Sol L.: Gilbert, great to connect - let me explain how our partner program works.`),
     }),
     mk({
-      id: "m_lumio", title: "Lumio — Partnership", date: "2026-06-24",
+      id: "m_lumio", title: "Lumio - Partnership", date: "2026-06-24",
       timeStart: "2:00 PM", timeEnd: "2:31 PM", durationMin: 31, source: "Read",
       folder: "Partnership Alignment", owner: "SL", readScore: 86, participantsCount: 2,
       summary: "Intro and alignment call about the platform and a potential partnership across the contact's network.",
@@ -338,10 +338,10 @@ function seedMeetings() {
         { name: "Sol L.", role: "Octomeet", talkPct: 57, sentiment: "Positive" },
         { name: "Neliana V.", role: "Partner Prospect", talkPct: 43, sentiment: "Positive" },
       ],
-      transcript: parseTranscript(`[00:06] Sol L.: Hi Neliana, thanks for the time — let me walk you through the platform.`),
+      transcript: parseTranscript(`[00:06] Sol L.: Hi Neliana, thanks for the time - let me walk you through the platform.`),
     }),
     mk({
-      id: "m_samara", title: "Final Interview — Samara K.", date: "2026-06-24",
+      id: "m_samara", title: "Final Interview - Samara K.", date: "2026-06-24",
       timeStart: "1:30 PM", timeEnd: "1:39 PM", durationMin: 9, source: "Google Meet",
       folder: "Job Interview", owner: "NB", readScore: 91, participantsCount: 2,
       summary: "Short final interview covering motivation, fit and expectations for the role. Very positive tone.",
@@ -353,7 +353,7 @@ function seedMeetings() {
         { name: "CEO", role: "Interviewer", talkPct: 45, sentiment: "Positive" },
         { name: "Samara K.", role: "Candidate", talkPct: 55, sentiment: "Positive" },
       ],
-      transcript: parseTranscript(`[00:05] CEO: Samara, thanks for joining — tell me what drew you to the company.`),
+      transcript: parseTranscript(`[00:05] CEO: Samara, thanks for joining - tell me what drew you to the company.`),
     }),
   ];
   return list.map((m, i) => ({ ...m, video: VIDEOS[i % VIDEOS.length] }));
@@ -367,13 +367,13 @@ function statusSummary(status) {
     case "joining": return "🔄 OctoMeet is joining the meeting now. Admit it from the waiting room to start recording.";
     case "in_call": return "🟡 OctoMeet is in the meeting. Recording will begin once allowed.";
     case "recording": return "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.";
-    case "processing": return "⏳ Meeting ended — generating your AI report from the transcript. This page updates automatically.";
+    case "processing": return "⏳ Meeting ended - generating your AI report from the transcript. This page updates automatically.";
     case "error": return "⚠️ The notetaker couldn't complete this meeting. Check the meeting link or permissions and try again.";
     default: return "";
   }
 }
 // Detect the meeting platform from its URL so the preview badge shows the real medium
-// (Google Meet / Zoom / Teams) like Read.ai — not the generic OctoMeet icon.
+// (Google Meet / Zoom / Teams) like Read.ai - not the generic OctoMeet icon.
 function platformFromUrl(url) {
   if (!url) return null;
   if (/meet\.google\.com/i.test(url)) return "Google Meet";
@@ -425,7 +425,7 @@ function adaptReal(m) {
   const hl = (r.highlights || []).map((h) => (typeof h === "string"
     ? { text: h, t: "", at: null }
     : { text: h.text || h.quote || "", t: h.t || "", at: tsToSeconds(h.t) }));
-  // Cover frame: a moment likely to show people talking — the first highlight's timestamp,
+  // Cover frame: a moment likely to show people talking - the first highlight's timestamp,
   // else ~20% into the meeting (capped at 10 min), else 12s. Skips the black join intro.
   const durSec = (m.duration_min || 0) * 60;
   const firstHi = hl.find((h) => h.at != null);
@@ -518,7 +518,7 @@ function PlatformBadge({ source, size = 22 }) {
 
 function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true, at = null, onClick = null, hoverPlay = true }) {
   const ref = useRef(null);
-  // Show the frame at `at` seconds (a highlight's moment) — or ~8s in to skip the
+  // Show the frame at `at` seconds (a highlight's moment) - or ~8s in to skip the
   // black join intro. The media fragment "#t=" paints that frame reliably as the still;
   // the onLoadedMetadata seek is a backup. With hoverPlay=false the still frame is kept
   // on hover (no jump-to-black); onClick makes the whole thumb seek the main player.
@@ -550,9 +550,13 @@ function ScoreChip({ value }) {
   const has = Number.isFinite(value) && value > 0;
   const col = !has ? "#94A3B8" : value >= 80 ? "#16A34A" : value >= 60 ? "#D97706" : "#E11D48";
   return (
-    <span title="OctoMeet Score — how effective the meeting was, combining real-time sentiment and engagement." className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-1.5 py-0.5">
+    <span className="group relative inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-1.5 py-0.5">
       <OctoLogo size={15} />
-      <span className="text-[12px] font-bold" style={{ color: col }}>{has ? value : "—"}</span>
+      <span className="text-[12px] font-bold" style={{ color: col }}>{has ? value : "-"}</span>
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-60 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-center text-[11px] font-medium leading-snug text-white opacity-0 shadow-2xl transition-opacity duration-150 group-hover:opacity-100">
+        <span className="font-bold">OctoMeet Score</span> - how effective the meeting was, combining real-time sentiment and engagement.
+        <span className="absolute left-1/2 top-full -ml-1 h-2 w-2 -translate-y-1/2 rotate-45 bg-slate-900" />
+      </span>
     </span>
   );
 }
@@ -593,7 +597,7 @@ function ScorePill({ label, value }) {
     <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
       <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
       <div className="mt-1 flex items-end gap-1.5">
-        <span className="text-xl font-bold" style={{ color: col }}>{has ? value : "—"}</span>
+        <span className="text-xl font-bold" style={{ color: col }}>{has ? value : "-"}</span>
         <span className="mb-0.5 text-[10px] text-slate-300">/100</span>
       </div>
       <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
@@ -669,10 +673,10 @@ export default function App() {
     })();
   }, []);
 
-  // Browser tab: OctoMeet favicon + dynamic title "OctoMeet — <section>" (default Reports).
+  // Browser tab: OctoMeet favicon + dynamic title "OctoMeet - <section>" (default Reports).
   useEffect(() => {
     const NAMES = { reports: "Reports", meeting: "Report", ask: "Ask Octo", folders: "Folders", calendar: "Calendar", "for-you": "For You", coaching: "Coaching", recommendations: "Recommendations", "meeting-policy": "Meeting Policy", integrations: "Integrations", "plan-billing": "Plan & Billing", "add-people": "Add People" };
-    document.title = "OctoMeet — " + (NAMES[view] || "Reports");
+    document.title = "OctoMeet - " + (NAMES[view] || "Reports");
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#A855F7"/><stop offset="100%" stop-color="#7C3AED"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#g)"/><g fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round"><path d="M15 23V18Q15 15 18 15H23"/><path d="M41 15H46Q49 15 49 18V23"/><path d="M15 41V46Q15 49 18 49H23"/><path d="M41 49H46Q49 49 49 46V41"/></g><g transform="translate(13 17) scale(0.52)"><path d="M44 19L58 12Q61 10.5 61 14.5V37.5Q61 41.5 58 40L44 33Z" fill="#fff"/><path d="M10 27C10 16 19 8 28 8C37 8 46 16 46 27L46 40Q43.5 46 41 46Q38.5 46 36.5 40Q34 46 32 46Q29.5 46 27.5 40Q25 46 23 46Q20.5 46 18.5 40Q16 46 14 46Q11 46 10 40Z" fill="#fff"/><rect x="25" y="16" width="6" height="20" rx="3" fill="url(#g)"/><rect x="18" y="23" width="20" height="6" rx="3" fill="url(#g)"/></g></svg>';
     try {
       let link = document.querySelector("link[rel='icon']");
@@ -694,7 +698,7 @@ export default function App() {
 
   // Read.ai-style auto-join: on sign-in AND periodically, arm a Recall bot for every
   // upcoming calendar meeting. Recall joins each at its exact start time and waits in
-  // the lobby until admitted — even after the app is closed. Re-arming catches meetings
+  // the lobby until admitted - even after the app is closed. Re-arming catches meetings
   // you create while the app is open.
   useEffect(() => {
     if (!authed) return;
@@ -726,7 +730,7 @@ export default function App() {
     setMeetings(demo); await store.set("octomeet:meetings:v1", demo);
     setRealMeetings(real);
   };
-  // Real Google user (Santiago) sees ONLY their real measured meetings — no demo/seed clutter.
+  // Real Google user (Santiago) sees ONLY their real measured meetings - no demo/seed clutter.
   // The demo/email login still sees seeded meetings so the app isn't empty for previews.
   const allMeetings = useMemo(() => (user ? realMeetings : [...realMeetings, ...(meetings || [])]), [realMeetings, meetings, user]);
   const active = useMemo(() => allMeetings.find((m) => m.id === activeId), [allMeetings, activeId]);
@@ -835,7 +839,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
       className={"absolute inset-y-0 left-0 z-30 flex shrink-0 flex-col rai-sidebar text-slate-300 shadow-xl transition-all duration-200 " + (collapsed ? "w-[68px]" : "w-60")}>
       {/* header */}
       <div className={"flex items-center px-3 pt-4 pb-3 " + (collapsed ? "justify-center" : "gap-2")}>
-        <button onClick={() => setView("reports")} title="OctoMeet — all reports" className="flex h-8 w-8 shrink-0 items-center justify-center">
+        <button onClick={() => setView("reports")} title="OctoMeet - all reports" className="flex h-8 w-8 shrink-0 items-center justify-center">
           <OctoLogo size={32} />
         </button>
         {!collapsed && <span className="whitespace-nowrap text-[15px] font-bold text-white">OctoMeet AI</span>}
@@ -972,7 +976,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
 /* ============================ REPORTS LIST ========================= */
 function FilterBtn({ label, icon: Icon, onClick }) {
   return (
-    <button onClick={onClick || (() => toast(label + " filter — coming soon"))} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
+    <button onClick={onClick || (() => toast(label + " filter - coming soon"))} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50">
       {Icon && <Icon size={14} className="text-slate-400" />}{label}<ChevronDown size={14} className="text-slate-400" />
     </button>
   );
@@ -1014,7 +1018,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const [fSource, setFSource] = useState("all");
   const [fFolder, setFFolder] = useState("all");
 
-  // "error" is intentionally excluded: a failed capture never shows anywhere —
+  // "error" is intentionally excluded: a failed capture never shows anywhere -
   // it's either a real report (recorded) or nothing at all.
   const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing"];
   const sourceOpts = useMemo(() => [{ value: "all", label: "All sources" }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
@@ -1090,7 +1094,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 ) : <Loader2 size={15} className="animate-spin text-indigo-600" />}
                 <span className="flex-1 text-sm font-medium text-slate-700">
                   {live.length
-                    ? <>OctoMeet is <b className="text-rose-700">recording live</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} — the AI report will appear here automatically.</>
+                    ? <>OctoMeet is <b className="text-rose-700">recording live</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - the AI report will appear here automatically.</>
                     : <>Generating <b className="text-indigo-700">{proc.length}</b> AI report{proc.length > 1 ? "s" : ""} from your meeting{proc.length > 1 ? "s" : ""}… this updates automatically.</>}
                 </span>
                 <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> Refresh</button>
@@ -1100,8 +1104,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-indigo-50 px-4 py-3">
                 <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">✨ NEW!</span>
                 <span className="flex-1 text-sm text-slate-700">Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.</span>
-                <button onClick={() => toast("Connect HubSpot — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="hubspot" size={14} /></span> Add Hubspot</button>
-                <button onClick={() => toast("Connect Salesforce — coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="salesforce" size={14} /></span> Add Salesforce</button>
+                <button onClick={() => toast("Connect HubSpot - coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="hubspot" size={14} /></span> Add Hubspot</button>
+                <button onClick={() => toast("Connect Salesforce - coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="salesforce" size={14} /></span> Add Salesforce</button>
                 <button onClick={() => setShowCrm(false)} className="text-[13px] font-medium text-slate-500 hover:text-slate-700">Dismiss</button>
               </div>
             )}
@@ -1303,7 +1307,7 @@ function CreateWorkspace({ onCancel, onDone }) {
             <h2 className="mt-4 text-3xl font-bold text-slate-900">You're all set</h2>
             <p className="mt-3 text-[15px] text-slate-500">Review your workspace before finishing.</p>
             <div className="mt-6 space-y-2 rounded-xl border border-slate-200 bg-white p-5 text-sm">
-              <div className="flex justify-between"><span className="text-slate-400">Workspace</span><span className="font-medium text-slate-700">{name || "—"}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Workspace</span><span className="font-medium text-slate-700">{name || "-"}</span></div>
               <div className="flex justify-between"><span className="text-slate-400">Invites</span><span className="font-medium text-slate-700">{invites.filter((i) => i.email.trim()).length}</span></div>
               <div className="flex justify-between"><span className="text-slate-400">Share by default</span><span className="font-medium text-slate-700">{perms.shareDefault ? "On" : "Off"}</span></div>
             </div>
@@ -1400,7 +1404,7 @@ function FoldersView({ onAsk, meetings, onOpenFolder }) {
             </div>
             <div><span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</span></div>
             <div className="text-sm text-slate-600">{f.reports}</div>
-            <div className="text-[13px] text-slate-500">{f.date ? fmtDateFull(f.date) : "—"}</div>
+            <div className="text-[13px] text-slate-500">{f.date ? fmtDateFull(f.date) : "-"}</div>
           </button>
         ))}
         {!folders.length && <div className="py-16 text-center text-sm text-slate-400">No folders yet. Create one with “New Folder”.</div>}
@@ -1455,15 +1459,15 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
     setAutoJoin(val);
     try { await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto_join: val }) }); } catch (e) { /* ignore */ }
     if (val) {
-      toast("Auto-join ON — arming your meetings…");
+      toast("Auto-join ON - arming your meetings…");
       fetch("/api/calendar/arm-all", { method: "POST" }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.armed > 0) toast(`OctoMeet will join ${d.armed} meeting${d.armed > 1 ? "s" : ""} 🗓️`); }).catch(() => {});
-    } else toast("Auto-join OFF — toggle meetings individually.");
+    } else toast("Auto-join OFF - toggle meetings individually.");
   };
   const events = [
     { name: "Morning Meeting", ppl: 39, date: "Sun, Jun 28", time: "3:30 AM - 4:30 AM", add: false, role: null },
-    { name: "Acme Corp — Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
-    { name: "Northwind — Demo", ppl: 3, date: "Tue, Jun 30", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
-    { name: "Vertex — 2nd Meeting", ppl: 4, date: "Fri, Jul 3", time: "12:00 PM - 1:00 PM", add: true, role: "Report Owner" },
+    { name: "Acme Corp - Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
+    { name: "Northwind - Demo", ppl: 3, date: "Tue, Jun 30", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
+    { name: "Vertex - 2nd Meeting", ppl: 4, date: "Fri, Jul 3", time: "12:00 PM - 1:00 PM", add: true, role: "Report Owner" },
   ];
   const links = [{ m: 15 }, { m: 30 }, { m: 60 }, { m: 90 }];
   const fmtEv = (iso) => {
@@ -1500,7 +1504,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
               <OctoLogo size={22} />
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">Auto-join your meetings {recallConnected && autoJoin && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Calendar connected</span>}</div>
-                <div className="text-[12px] text-slate-500">{recallConnected ? "Your Google Calendar is synced with OctoMeet — every meeting is recorded & analyzed automatically, in real time, even with the app closed." : "When on, OctoMeet automatically joins, records and analyzes every meeting on your calendar — you don't have to do anything."}</div>
+                <div className="text-[12px] text-slate-500">{recallConnected ? "Your Google Calendar is synced with OctoMeet - every meeting is recorded & analyzed automatically, in real time, even with the app closed." : "When on, OctoMeet automatically joins, records and analyzes every meeting on your calendar - you don't have to do anything."}</div>
               </div>
               <CalToggle on={autoJoin} onChange={toggleAutoJoin} />
             </div>
@@ -1550,7 +1554,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
           <div className="space-y-6">
             <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm">
               <span className="flex items-center gap-1.5 text-slate-600"><BrandIcon name="googleCalendar" size={16} /> Scheduling based on: <b>nicolas@octomeet.ai</b> (Google Calendar)</span>
-              <span className="flex gap-4 text-[13px] font-semibold text-indigo-600"><button onClick={() => toast("Change calendar — coming soon")}>Change Calendar</button><button onClick={() => toast("Scheduling settings — coming soon")}>Scheduling Settings</button></span>
+              <span className="flex gap-4 text-[13px] font-semibold text-indigo-600"><button onClick={() => toast("Change calendar - coming soon")}>Change Calendar</button><button onClick={() => toast("Scheduling settings - coming soon")}>Scheduling Settings</button></span>
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-900">Default scheduling links</h3>
@@ -1603,7 +1607,7 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
               <h2 className="text-2xl font-bold text-indigo-700">{hi}, {uName}</h2>
               <p className="mt-1 text-sm font-medium text-slate-500">A digest from your {meetings.length} most recent meeting{meetings.length === 1 ? "" : "s"}</p>
               <div className="mt-3 flex gap-4">
-                <p className="flex-1 text-sm leading-relaxed text-slate-600">{lead ? lead.summary : "Once your meetings are analyzed, your personalized digest — top topics, summaries and action items across meetings — will appear here."}</p>
+                <p className="flex-1 text-sm leading-relaxed text-slate-600">{lead ? lead.summary : "Once your meetings are analyzed, your personalized digest - top topics, summaries and action items across meetings - will appear here."}</p>
                 <VideoThumb src={(lead && lead.video) || VIDEOS[0]} source={(lead && lead.source) || "Google Meet"} size={120} rounded="rounded-xl" showBadge={false} />
               </div>
             </div>
@@ -1619,7 +1623,7 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
                     <div className="mt-1 text-[12px] text-slate-400">From {n} meeting{n === 1 ? "" : "s"}</div>
                   </div>
                 ))}
-              </div> : <p className="text-sm text-slate-400">No topics yet — analyze a meeting to see topic trends.</p>}
+              </div> : <p className="text-sm text-slate-400">No topics yet - analyze a meeting to see topic trends.</p>}
             </Card>
             <Card title="Summary" icon={Sparkles}>
               {summaries.length ? <div className="space-y-3">
@@ -1661,7 +1665,7 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
 
 /* ============================ COACHING ============================ */
 function CoachingView({ onAsk }) {
-  const moments = [{ w: 223, m: "Vertex Retail" }, { w: 225, m: "Vertex Retail" }, { w: 244, m: "Acme — Outreach" }, { w: 224, m: "Northwind" }];
+  const moments = [{ w: 223, m: "Vertex Retail" }, { w: 225, m: "Vertex Retail" }, { w: 244, m: "Acme - Outreach" }, { w: 224, m: "Northwind" }];
   return (
     <>
       <SectionTop title="Coaching" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> May 27 - Jun 26, 2026</span>} />
@@ -1692,7 +1696,7 @@ function CoachingView({ onAsk }) {
           <div className="space-y-6">
             <div>
               <div className="flex items-center justify-between"><h3 className="text-xl font-bold text-slate-900">Talking pace</h3><span className="flex items-center gap-1 text-lg font-bold text-slate-900">130 wpm <CheckCircle2 size={16} className="text-emerald-500" /></span></div>
-              <p className="mt-1 text-sm text-slate-500">Your average rate of speech in words per minute. <b>You speak at 130 WPM, within the recommended range of 130–175 WPM. Keep it up!</b></p>
+              <p className="mt-1 text-sm text-slate-500">Your average rate of speech in words per minute. <b>You speak at 130 WPM, within the recommended range of 130-175 WPM. Keep it up!</b></p>
               <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between text-[12px] text-slate-400"><span>Range</span><span>Your pace</span></div>
                 <div className="relative mt-2 h-2 rounded-full" style={{ background: "linear-gradient(90deg,#10B981,#F59E0B,#F43F5E)" }}><span className="absolute -top-1 h-4 w-4 rounded-full border-2 border-indigo-600 bg-white" style={{ left: "0%" }} /></div>
@@ -1739,12 +1743,12 @@ function CoachMetric({ icon: Icon, label, value, ok, active }) {
 /* ======================== RECOMMENDATIONS ========================= */
 function RecommendationsView({ onAsk }) {
   const list = [
-    { name: "Acme — Growth Review", n: 4, date: "Mon 6/15 · 11:00 AM - 12:00 PM" },
+    { name: "Acme - Growth Review", n: 4, date: "Mon 6/15 · 11:00 AM - 12:00 PM" },
     { name: "Globex & Octo", n: 1, date: "Mon 6/15 · 1:00 PM - 2:00 PM" },
     { name: "Northwind & Octo", n: 2, date: "Tue 6/16 · 12:00 PM - 1:00 PM" },
-    { name: "Vertex — Sync", n: 6, date: "Thu 6/18 · 3:00 PM - 4:00 PM" },
+    { name: "Vertex - Sync", n: 6, date: "Thu 6/18 · 3:00 PM - 4:00 PM" },
     { name: "Initech & Octo", n: 2, date: "Fri 6/19 · 10:00 AM - 10:45 AM" },
-    { name: "Lumio — 1st Intro", n: 1, date: "Mon 6/22 · 9:00 AM - 9:30 AM" },
+    { name: "Lumio - 1st Intro", n: 1, date: "Mon 6/22 · 9:00 AM - 9:30 AM" },
   ];
   const [sel, setSel] = useState(0);
   const [recTab, setRecTab] = useState("new");
@@ -1762,7 +1766,7 @@ function RecommendationsView({ onAsk }) {
           <div className="flex items-center gap-4 border-b border-slate-200 px-4 py-3 text-sm font-semibold">
             <button onClick={() => setRecTab("new")} className={"flex items-center gap-1 " + (recTab === "new" ? "text-indigo-700" : "text-slate-400")}>New <span className="rounded-full bg-indigo-600 px-1.5 text-[11px] text-white">19</span></button>
             <button onClick={() => setRecTab("reviewed")} className={recTab === "reviewed" ? "text-indigo-700" : "text-slate-400"}>Reviewed</button>
-            <button onClick={() => toast("Filters — coming soon")} className="ml-auto text-[13px] font-medium text-indigo-600">Show filters</button>
+            <button onClick={() => toast("Filters - coming soon")} className="ml-auto text-[13px] font-medium text-indigo-600">Show filters</button>
           </div>
           {recTab === "reviewed" && <div className="px-4 py-16 text-center text-sm text-slate-400">No reviewed recommendations yet.</div>}
           {recTab === "new" && list.map((r, i) => (
@@ -2037,7 +2041,7 @@ function LoginView({ onLogin, onGoogle }) {
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-3"><OctoLogo size={56} /></div>
           <h1 className="text-2xl font-bold text-slate-900">{signup ? "Create your OctoMeet AI account" : "Sign in to OctoMeet AI"}</h1>
-          <p className="mt-1 text-sm text-slate-500">{signup ? "It's free to get started — no credit card required." : "Welcome back. Choose how to continue."}</p>
+          <p className="mt-1 text-sm text-slate-500">{signup ? "It's free to get started - no credit card required." : "Welcome back. Choose how to continue."}</p>
         </div>
         {authError && (
           <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
@@ -2100,7 +2104,7 @@ function SupportView({ onBack }) {
         <p className="mt-1 text-sm text-slate-500">Find answers, contact us, or send feedback.</p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           {cards.map((c) => (
-            <button key={c.title} onClick={() => { if (c.title === "Email support") { window.location.href = "mailto:support@octomeet.ai"; } else { toast(c.title + " — coming soon"); } }} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-indigo-300 hover:shadow-sm">
+            <button key={c.title} onClick={() => { if (c.title === "Email support") { window.location.href = "mailto:support@octomeet.ai"; } else { toast(c.title + " - coming soon"); } }} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-indigo-300 hover:shadow-sm">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500"><c.icon size={18} /></div>
               <div><div className="text-sm font-semibold text-slate-800">{c.title}</div><div className="text-[13px] text-slate-500">{c.desc}</div></div>
             </button>
@@ -2151,7 +2155,7 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
             <p className="mt-1 text-[13px] text-slate-500">Next invoice July 4, 2026. ($29.75)</p>
             <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
               <button onClick={onComparePlans} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Change plan</button>
-              <button onClick={() => toast("Create a Workspace — coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Create a Workspace</button>
+              <button onClick={() => toast("Create a Workspace - coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Create a Workspace</button>
               <button onClick={() => { if (window.confirm("Cancel your plan? You'll keep access until the end of the billing period.")) toast("Plan cancellation requested"); }} className="rounded-lg px-4 py-2 text-[13px] font-semibold text-rose-600 hover:bg-rose-50">Cancel plan</button>
             </div>
           </div>
@@ -2160,7 +2164,7 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
             <h2 className="mb-3 text-base font-bold text-slate-900">License Usage</h2>
             <p className="text-sm text-slate-600">1 of 1 license is in use</p>
             <div className="mt-2 h-2 w-full rounded-full bg-slate-100"><div className="h-2 rounded-full bg-indigo-600" style={{ width: "100%" }} /></div>
-            <button onClick={() => toast("Add licenses — coming soon")} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Add licenses</button>
+            <button onClick={() => toast("Add licenses - coming soon")} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Add licenses</button>
           </div>
           {/* File Upload Credits */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2170,7 +2174,7 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
               <div><div className="text-[12px] text-slate-400">Purchased credits</div><div className="text-xl font-bold text-slate-900">0 minutes</div></div>
             </div>
             <p className="mt-1 text-[12px] text-slate-400">Resets Jul 1, 2026</p>
-            <button onClick={() => toast("Buy file upload credits — coming soon")} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Buy file upload credits</button>
+            <button onClick={() => toast("Buy file upload credits - coming soon")} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Buy file upload credits</button>
           </div>
           {/* Payment Method */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2180,8 +2184,8 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
               <span className="text-[13px] text-slate-400">Expires 1/2030</span>
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <button onClick={() => toast("Update payment method — coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Update payment method</button>
-              <button onClick={() => toast("Add Tax ID — coming soon")} className="flex items-center gap-1 rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-indigo-600 hover:bg-slate-50"><Plus size={14} /> Add Tax ID</button>
+              <button onClick={() => toast("Update payment method - coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Update payment method</button>
+              <button onClick={() => toast("Add Tax ID - coming soon")} className="flex items-center gap-1 rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-indigo-600 hover:bg-slate-50"><Plus size={14} /> Add Tax ID</button>
             </div>
           </div>
         </div>
@@ -2256,7 +2260,7 @@ function PlansView({ onBack }) {
                 <span className="text-3xl font-extrabold text-slate-900">{annual ? p.annual : p.monthly}</span>
               </div>
               <p className="mt-1 text-[11px] text-slate-400">{p.note}{annual && p.name !== "Free" ? " · billed annually" : ""}</p>
-              <button disabled={p.disabled} onClick={() => toast(p.cta + " — coming soon")} className={"mt-4 rounded-lg py-2.5 text-sm font-semibold transition " +
+              <button disabled={p.disabled} onClick={() => toast(p.cta + " - coming soon")} className={"mt-4 rounded-lg py-2.5 text-sm font-semibold transition " +
                 (p.disabled ? "cursor-default bg-slate-100 text-slate-400" : "bg-indigo-600 text-white hover:bg-indigo-500")}>{p.cta}</button>
               <ul className="mt-5 space-y-2">
                 {p.features.map((f, i) => (
@@ -2412,8 +2416,8 @@ function AccountSettings({ onBack, lang, setLang }) {
                 <p className="mb-3 text-[13px] text-slate-500">Connect your accounts to sign in to Octomeet using your credentials from these providers.</p>
                 <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3"><BrandIcon name="google" size={18} /> <span className="text-sm font-medium text-slate-700">Google</span><Check size={15} className="ml-auto text-emerald-500" /></div>
                 <div className="mt-3 flex gap-2">
-                  <button onClick={() => toast("Sign-in method — coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Add Sign-In Method</button>
-                  <button onClick={() => toast("Add password — coming soon")} className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Add Account Password</button>
+                  <button onClick={() => toast("Sign-in method - coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Add Sign-In Method</button>
+                  <button onClick={() => toast("Add password - coming soon")} className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Add Account Password</button>
                 </div>
               </div>
             </>)}
@@ -2529,13 +2533,13 @@ function AccountSettings({ onBack, lang, setLang }) {
                   <div className="mt-1 flex items-center gap-2"><span className="text-sm text-slate-500">cal.octomeet.ai/</span><input value={slug} onChange={(e) => setSlug(e.target.value)} className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" /><button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/" + slug); } catch (e) {} toast("Link copied"); }} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Copy</button></div>
                 </div>
               </div>
-              <ToggleRow title="Available hours" desc="Restrict scheduling to the hours you've designated as available (Mon–Fri, 9:00 AM – 5:00 PM)." on={tg.availHours} onChange={(v) => set1("availHours", v)} />
+              <ToggleRow title="Available hours" desc="Restrict scheduling to the hours you've designated as available (Mon-Fri, 9:00 AM - 5:00 PM)." on={tg.availHours} onChange={(v) => set1("availHours", v)} />
               <ToggleRow title="Minimum notice" desc="Enforce minimum notice for scheduling meetings (4 hours before event start time)." on={tg.minNotice} onChange={(v) => set1("minNotice", v)} />
             </>)}
 
             {sec === 8 && (<>
               <SecHead icon={Folder} title="Folders" desc="Control how meeting reports are sorted and displayed in folders." />
-              <div><div className="mb-1 text-sm font-bold text-slate-800">Custom Folders</div><p className="mb-3 text-[13px] text-slate-500">Create and manage your own folders to organize meeting reports your way.</p><button onClick={() => toast("New folder — coming soon")} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><FolderPlus size={16} /> Add New Folder</button></div>
+              <div><div className="mb-1 text-sm font-bold text-slate-800">Custom Folders</div><p className="mb-3 text-[13px] text-slate-500">Create and manage your own folders to organize meeting reports your way.</p><button onClick={() => toast("New folder - coming soon")} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><FolderPlus size={16} /> Add New Folder</button></div>
               <div>
                 <div className="mb-1 text-sm font-bold text-slate-800">Smart Folders</div>
                 <p className="mb-3 text-[13px] text-slate-500">Auto-organize reports by topic. Show or hide folders that aren't relevant to you.</p>
@@ -2553,7 +2557,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <div className="text-sm font-semibold text-slate-800">Sync Contacts</div>
                 <p className="mb-3 text-[13px] text-slate-500">Sync your contacts from Google or Microsoft to simplify sharing.</p>
-                <div className="flex gap-2"><button onClick={() => toast("Connect Google contacts — coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><BrandIcon name="google" size={16} /> Connect Google</button><button onClick={() => toast("Connect Microsoft contacts — coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><BrandIcon name="microsoft" size={16} /> Connect Microsoft</button></div>
+                <div className="flex gap-2"><button onClick={() => toast("Connect Google contacts - coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><BrandIcon name="google" size={16} /> Connect Google</button><button onClick={() => toast("Connect Microsoft contacts - coming soon")} className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><BrandIcon name="microsoft" size={16} /> Connect Microsoft</button></div>
               </div>
               <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">No contact groups created<br /><span className="text-[13px]">Create a new group for easier sharing</span></div>
             </>)}
@@ -2659,7 +2663,7 @@ const MARKER_STYLE = {
 };
 
 // Custom video player with a marker timeline (chapters / questions / action items /
-// highlights as colored dots — hover to preview, click to jump) AND smart playback modes
+// highlights as colored dots - hover to preview, click to jump) AND smart playback modes
 // on hover: Recording (full), Trailer (<1m teaser) and Highlights (~2m reel), like Read.ai.
 function MeetingVideo({ videoRef, src, coverAt, markers }) {
   const [dur, setDur] = useState(0);
@@ -2674,7 +2678,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
   const uniqAts = [...new Set((markers || []).map((m) => m.at).filter((a) => a != null && a >= 0).map((s) => Math.round(s)))].sort((a, b) => a - b);
 
   // Build the segment list (start/end seconds) for a smart-playback mode. Does NOT depend
-  // on the `dur` STATE (which can lag, or be Infinity for a streamed/proxied video) — the
+  // on the `dur` STATE (which can lag, or be Infinity for a streamed/proxied video) - the
   // live total is passed in; segments come straight from the marker timestamps.
   const buildSegments = (kind, total) => {
     const cap = total && isFinite(total) && total > 0 ? total : Infinity;
@@ -2722,7 +2726,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
   const MENU = [
     { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
     { k: "trailer", label: "Trailer", sub: "<1m" },
-    { k: "highlights", label: "Highlights", sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "—" },
+    { k: "highlights", label: "Highlights", sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "-" },
   ];
 
   return (
@@ -2770,7 +2774,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
   );
 }
 
-// Clickable timestamp pill — jumps the meeting video to that moment.
+// Clickable timestamp pill - jumps the meeting video to that moment.
 function TimeChip({ t, onClick, className = "" }) {
   if (!t) return null;
   return (
@@ -2781,7 +2785,7 @@ function TimeChip({ t, onClick, className = "" }) {
   );
 }
 
-// Side chat — answers questions about THIS meeting from its transcript + report.
+// Side chat - answers questions about THIS meeting from its transcript + report.
 function AskPanel({ meeting }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
@@ -2807,9 +2811,9 @@ function AskPanel({ meeting }) {
       const sys = "You are Octo, answering questions about ONE meeting. Use ONLY the meeting data below. Be concise and specific; mention who said what when useful. Reply in the SAME language as the question. If the answer isn't in the meeting, say you couldn't find it in this meeting.\n\n=== MEETING ===\n" + buildContext();
       const apiMsgs = history.filter((m) => m.role === "user" || m.role === "assistant").slice(-8).map((m) => ({ role: m.role, content: m.text }));
       const ans = await callClaude(apiMsgs, sys);
-      setMsgs((m) => [...m, { role: "assistant", text: ans || "—" }]);
+      setMsgs((m) => [...m, { role: "assistant", text: ans || "-" }]);
     } catch (e) {
-      setMsgs((m) => [...m, { role: "assistant", text: "I couldn't analyze the meeting right now — make sure the report finished, then try again." }]);
+      setMsgs((m) => [...m, { role: "assistant", text: "I couldn't analyze the meeting right now - make sure the report finished, then try again." }]);
     } finally { setBusy(false); }
   };
 
@@ -2817,7 +2821,7 @@ function AskPanel({ meeting }) {
     <aside className="hidden w-[340px] shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
       <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3"><Sparkles size={16} className="text-indigo-500" /><span className="text-sm font-bold text-slate-900">Ask Octo</span></div>
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {msgs.length === 0 && <p className="text-[13px] leading-relaxed text-slate-400">Ask anything about this meeting — Octo answers from the transcript & report.</p>}
+        {msgs.length === 0 && <p className="text-[13px] leading-relaxed text-slate-400">Ask anything about this meeting - Octo answers from the transcript & report.</p>}
         {msgs.map((m, i) => (
           <div key={i} className={m.role === "user"
             ? "ml-auto max-w-[88%] rounded-2xl bg-indigo-600 px-3 py-2 text-sm text-white"
@@ -2858,7 +2862,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
     try { v.currentTime = sec; const p = v.play(); if (p && p.catch) p.catch(() => {}); v.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
   };
 
-  // Colored markers for the video timeline — chapters, key questions, action items, highlights.
+  // Colored markers for the video timeline - chapters, key questions, action items, highlights.
   const markers = useMemo(() => [
     ...(meeting.chapters || []).filter((c) => c.at != null).map((c) => ({ at: c.at, type: "chapter", label: c.title })),
     ...(meeting.keyQA || []).filter((q2) => q2.at != null).map((q2) => ({ at: q2.at, type: "question", label: q2.q })),
@@ -2925,7 +2929,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
           <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>
           <div className="flex items-center gap-2">
             <button onClick={downloadReport} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download</button>
-            <button onClick={() => toast("Push to Slack/Notion/CRM — coming soon")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Share2 size={14} /> Push to…</button>
+            <button onClick={() => toast("Push to Slack/Notion/CRM - coming soon")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Share2 size={14} /> Push to…</button>
             <button onClick={shareReport} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500"><Share2 size={14} /> Share</button>
           </div>
         </div>
@@ -2971,7 +2975,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.l}</div>
               <div className="mt-1 flex items-center gap-3">
                 <div className="flex shrink-0 items-end gap-1.5">
-                  <span className="text-2xl font-bold leading-none text-slate-900">{has ? s.v : "—"}</span>
+                  <span className="text-2xl font-bold leading-none text-slate-900">{has ? s.v : "-"}</span>
                   {has && <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: col }}>{lab}</span>}
                 </div>
                 {has && <div className="min-w-0 flex-1"><Sparkline data={s.series} /></div>}
@@ -3126,19 +3130,19 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             )}
             <Card title="Talking Pace" icon={Activity}>
               <div className="flex items-center gap-4">
-                <span className="text-3xl font-bold text-slate-900">{avgWpm != null ? avgWpm : "—"}</span>
-                <span className="text-sm text-slate-400">{avgWpm != null ? "wpm · recommended range 130–175" : "No pace data for this meeting"}</span>
+                <span className="text-3xl font-bold text-slate-900">{avgWpm != null ? avgWpm : "-"}</span>
+                <span className="text-sm text-slate-400">{avgWpm != null ? "wpm · recommended range 130-175" : "No pace data for this meeting"}</span>
               </div>
             </Card>
             <div className="grid gap-5 md:grid-cols-2">
               <Card title="Clarity" icon={Sparkles}>
                 <Metric label="Filler words" value={fillerPct + "%"} ok={fillerPct < 5} />
-                <Metric label="Talking pace" value={avgWpm != null ? avgWpm + " wpm" : "—"} ok={avgWpm != null && avgWpm >= 130 && avgWpm <= 175} />
-                <Metric label="Clarity score" value={meeting.scores.clarity || "—"} ok={meeting.scores.clarity >= 80} />
+                <Metric label="Talking pace" value={avgWpm != null ? avgWpm + " wpm" : "-"} ok={avgWpm != null && avgWpm >= 130 && avgWpm <= 175} />
+                <Metric label="Clarity score" value={meeting.scores.clarity || "-"} ok={meeting.scores.clarity >= 80} />
               </Card>
               <Card title="Impact" icon={Target}>
-                <Metric label="Charisma" value={meeting.scores.charisma || "—"} ok={meeting.scores.charisma >= 80} />
-                <Metric label="Sentiment" value={meeting.scores.sentiment || "—"} ok={meeting.scores.sentiment >= 70} />
+                <Metric label="Charisma" value={meeting.scores.charisma || "-"} ok={meeting.scores.charisma >= 80} />
+                <Metric label="Sentiment" value={meeting.scores.sentiment || "-"} ok={meeting.scores.sentiment >= 70} />
                 <Metric label="Questions asked" value={questionsAsked} ok={questionsAsked > 0} />
                 <Metric label="Talk-time balance" value={meeting.scores.balance} ok={meeting.scores.balance >= 60} />
               </Card>
@@ -3152,7 +3156,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                       <div className="min-w-0 flex-1"><div className="text-sm font-semibold text-slate-700">{p.name}</div><div className="text-[11px] text-slate-400">{p.role || "Participant"}</div></div>
                       <div className="flex gap-4 text-right text-[12px]">
                         <div><div className="font-semibold text-slate-700">{p.talkPct}%</div><div className="text-[10px] text-slate-400">talk</div></div>
-                        <div><div className="font-semibold text-slate-700">{p.wpm || "—"}</div><div className="text-[10px] text-slate-400">wpm</div></div>
+                        <div><div className="font-semibold text-slate-700">{p.wpm || "-"}</div><div className="text-[10px] text-slate-400">wpm</div></div>
                         <div><div className="font-semibold" style={{ color: p.sentiment === "Positive" ? "#10B981" : p.sentiment === "Negative" ? "#F43F5E" : "#64748B" }}>{p.sentiment || "Neutral"}</div><div className="text-[10px] text-slate-400">tone</div></div>
                       </div>
                     </div>
@@ -3263,7 +3267,7 @@ function RecentSearches({ groups, onPick }) {
           </div>
         ))}
       </div>
-      <button onClick={() => toast("Search history — coming soon")} className="flex items-center justify-center gap-2 border-t border-slate-200 py-3 text-[13px] font-semibold text-indigo-600 hover:bg-indigo-50/50"><Clock size={14} /> All Search History</button>
+      <button onClick={() => toast("Search history - coming soon")} className="flex items-center justify-center gap-2 border-t border-slate-200 py-3 text-[13px] font-semibold text-indigo-600 hover:bg-indigo-50/50"><Clock size={14} /> All Search History</button>
     </aside>
   );
 }
@@ -3296,7 +3300,7 @@ function ChatView({ meetings, onOpen, seed }) {
     const top = scored.sort((a, b) => b.score - a.score).slice(0, 2).map((s) => s.m.id);
     return meetings.map((m) => {
       const ai = m.actionItems.map((i) => `- [${i.done ? "x" : " "}] ${i.task} (${i.owner})`).join("\n");
-      let block = `### ${m.title} — ${fmtDateShort(m.date)} (${m.source})\nSummary: ${m.summary}\nRead Score: ${m.scores.overall}.\nAction items:\n${ai}`;
+      let block = `### ${m.title} - ${fmtDateShort(m.date)} (${m.source})\nSummary: ${m.summary}\nRead Score: ${m.scores.overall}.\nAction items:\n${ai}`;
       if (top.includes(m.id)) block += `\nTranscript:\n` + m.transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n").slice(0, 2200);
       return block;
     }).join("\n\n");
@@ -3362,7 +3366,7 @@ function ChatView({ meetings, onOpen, seed }) {
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm"><Calendar size={18} className="text-sky-500" /></div>
                   <div className="h-10 w-10 rounded-lg border border-dashed border-slate-200 bg-white" />
                   <div className="h-10 w-10 rounded-lg border border-dashed border-slate-200 bg-white" />
-                  <button onClick={() => toast("Add a source — coming soon")} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-50"><Plus size={18} /></button>
+                  <button onClick={() => toast("Add a source - coming soon")} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-50"><Plus size={18} /></button>
                 </div>
               </div>
             </div>
@@ -3407,7 +3411,7 @@ function ChatView({ meetings, onOpen, seed }) {
 const EXAMPLE_TRANSCRIPT =
 `[00:09] Nicolas Benech: Thanks for joining. What's the biggest manual task slowing your team down right now?
 [00:24] Jordan Vela: Honestly, support ticket triage. Every email comes in raw and someone has to read it, tag it, and route it.
-[00:48] Nicolas Benech: That's a perfect candidate. We can have AI classify each ticket, set priority, and auto-route — humans only touch the edge cases.
+[00:48] Nicolas Benech: That's a perfect candidate. We can have AI classify each ticket, set priority, and auto-route - humans only touch the edge cases.
 [01:25] Nicolas Benech: We'd train on your historical tickets and start in suggest-only mode until trust is high, then flip to auto.
 [02:05] Jordan Vela: I like the phased approach. I'll export a month of tickets by Friday. Let's get a proposal moving.`;
 
@@ -3430,7 +3434,7 @@ function UploadModal({ onClose, onSave }) {
       try { setTranscript(await f.text()); } catch { setErr("Couldn't read that file."); }
     } else {
       setTranscript("");
-      setErr("Audio/video transcription via upload is coming soon. For now, drop a transcript file (.txt/.vtt/.srt) or paste the transcript below — or use “Add to live meeting” to capture a live call.");
+      setErr("Audio/video transcription via upload is coming soon. For now, drop a transcript file (.txt/.vtt/.srt) or paste the transcript below - or use “Add to live meeting” to capture a live call.");
       setShowPaste(true);
     }
   };
@@ -3452,7 +3456,7 @@ function UploadModal({ onClose, onSave }) {
       const turns = parseTranscript(transcript);
       const meeting = mk({
         id: "m" + Date.now(), title: baseTitle, date: REF_TODAY, source: "Upload", folder: "Meetings",
-        timeStart: "—", timeEnd: "—", owner: "NB", readScore: parsed.scores?.overall ?? 80,
+        timeStart: "-", timeEnd: "-", owner: "NB", readScore: parsed.scores?.overall ?? 80,
         video: VIDEOS[(baseTitle.length) % VIDEOS.length],
         participantsCount: (parsed.participants || []).length || 2,
         summary: parsed.summary || "", topics: parsed.topics || [], keyQuestions: parsed.keyQuestions || [],
@@ -3475,7 +3479,7 @@ function UploadModal({ onClose, onSave }) {
         </div>
         <div className="mb-4 flex items-center gap-3 text-sm">
           <span className="text-slate-500">You have <b className="text-slate-700">200 minutes</b> remaining.</span>
-          <button onClick={() => toast("Get more credits — coming soon")} className="font-semibold text-indigo-600 hover:text-indigo-800">Get more credits</button>
+          <button onClick={() => toast("Get more credits - coming soon")} className="font-semibold text-indigo-600 hover:text-indigo-800">Get more credits</button>
           <button onClick={() => toast("Upload supports transcript files today; video transcription is coming soon")} className="font-semibold text-indigo-600 hover:text-indigo-800">Learn more</button>
         </div>
 
@@ -3492,7 +3496,7 @@ function UploadModal({ onClose, onSave }) {
           ) : (
             <div className="text-[15px] text-slate-600">Drop a file here, or <span className="font-semibold text-indigo-600">browse files</span></div>
           )}
-          <div className="mt-1 text-[12px] text-slate-400">MP4 or M4A, maximum 5GB each — or a transcript (.txt/.vtt/.srt)</div>
+          <div className="mt-1 text-[12px] text-slate-400">MP4 or M4A, maximum 5GB each - or a transcript (.txt/.vtt/.srt)</div>
         </div>
 
         {showPaste && (

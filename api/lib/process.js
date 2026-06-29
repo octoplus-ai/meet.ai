@@ -9,7 +9,16 @@ const APP_URL = "https://meet-ai-three-beige.vercel.app/";
 // Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
 // with a lower report_version are re-analyzed automatically (from their STORED transcript,
 // no Recall needed) so every past meeting reflects the latest improvements without re-recording.
-export const ANALYSIS_VERSION = 4;
+export const ANALYSIS_VERSION = 5;
+
+// Belt-and-suspenders: strip em/en dashes from every string in the AI output (user
+// preference: only normal hyphens). Applied to the analysis before it's persisted.
+function noDashes(v) {
+  if (typeof v === "string") return v.replace(/[—–]/g, "-");
+  if (Array.isArray(v)) return v.map(noDashes);
+  if (v && typeof v === "object") { const o = {}; for (const k in v) o[k] = noDashes(v[k]); return o; }
+  return v;
+}
 
 // Rich analysis prompt — mirrors Read.ai's report surface.
 export async function analyzeTranscript(text, title, participantNames) {
@@ -32,7 +41,8 @@ export async function analyzeTranscript(text, title, participantNames) {
     "Infer speaker names/roles from the transcript. If the transcript is very short or empty, still return the object with best-effort/empty values and low scores. Keep every string concise.\n\n" +
     "LANGUAGE — CRITICAL: First detect the dominant language actually spoken in the transcript (it can be ANY language). Write EVERY human-readable text value (summary, topics, keyQuestions q & a, actionItems owner/task/due, nextSteps, chapters title/summary, highlights, coaching strengths/improvements/tips, participants role) in THAT SAME language as the meeting. Examples: a Portuguese meeting → the whole report in Portuguese; English → English; Spanish → Spanish; French → French; etc. NEVER translate the content to another language — always match the meeting. " +
     "EXCEPTION — keep these machine-read classification values EXACTLY in English regardless of the meeting language: every \"sentiment\" and the \"sentimentLabel\" must be exactly one of Positive | Neutral | Negative. The JSON keys themselves stay exactly as specified above (in English).\n\n" +
-    "TRANSCRIPTION ERRORS: the speech-to-text may mis-hear well-known proper nouns, product names, brands and technical terms (e.g. it may write \"CLOCOD\" for \"Claude Code\", \"Versel\" for \"Vercel\", \"Superbase\" for \"Supabase\", \"chat gpt\" for \"ChatGPT\", \"get hub\" for \"GitHub\"). When the surrounding context makes the intended well-known term obvious, use the CORRECT term in your analysis. Be conservative: only fix clear mishearings of widely-known terms where context strongly supports it; if you are unsure, keep the original. Do NOT alter legitimate but uncommon names, company names, or people's names just because they are unfamiliar.";
+    "TRANSCRIPTION ERRORS: the speech-to-text may mis-hear well-known proper nouns, product names, brands and technical terms (e.g. it may write \"CLOCOD\" for \"Claude Code\", \"Versel\" for \"Vercel\", \"Superbase\" for \"Supabase\", \"chat gpt\" for \"ChatGPT\", \"get hub\" for \"GitHub\"). When the surrounding context makes the intended well-known term obvious, use the CORRECT term in your analysis. Be conservative: only fix clear mishearings of widely-known terms where context strongly supports it; if you are unsure, keep the original. Do NOT alter legitimate but uncommon names, company names, or people's names just because they are unfamiliar.\n\n" +
+    "STYLE: NEVER use em dashes (—) or en dashes (–) anywhere in the output. Use a normal hyphen (-) or rewrite the sentence instead.";
   const known = participantNames && participantNames.length ? `Known participants: ${participantNames.join(", ")}.\n\n` : "";
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -53,8 +63,8 @@ export async function analyzeTranscript(text, title, participantNames) {
   out = out.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
   const a = out.indexOf("{"), b = out.lastIndexOf("}");
   if (a >= 0 && b >= 0) out = out.slice(a, b + 1);
-  try { return JSON.parse(out); } catch (e) {
-    console.error("analyzeTranscript: JSON parse failed (", String(e.message || e), ") — first 200 chars:", out.slice(0, 200));
+  try { return noDashes(JSON.parse(out)); } catch (e) {
+    console.error("analyzeTranscript: JSON parse failed (", String(e.message || e), ") - first 200 chars:", out.slice(0, 200));
     return { summary: "", topics: [], keyQuestions: [], actionItems: [], chapters: [], highlights: [], participants: [], coaching: {}, scores: {}, sentimentLabel: "Neutral", sentimentTimeline: [] };
   }
 }
