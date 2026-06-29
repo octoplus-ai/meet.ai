@@ -2717,40 +2717,54 @@ const MARKER_STYLE = {
 };
 
 // Custom video player with a marker timeline (chapters / questions / action items /
-// highlights as colored dots - hover to preview, click to jump) AND smart playback modes
-// on hover: Recording (full), Trailer (<1m teaser) and Highlights (~2m reel), like Read.ai.
-function MeetingVideo({ videoRef, src, coverAt, markers }) {
+// highlights as colored dots) AND smart playback modes on hover, like Read.ai:
+//  - Recording: the full video.
+//  - Highlights: the SAME video (dots visible) but plays only the highlight scenes.
+//  - Trailer: a clean 5-6 scene teaser of the most important moments, with fade
+//    transitions and a single continuous progress line (no dots) - looks like one video.
+// Scenes snap to transcript turn boundaries so messages are never cut mid-sentence.
+function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [hover, setHover] = useState(null);
   const [hovering, setHovering] = useState(false);
   const [mode, setMode] = useState(null);
+  const [fading, setFading] = useState(false);
   const barRef = useRef(null), wrapRef = useRef(null);
-  const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null);
+  const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null), transRef = useRef(false);
 
   const uniqAts = [...new Set((markers || []).map((m) => m.at).filter((a) => a != null && a >= 0).map((s) => Math.round(s)))].sort((a, b) => a - b);
+  const tns = (turns || []).filter((t) => t && t.at != null).sort((a, b) => a.at - b.at);
 
-  // Build the segment list (start/end seconds) for a smart-playback mode. Does NOT depend
-  // on the `dur` STATE (which can lag, or be Infinity for a streamed/proxied video) - the
-  // live total is passed in; segments come straight from the marker timestamps.
+  // Snap an anchor to natural boundaries: start at the turn it falls in, end at a later
+  // turn boundary so the spoken message finishes (never cut mid-sentence). Min ~6s.
+  const snapScene = (anchor, cap) => {
+    const minLen = 6;
+    if (!tns.length) { const st = Math.max(0, anchor); return { start: st, end: cap ? Math.min(cap, st + 9) : st + 9 }; }
+    let i = 0; for (let k = 0; k < tns.length; k++) { if (tns[k].at <= anchor) i = k; else break; }
+    const start = tns[i].at;
+    let j = i, end = tns[j + 1] ? tns[j + 1].at : (cap || start + minLen);
+    while (end - start < minLen && j + 1 < tns.length) { j++; end = tns[j + 1] ? tns[j + 1].at : (cap || start + minLen); }
+    if (cap) end = Math.min(end, cap);
+    if (end <= start) end = cap ? Math.min(cap, start + minLen) : start + minLen;
+    return { start, end };
+  };
+  const mergeScenes = (scs) => { scs.sort((a, b) => a.start - b.start); const out = []; for (const s of scs) { const last = out[out.length - 1]; if (last && s.start <= last.end + 0.5) last.end = Math.max(last.end, s.end); else out.push({ ...s }); } return out; };
+
   const buildSegments = (kind, total) => {
-    const cap = total && isFinite(total) && total > 0 ? total : Infinity;
-    let ats = uniqAts.filter((s) => s < cap - 0.5);
-    // Sparse/degenerate markers (very short meeting, or the AI clustered timestamps) →
-    // sample points evenly so the montage still traverses the whole meeting.
-    if (cap !== Infinity && ats.length < 3) {
-      const want = kind === "trailer" ? 6 : 9;
-      const extra = Array.from({ length: want }, (_, i) => Math.round((cap * (i + 0.6)) / (want + 0.2)));
-      ats = [...new Set([...ats, ...extra])].filter((s) => s < cap - 0.5).sort((a, b) => a - b);
+    const cap = total && isFinite(total) && total > 0 ? total : 0;
+    const hiAts = [...new Set((markers || []).filter((m) => m.type === "highlight" && m.at != null).map((m) => Math.round(m.at)))].filter((s) => !cap || s < cap - 0.5).sort((a, b) => a - b);
+    if (kind === "highlights") {
+      const ats = hiAts.length ? hiAts : uniqAts.filter((s) => !cap || s < cap - 0.5);
+      if (!ats.length) return [];
+      return mergeScenes(ats.map((a) => snapScene(a, cap)));
     }
-    if (!ats.length) return [];
-    if (kind === "trailer") {
-      const pick = ats.length <= 7 ? ats : Array.from({ length: 7 }, (_, i) => ats[Math.floor((i * ats.length) / 7)]);
-      return pick.map((s) => ({ start: s, end: Math.min(cap, s + 5) }));
-    }
-    const per = Math.max(8, Math.min(14, Math.floor(120 / ats.length))); // highlights ≈ 2 min total
-    return ats.map((s) => ({ start: s, end: Math.min(cap, s + per) }));
+    // trailer: 5-6 high-engagement scenes (prefer highlights), spread across the meeting.
+    let srcA = hiAts.length >= 3 ? hiAts : uniqAts.filter((s) => !cap || s < cap - 0.5);
+    if (srcA.length < 3 && cap) { const want = 6; const extra = Array.from({ length: want }, (_, i) => Math.round((cap * (i + 0.6)) / (want + 0.2))); srcA = [...new Set([...srcA, ...extra])].filter((s) => s < cap - 0.5).sort((a, b) => a - b); }
+    const anchors = srcA.length <= 6 ? srcA : Array.from({ length: 6 }, (_, i) => srcA[Math.floor((i * srcA.length) / 6)]);
+    return mergeScenes(anchors.map((a) => snapScene(a, cap))).slice(0, 6);
   };
   const segTotal = (segs) => segs.reduce((a, s) => a + (s.end - s.start), 0);
   const mins = (s) => (!s || s < 60 ? "<1m" : Math.round(s / 60) + "m");
@@ -2760,22 +2774,32 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
     const total = isFinite(v.duration) && v.duration > 0 ? v.duration : (dur || 0);
     const segs = kind === "full" ? [] : buildSegments(kind, total);
     if (kind !== "full" && !segs.length) kind = "full";
-    segsRef.current = segs; segIdxRef.current = 0; modeRef.current = kind; setMode(kind);
+    segsRef.current = segs; segIdxRef.current = 0; modeRef.current = kind; transRef.current = false; setFading(false); setMode(kind);
     try { v.currentTime = segs.length ? segs[0].start : 0; } catch (e) {}
     const p = v.play(); if (p && p.catch) p.catch(() => {});
   };
-  const clearMode = () => { modeRef.current = null; segsRef.current = []; setMode(null); };
+  const clearMode = () => { modeRef.current = null; segsRef.current = []; transRef.current = false; setFading(false); setMode(null); };
+
+  // Advance to the next scene. Trailer fades out/in; Highlights jumps instantly.
+  const advance = (v) => {
+    transRef.current = true;
+    const fade = modeRef.current === "trailer";
+    const doSeek = () => {
+      const segs = segsRef.current, next = segIdxRef.current + 1;
+      if (next >= segs.length) { v.pause(); clearMode(); return; }
+      segIdxRef.current = next; try { v.currentTime = segs[next].start; } catch (e) {}
+      const p = v.play(); if (p && p.catch) p.catch(() => {});
+      if (fade) setTimeout(() => { setFading(false); transRef.current = false; }, 160);
+      else transRef.current = false;
+    };
+    if (fade) { setFading(true); setTimeout(doSeek, 300); } else doSeek();
+  };
 
   const onTime = (e) => {
     const v = e.currentTarget; setCur(v.currentTime);
-    const segs = segsRef.current;
-    if ((modeRef.current === "highlights" || modeRef.current === "trailer") && segs.length) {
-      const seg = segs[segIdxRef.current];
-      if (seg && v.currentTime >= seg.end - 0.05) {
-        const next = segIdxRef.current + 1;
-        if (next >= segs.length) { v.pause(); clearMode(); }
-        else { segIdxRef.current = next; try { v.currentTime = segs[next].start; } catch (er) {} const p = v.play(); if (p && p.catch) p.catch(() => {}); }
-      }
+    if ((modeRef.current === "highlights" || modeRef.current === "trailer") && segsRef.current.length && !transRef.current) {
+      const seg = segsRef.current[segIdxRef.current];
+      if (seg && v.currentTime >= seg.end - 0.08) advance(v);
     }
   };
 
@@ -2786,18 +2810,31 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
 
   const MENU = [
     { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
-    { k: "trailer", label: "Trailer", sub: "<1m" },
+    { k: "trailer", label: "Trailer", sub: dur ? mins(segTotal(buildSegments("trailer", dur))) : "<1m" },
     { k: "highlights", label: "Highlights", sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "-" },
   ];
+
+  // Trailer plays as ONE continuous clip: hide the dots and show montage progress/time.
+  const isTrailer = mode === "trailer";
+  let barPct, tLeft, tRight;
+  if (isTrailer && segsRef.current.length) {
+    const segs = segsRef.current, i = Math.min(segIdxRef.current, segs.length - 1);
+    const tot = segTotal(segs) || 1;
+    const done = segs.slice(0, i).reduce((a, s) => a + (s.end - s.start), 0);
+    const within = Math.min(Math.max(cur - segs[i].start, 0), segs[i].end - segs[i].start);
+    barPct = ((done + within) / tot) * 100; tLeft = fmtClock(done + within); tRight = fmtClock(tot);
+  } else { barPct = dur ? (cur / dur) * 100 : 0; tLeft = fmtClock(cur); tRight = fmtClock(dur); }
 
   return (
     <div ref={wrapRef} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
       <video ref={videoRef} src={src + "#t=" + (coverAt || 8)} preload="metadata" playsInline onClick={toggle}
         onLoadedMetadata={setD} onDurationChange={setD} onTimeUpdate={onTime}
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} className="aspect-video w-full bg-black" />
+      {/* Fade-to-black overlay for seamless trailer scene transitions. */}
+      <div className="pointer-events-none absolute inset-0 z-20 bg-black transition-opacity duration-300" style={{ opacity: fading ? 1 : 0 }} />
       {/* Hover menu: smart playback modes (only when paused so it doesn't block viewing). */}
       {hovering && !playing && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2.5 bg-black/30">
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2.5 bg-black/30">
           {MENU.map((mi) => (
             <button key={mi.k} onClick={() => startMode(mi.k)}
               className={"flex w-60 items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-semibold backdrop-blur-sm transition " + (mi.primary ? "bg-indigo-600 text-white shadow-lg hover:bg-indigo-500" : "bg-white/15 text-white hover:bg-white/25")}>
@@ -2806,8 +2843,8 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
           ))}
         </div>
       )}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-10">
-        {hover && dur > 0 && (
+      <div className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-10">
+        {hover && dur > 0 && !isTrailer && (
           <div className="pointer-events-none absolute bottom-12 z-10 max-w-[260px] -translate-x-1/2 rounded-lg bg-slate-900/95 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg" style={{ left: `${(hover.at / dur) * 100}%` }}>
             <span className="font-semibold" style={{ color: MARKER_STYLE[hover.type].color }}>{MARKER_STYLE[hover.type].label}</span>
             <span className="text-white/85"> · {hover.label}</span>
@@ -2815,8 +2852,9 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
         )}
         <div ref={barRef} onClick={onBar} className="relative h-3 cursor-pointer">
           <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/30" />
-          <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-indigo-500" style={{ width: (dur ? (cur / dur) * 100 : 0) + "%" }} />
-          {dur > 0 && markers.map((mk, i) => (
+          <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-indigo-500" style={{ width: barPct + "%" }} />
+          {/* Markers (dots) shown everywhere EXCEPT the trailer (which is a clean single clip). */}
+          {!isTrailer && dur > 0 && markers.map((mk, i) => (
             <button key={i} onMouseEnter={() => setHover(mk)} onMouseLeave={() => setHover(null)}
               onClick={(e) => { e.stopPropagation(); clearMode(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
               className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 transition hover:scale-150"
@@ -2825,7 +2863,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
         </div>
         <div className="mt-1.5 flex items-center gap-3 text-white">
           <button onClick={toggle} className="hover:text-indigo-300">{playing ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}</button>
-          <span className="font-mono text-[12px] text-white/90">{fmtClock(cur)} / {fmtClock(dur)}</span>
+          <span className="font-mono text-[12px] text-white/90">{tLeft} / {tRight}</span>
           {mode && mode !== "full" && <span className="rounded bg-indigo-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
           <div className="flex-1" />
           <button onClick={fs} title="Fullscreen" className="hover:text-indigo-300"><Maximize2 size={16} /></button>
@@ -3014,7 +3052,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-violet-50 text-center text-sm text-slate-500">
