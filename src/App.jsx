@@ -903,7 +903,9 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const [fSource, setFSource] = useState("all");
   const [fFolder, setFFolder] = useState("all");
 
-  const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing", "error"];
+  // "error" is intentionally excluded: a failed capture never shows anywhere —
+  // it's either a real report (recorded) or nothing at all.
+  const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing"];
   const sourceOpts = useMemo(() => [{ value: "all", label: "All sources" }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
   const folderOpts = useMemo(() => [{ value: "all", label: "All folders" }, ...[...new Set(meetings.map((m) => m.folder).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
   const typeOpts = [{ value: "all", label: "All types" }, { value: "completed", label: "Completed" }, { value: "processing", label: "In progress" }];
@@ -911,7 +913,10 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const ownerOpts = [{ value: "all", label: "All Reports" }, { value: "mine", label: "My reports" }, { value: "real", label: "Recorded by OctoMeet" }];
 
   const filtered = useMemo(
-    () => (tab === "incomplete" ? meetings.filter((m) => m.real && INCOMPLETE.includes(m.status)) : meetings)
+    () => (tab === "incomplete"
+      ? meetings.filter((m) => m.real && INCOMPLETE.includes(m.status))
+      // Reports tab: only finished reports (or demo rows). Never failed, never in-progress.
+      : meetings.filter((m) => !m.real || m.status === "done"))
       .filter((m) => !folderFilter || m.folder === folderFilter)
       .filter((m) => fOwner === "all" || (fOwner === "mine" ? m.owner === "NB" : m.real))
       .filter((m) => fSource === "all" || m.source === fSource)
