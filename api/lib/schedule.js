@@ -1,7 +1,7 @@
 // Schedules Recall bots for meetings. Shared by start-bot (manual), arm-all
 // (on app load) and the cron (autonomous) so auto-join behaves like Read.ai.
 import { sb } from "./supa.js";
-import { recallBase } from "./recall.js";
+import { recallBase, transcriptProvider, CAPTIONS_PROVIDER } from "./recall.js";
 import { listUpcomingEvents, annotateEvent } from "./google.js";
 import { OCTO_AVATAR_JPEG_B64 } from "./avatar.js";
 import { listCalendarEvents, scheduleBotForEvent, botIdFromEvent } from "./recall-calendar.js";
@@ -47,23 +47,25 @@ export async function syncRecallCalendar(userId, calendarId, { botName, sinceTs 
   return { events: events.length, scheduled };
 }
 
-async function createRecallBot(recallBody) {
-  // Try with the branded camera tile; if Recall rejects it, retry without so the
-  // join never breaks because of the avatar.
-  const withAvatar = { ...recallBody, automatic_video_output: { in_call_recording: { kind: "jpeg", b64_data: OCTO_AVATAR_JPEG_B64 } } };
-  let r = await fetch(`${RECALL_BASE}/api/v1/bot/`, {
+async function postBot(body) {
+  const r = await fetch(`${RECALL_BASE}/api/v1/bot/`, {
     method: "POST",
     headers: { Authorization: `Token ${process.env.RECALL_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(withAvatar),
-  });
-  if (r.ok) return { r, bot: await r.json() };
-  // Fallback without avatar.
-  r = await fetch(`${RECALL_BASE}/api/v1/bot/`, {
-    method: "POST",
-    headers: { Authorization: `Token ${process.env.RECALL_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(recallBody),
+    body: JSON.stringify(body),
   });
   return { r, bot: await r.json() };
+}
+
+async function createRecallBot(recallBody) {
+  // 1) Branded camera tile. 2) If rejected, drop the avatar. 3) Last resort, fall back
+  // to meeting_captions so a transcript-provider config issue can NEVER break scheduling.
+  const withAvatar = { ...recallBody, automatic_video_output: { in_call_recording: { kind: "jpeg", b64_data: OCTO_AVATAR_JPEG_B64 } } };
+  let res = await postBot(withAvatar);
+  if (res.r.ok) return res;
+  res = await postBot(recallBody);
+  if (res.r.ok) return res;
+  const safe = { ...recallBody, recording_config: { transcript: { provider: CAPTIONS_PROVIDER } } };
+  return await postBot(safe);
 }
 
 // Create a Recall bot (optionally scheduled via join_at) + a meetings row.
@@ -85,7 +87,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
   const recallBody = {
     meeting_url: meetingUrl,
     bot_name: botName || "OctoMeet AI",
-    recording_config: { transcript: { provider: { meeting_captions: {} } } },
+    recording_config: { transcript: { provider: transcriptProvider() } },
   };
   if (scheduled) recallBody.join_at = joinDate.toISOString();
 

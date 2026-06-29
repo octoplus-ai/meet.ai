@@ -124,6 +124,16 @@ function extractJSON(text) {
 }
 
 /* ------------------------- transcript parsing ---------------------- */
+// Does the text before a colon look like a speaker label (a name or "Speaker 1")?
+// Accepts digits ("Speaker 1"), long/multi-part names, "(External)" tags — but rejects
+// sentence colons ("the ratio is 3:1", "Note: ...") so transcript lines parse correctly.
+function looksLikeSpeaker(s) {
+  if (!s || s.length > 48) return false;
+  if (/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'.\-]* ?\d{1,3}$/.test(s)) return true;            // "Speaker 1", "Guest2"
+  if (/^[A-Za-zÀ-ÿ'.\-]+(?:[ ][A-Za-zÀ-ÿ'.()\-]+){0,6}$/.test(s)) return true;  // real names, incl. long/multi-part
+  return false;
+}
+
 function parseTranscript(raw) {
   const lines = (raw || "").split("\n").map((l) => l.trim()).filter(Boolean);
   const turns = [];
@@ -131,8 +141,18 @@ function parseTranscript(raw) {
     const tm = line.match(/^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*(.*)$/);
     let t = "", rest = line;
     if (tm) { t = tm[1]; rest = tm[2]; }
-    const sm = rest.match(/^([A-Za-zÀ-ÿ'.\- ]{1,32}):\s*(.+)$/);
-    if (sm) turns.push({ t, speaker: sm[1].trim(), text: sm[2].trim() });
+    // Anchor on the FIRST colon and validate the left side as a speaker label. This
+    // handles "Speaker 1:" (Recall's fallback for unresolved guests) and long names,
+    // which the old fixed-width letters-only regex silently dropped (collapsing the
+    // whole transcript into one turn).
+    const ci = rest.indexOf(":");
+    let speaker = null, body = null;
+    if (ci > 0) {
+      const left = rest.slice(0, ci).trim();
+      const right = rest.slice(ci + 1).trim();
+      if (right && looksLikeSpeaker(left)) { speaker = left; body = right; }
+    }
+    if (speaker) turns.push({ t, speaker, text: body });
     else if (turns.length) turns[turns.length - 1].text += " " + rest;
     else turns.push({ t, speaker: "Speaker", text: rest });
   }
@@ -358,27 +378,39 @@ function adaptReal(m) {
   const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
   const sc = r.scores || {};
   const done = m.status === "done";
-  const overall = r.read_score || sc.overall || 0;
+  const engagement = sc.engagement || 0, sentiment = sc.sentiment || 0, clarity = sc.clarity || 0;
+  let overall = r.read_score || sc.overall || 0;
   const start = m.start_time || m.created_at;
   const richParts = (Array.isArray(r.participants) && r.participants.length)
     ? r.participants
     : (Array.isArray(m.participants) ? m.participants.map((n) => ({ name: typeof n === "string" ? n : (n && n.name), talkPct: 0, role: "", sentiment: "Neutral" })) : []);
   const kq = (r.key_questions || []).map((k) => (typeof k === "string" ? { q: k, a: "" } : { q: k.q || "", a: k.a || "" }));
   let balance = sc.balance || 0;
+  // Only derive balance from talk-time when participation data is real (shares sum ~100),
+  // so we never show a perfect "100" when there's no talk-time data at all.
   if (!balance && richParts.length > 1) {
     const pcts = richParts.map((p) => p.talkPct || 0);
-    const avg = pcts.reduce((a, b) => a + b, 0) / pcts.length;
-    const dev = Math.sqrt(pcts.reduce((a, b) => a + (b - avg) ** 2, 0) / pcts.length);
-    balance = Math.max(0, Math.round(100 - dev * 1.5));
+    const sum = pcts.reduce((a, b) => a + b, 0);
+    if (sum >= 90 && sum <= 110) {
+      const avg = sum / pcts.length;
+      const dev = Math.sqrt(pcts.reduce((a, b) => a + (b - avg) ** 2, 0) / pcts.length);
+      balance = Math.max(0, Math.round(100 - dev * 1.5));
+    }
+  }
+  // If the model returned no Read Score but other signals exist, derive one from them
+  // so a real, transcribed meeting never shows a stark red 0.
+  if (!overall) {
+    const sig = [engagement, sentiment, balance, clarity].filter((n) => n > 0);
+    if (sig.length) overall = Math.round(sig.reduce((a, b) => a + b, 0) / sig.length);
   }
   return {
     id: m.id, title: m.title || "Meeting", source: m.source || "Recall",
     date: String(start || REF_TODAY).slice(0, 10),
     timeStart: hhmm(start), timeEnd: hhmm(m.end_time), durationMin: m.duration_min || 0,
     folder: "Meetings", folderLocked: false, owner: "NB", participantsCount: richParts.length,
-    scores: { overall, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance, clarity: sc.clarity || 0 },
+    scores: { overall, engagement, sentiment, balance, clarity, charisma: sc.charisma || 0 },
     sentimentLabel: r.sentiment_label || "Neutral",
-    sentimentTimeline: (Array.isArray(r.sentiment_timeline) && r.sentiment_timeline.length) ? r.sentiment_timeline : [0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.7, 0.7],
+    sentimentTimeline: (Array.isArray(r.sentiment_timeline) && r.sentiment_timeline.length) ? r.sentiment_timeline : [],
     summary: r.summary || (done ? "" : statusSummary(m.status)),
     topics: r.topics || [],
     keyQuestions: kq.map((k) => k.q),
@@ -388,7 +420,7 @@ function adaptReal(m) {
     highlights: r.highlights || [],
     coaching: r.coaching || null,
     nextSteps: r.next_steps || [],
-    participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
+    participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
     video: (done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null,
     real: true, status: m.status, error: m.error || null, calendarEventId: m.calendar_event_id || null,
@@ -476,17 +508,18 @@ function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge 
 }
 
 function ScoreChip({ value }) {
+  const has = Number.isFinite(value) && value > 0;
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5">
       <span className="relative flex h-3.5 w-3.5 items-center justify-center">
         <svg width="14" height="14" viewBox="0 0 14 14">
           <circle cx="7" cy="7" r="6" fill="none" stroke="#E2E8F0" strokeWidth="2" />
-          <circle cx="7" cy="7" r="6" fill="none" stroke={scoreColor(value)} strokeWidth="2"
+          {has && <circle cx="7" cy="7" r="6" fill="none" stroke={scoreColor(value)} strokeWidth="2"
             strokeDasharray={2 * Math.PI * 6} strokeDashoffset={(1 - value / 100) * 2 * Math.PI * 6}
-            strokeLinecap="round" transform="rotate(-90 7 7)" />
+            strokeLinecap="round" transform="rotate(-90 7 7)" />}
         </svg>
       </span>
-      <span className="text-[11px] font-semibold text-slate-600">{value}</span>
+      <span className="text-[11px] font-semibold text-slate-600">{has ? value : "—"}</span>
     </span>
   );
 }
@@ -521,15 +554,17 @@ function TalkRibbon({ participants }) {
 }
 
 function ScorePill({ label, value }) {
+  const has = Number.isFinite(value) && value > 0;
+  const col = has ? scoreColor(value) : "#CBD5E1";
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
       <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
       <div className="mt-1 flex items-end gap-1.5">
-        <span className="text-xl font-bold" style={{ color: scoreColor(value) }}>{value}</span>
+        <span className="text-xl font-bold" style={{ color: col }}>{has ? value : "—"}</span>
         <span className="mb-0.5 text-[10px] text-slate-300">/100</span>
       </div>
       <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full" style={{ width: value + "%", background: scoreColor(value) }} />
+        <div className="h-full rounded-full" style={{ width: (has ? value : 0) + "%", background: col }} />
       </div>
     </div>
   );
@@ -2520,11 +2555,17 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   // Deterministic coaching metrics from the real transcript.
   const transcriptText = meeting.transcript.map((t) => t.text).join(" ");
   const totalWords = transcriptText.split(/\s+/).filter(Boolean).length;
-  const fillerCount = (transcriptText.match(/\b(um+|uh+|er+|like|you know|sort of|kind of|basically|actually|literally|i mean)\b/gi) || []).length;
+  // Only genuine disfluencies (dropped ambiguous content words like "like/actually").
+  const fillerCount = (transcriptText.match(/\b(um+|uh+|er+|mm+|hmm+|you know|i mean)\b/gi) || []).length;
   const fillerPct = totalWords ? Math.round((fillerCount / totalWords) * 1000) / 10 : 0;
-  const questionsAsked = (transcriptText.match(/\?/g) || []).length || meeting.keyQuestions.length;
+  // Count real questions: sentences ending in "?" OR starting with an interrogative word
+  // (works even when ASR omits "?"). No silent fallback to keyQuestions.
+  const qLead = /^(who|what|when|where|why|how|do|does|did|are|is|was|were|can|could|would|should|will|shall|may|might|have|has|had|am|quién|qué|cuándo|dónde|por qué|cómo|cuál|puede|podría)\b/i;
+  const questionsAsked = transcriptText
+    ? transcriptText.split(/(?<=[.?!])\s+|\n+/).filter((s) => /\?/.test(s) || qLead.test(s.trim())).length
+    : 0;
   const wpmParts = meeting.participants.filter((p) => p.wpm);
-  const avgWpm = wpmParts.length ? Math.round(wpmParts.reduce((s, p) => s + p.wpm, 0) / wpmParts.length) : (140 + (meeting.scores.overall % 30));
+  const avgWpm = wpmParts.length ? Math.round(wpmParts.reduce((s, p) => s + p.wpm, 0) / wpmParts.length) : null;
 
   const TABS = [
     { k: "notes", label: "Notes", icon: FileText },
@@ -2593,15 +2634,18 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
         )}
 
         <div className="mb-5 grid grid-cols-3 gap-3">
-          {[{ l: "Read Score", v: meeting.scores.overall }, { l: "Engagement", v: meeting.scores.engagement }, { l: "Sentiment", v: meeting.scores.sentiment }].map((s) => (
+          {[{ l: "Read Score", v: meeting.scores.overall }, { l: "Engagement", v: meeting.scores.engagement }, { l: "Sentiment", v: meeting.scores.sentiment }].map((s) => {
+            const has = Number.isFinite(s.v) && s.v > 0;
+            return (
             <div key={s.l} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.l}</div>
               <div className="mt-0.5 flex items-end gap-2">
-                <span className="text-2xl font-bold text-slate-900">{s.v}</span>
-                <span className="mb-1 text-[11px] font-semibold uppercase" style={{ color: scoreColor(s.v) }}>{s.v >= 80 ? "Good" : s.v >= 70 ? "Avg" : "Low"}</span>
+                <span className="text-2xl font-bold text-slate-900">{has ? s.v : "—"}</span>
+                {has && <span className="mb-1 text-[11px] font-semibold uppercase" style={{ color: scoreColor(s.v) }}>{s.v >= 80 ? "Good" : s.v >= 70 ? "Avg" : "Low"}</span>}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">
@@ -2616,7 +2660,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
 
         {tab === "notes" && (
           <div className="space-y-5">
-            <Card title="Summary" icon={Sparkles}><p className="text-sm leading-relaxed text-slate-600">{meeting.summary}</p></Card>
+            <Card title="Summary" icon={Sparkles}>{meeting.summary ? <p className="text-sm leading-relaxed text-slate-600">{meeting.summary}</p> : <p className="text-sm text-slate-400">No summary available for this meeting.</p>}</Card>
             <Card title="Action Items" icon={ListChecks}>
               <div className="space-y-2">
                 {meeting.actionItems.map((it, i) => (
@@ -2659,12 +2703,16 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             <Card title="Topics" icon={Hash}>
               <div className="flex flex-wrap gap-2">
                 {meeting.topics.map((t, i) => (<span key={i} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">{t}</span>))}
+                {!meeting.topics.length && <p className="text-sm text-slate-400">No topics detected.</p>}
               </div>
             </Card>
           </div>
         )}
 
         {tab === "transcript" && (
+          meeting.transcript.length === 0 ? (
+            <div className="py-16 text-center text-sm text-slate-400">{meeting.status && meeting.status !== "done" ? "Transcript is still being processed…" : "No transcript available for this meeting."}</div>
+          ) : (
           <div>
             <div className="relative mb-4">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
@@ -2684,9 +2732,10 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                   </div>
                 );
               })}
-              {!filteredTurns.length && <div className="py-10 text-center text-sm text-slate-400">No lines match “{q}”.</div>}
+              {!filteredTurns.length && q && <div className="py-10 text-center text-sm text-slate-400">No lines match “{q}”.</div>}
             </div>
           </div>
+          )
         )}
 
         {tab === "deepdive" && (
@@ -2712,16 +2761,18 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 <ScorePill label="Clarity" value={meeting.scores.clarity} />
               </div>
             </Card>
-            <Card title="Read Score over time" icon={Activity}>
+            <Card title="Sentiment over time" icon={Activity}>
+              {meeting.sentimentTimeline.length ? (
               <ResponsiveContainer width="100%" height={170}>
-                <AreaChart data={meeting.sentimentTimeline.map((v, i) => ({ i, v: Math.round(50 + v * 45) }))} margin={{ left: -20, right: 6, top: 6 }}>
+                <AreaChart data={meeting.sentimentTimeline.map((v, i) => ({ i, v }))} margin={{ left: -20, right: 6, top: 6 }}>
                   <defs><linearGradient id="gScore" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366F1" stopOpacity={0.35} /><stop offset="100%" stopColor="#6366F1" stopOpacity={0} /></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="i" hide /><YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#CBD5E1" }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="i" hide /><YAxis domain={[-1, 1]} tick={{ fontSize: 10, fill: "#CBD5E1" }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12 }} />
                   <Area type="monotone" dataKey="v" stroke="#6366F1" strokeWidth={2.5} fill="url(#gScore)" />
                 </AreaChart>
               </ResponsiveContainer>
+              ) : <p className="py-8 text-center text-sm text-slate-400">Not enough data for a sentiment timeline.</p>}
             </Card>
           </div>
         )}
@@ -2743,20 +2794,20 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             )}
             <Card title="Talking Pace" icon={Activity}>
               <div className="flex items-center gap-4">
-                <span className="text-3xl font-bold text-slate-900">{(meeting.participants && meeting.participants.find((p) => p.wpm) ? Math.round(meeting.participants.reduce((s, p) => s + (p.wpm || 0), 0) / meeting.participants.filter((p) => p.wpm).length) : 140 + (meeting.scores.overall % 30))}</span>
-                <span className="text-sm text-slate-400">wpm · recommended range 130–175</span>
+                <span className="text-3xl font-bold text-slate-900">{avgWpm != null ? avgWpm : "—"}</span>
+                <span className="text-sm text-slate-400">{avgWpm != null ? "wpm · recommended range 130–175" : "No pace data for this meeting"}</span>
               </div>
             </Card>
             <div className="grid gap-5 md:grid-cols-2">
               <Card title="Clarity" icon={Sparkles}>
                 <Metric label="Filler words" value={fillerPct + "%"} ok={fillerPct < 5} />
-                <Metric label="Talking pace" value={avgWpm + " wpm"} ok={avgWpm >= 130 && avgWpm <= 175} />
-                <Metric label="Clarity score" value={meeting.scores.clarity} ok={meeting.scores.clarity >= 80} />
+                <Metric label="Talking pace" value={avgWpm != null ? avgWpm + " wpm" : "—"} ok={avgWpm != null && avgWpm >= 130 && avgWpm <= 175} />
+                <Metric label="Clarity score" value={meeting.scores.clarity || "—"} ok={meeting.scores.clarity >= 80} />
               </Card>
               <Card title="Impact" icon={Target}>
-                <Metric label="Charisma" value={meeting.scores.engagement} ok={meeting.scores.engagement >= 80} />
-                <Metric label="Sentiment" value={meeting.scores.sentiment} ok={meeting.scores.sentiment >= 70} />
-                <Metric label="Questions asked" value={questionsAsked} ok />
+                <Metric label="Charisma" value={meeting.scores.charisma || "—"} ok={meeting.scores.charisma >= 80} />
+                <Metric label="Sentiment" value={meeting.scores.sentiment || "—"} ok={meeting.scores.sentiment >= 70} />
+                <Metric label="Questions asked" value={questionsAsked} ok={questionsAsked > 0} />
                 <Metric label="Talk-time balance" value={meeting.scores.balance} ok={meeting.scores.balance >= 60} />
               </Card>
             </div>

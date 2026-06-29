@@ -1,7 +1,7 @@
 // Recall.ai Calendar V2: connect a Google Calendar (via our own OAuth refresh token)
 // so Recall auto-syncs events and we schedule notetaker bots in real time —
 // works even when our app is closed (Read.ai-style).
-import { recallBase } from "./recall.js";
+import { recallBase, transcriptProvider, CAPTIONS_PROVIDER } from "./recall.js";
 import { OCTO_AVATAR_JPEG_B64 } from "./avatar.js";
 
 const BASE = recallBase();
@@ -50,21 +50,24 @@ export async function listCalendarEvents(calendarId, sinceTs) {
   return out;
 }
 
-// Schedule a notetaker bot for a calendar event (branded tile + meeting_captions).
-// Retries without the avatar if Recall rejects it, so scheduling never fails on the image.
+// Schedule a notetaker bot for a calendar event (branded tile + best multilingual ASR).
+// Falls back: no avatar → safe captions provider, so scheduling never fails on the image
+// or a transcript-provider config issue.
 export async function scheduleBotForEvent(eventId, { dedupKey, botName }) {
   const base = {
     deduplication_key: dedupKey,
     bot_config: {
       bot_name: botName || "OctoMeet AI",
-      recording_config: { transcript: { provider: { meeting_captions: {} } } },
+      recording_config: { transcript: { provider: transcriptProvider() } },
     },
   };
   const withAvatar = JSON.parse(JSON.stringify(base));
   withAvatar.bot_config.automatic_video_output = { in_call_recording: { kind: "jpeg", b64_data: OCTO_AVATAR_JPEG_B64 } };
+  const post = (body) => fetch(`${BASE}/api/v2/calendar-events/${eventId}/bot/`, { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
 
-  let r = await fetch(`${BASE}/api/v2/calendar-events/${eventId}/bot/`, { method: "POST", headers: authHeaders(), body: JSON.stringify(withAvatar) });
-  if (!r.ok) r = await fetch(`${BASE}/api/v2/calendar-events/${eventId}/bot/`, { method: "POST", headers: authHeaders(), body: JSON.stringify(base) });
+  let r = await post(withAvatar);
+  if (!r.ok) r = await post(base);
+  if (!r.ok) { const safe = JSON.parse(JSON.stringify(base)); safe.bot_config.recording_config = { transcript: { provider: CAPTIONS_PROVIDER } }; r = await post(safe); }
   const data = await r.json();
   return { ok: r.ok, status: r.status, data };
 }

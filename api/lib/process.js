@@ -20,7 +20,7 @@ export async function analyzeTranscript(text, title, participantNames) {
   "highlights": string[] (3-6 standout quotes or moments, short),
   "participants": [{"name": string, "role": string, "sentiment": "Positive"|"Neutral"|"Negative"}] (one per distinct speaker),
   "coaching": {"strengths": string[] (2-4), "improvements": string[] (2-4), "tips": string[] (2-4)},
-  "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int} (0-100; overall = meeting quality/Read Score, balance = how evenly people talked, clarity = how clear the communication was),
+  "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int, "charisma": int} (0-100; overall = meeting quality/Read Score, balance = how evenly people talked, clarity = how clear the communication was, charisma = speaker presence/persuasiveness),
   "sentimentLabel": "Positive"|"Neutral"|"Negative",
   "sentimentTimeline": number[] (8 values from -1 to 1, sentiment across the meeting)
 }\n` +
@@ -48,7 +48,10 @@ export async function analyzeTranscript(text, title, participantNames) {
 
 // Merge Claude's per-speaker sentiment with deterministic talk-time stats from the transcript.
 function mergeParticipants(stats, aiParts) {
-  const totalSec = stats.reduce((s, p) => s + (p.talkSec || 0), 0) || 1;
+  const totalSec = stats.reduce((s, p) => s + (p.talkSec || 0), 0);
+  const totalWords = stats.reduce((s, p) => s + (p.words || 0), 0);
+  const haveTime = totalSec > 0;            // word-level timestamps present?
+  const denomSec = totalSec || 1;
   const byName = {};
   (aiParts || []).forEach((p) => { if (p && p.name) byName[p.name.toLowerCase()] = p; });
   return stats.map((s) => {
@@ -57,7 +60,9 @@ function mergeParticipants(stats, aiParts) {
     return {
       name: s.name,
       role: ai.role || (s.isHost ? "Host" : "Participant"),
-      talkPct: Math.round((s.talkSec / totalSec) * 100),
+      // Prefer real talk-seconds; when word timestamps are missing, fall back to word share
+      // so Participation/Balance reflect reality instead of collapsing to 0%.
+      talkPct: haveTime ? Math.round((s.talkSec / denomSec) * 100) : (totalWords ? Math.round((s.words / totalWords) * 100) : 0),
       wpm: talkMin > 0.1 ? Math.round(s.words / talkMin) : 0,
       sentiment: ai.sentiment || "Neutral",
       isHost: s.isHost,
@@ -104,7 +109,7 @@ export async function processMeeting(meeting, { force = false } = {}) {
     sentiment_timeline: ai.sentimentTimeline || [],
     sentiment_label: ai.sentimentLabel || "Neutral",
     transcript: tr.text,
-    scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0 },
+    scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
     read_score: sc.overall || 0,
   };
 
