@@ -6,6 +6,11 @@ import { annotateEvent } from "./google.js";
 
 const APP_URL = "https://meet-ai-three-beige.vercel.app/";
 
+// Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
+// with a lower report_version are re-analyzed automatically (from their STORED transcript,
+// no Recall needed) so every past meeting reflects the latest improvements without re-recording.
+export const ANALYSIS_VERSION = 4;
+
 // Rich analysis prompt — mirrors Read.ai's report surface.
 export async function analyzeTranscript(text, title, participantNames) {
   const sys =
@@ -119,6 +124,7 @@ export async function processMeeting(meeting, { force = false } = {}) {
     transcript: tr.text,
     scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
     read_score: sc.overall || 0,
+    report_version: ANALYSIS_VERSION,
   };
 
   // Upsert: replace existing report on force, else insert (unique meeting_id dedupes races).
@@ -142,4 +148,42 @@ export async function processMeeting(meeting, { force = false } = {}) {
   }
 
   return { ok: true, transcriptChars: tr.text.length, participants: participants.length };
+}
+
+// Re-run analysis on a meeting's ALREADY-STORED transcript (no Recall call) so older reports
+// pick up prompt/field improvements (timestamps, chapter points, charisma, language, term
+// fixes…). Preserves per-speaker talk-time; refreshes the AI fields + bumps report_version.
+export async function reanalyzeStored(meeting) {
+  const rows = await sb(`reports?meeting_id=eq.${meeting.id}&select=*`);
+  const rep = rows[0];
+  const text = rep && rep.transcript ? String(rep.transcript) : "";
+  if (!rep || text.trim().length < 40) {
+    if (rep) await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION } }); // bump so we don't loop
+    return { skipped: "no transcript" };
+  }
+  const names = Array.isArray(rep.participants) ? rep.participants.map((p) => p && p.name).filter(Boolean) : [];
+  const ai = await analyzeTranscript(text, meeting.title, names);
+  // If the analysis came back empty, keep the existing report but still bump the version
+  // so we don't re-try in a loop every poll.
+  if (!(ai.summary && ai.summary.trim())) {
+    await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION } });
+    return { skipped: "analysis empty" };
+  }
+  const sc = ai.scores || {};
+  const patch = {
+    summary: ai.summary || rep.summary || "",
+    topics: ai.topics || [], key_questions: ai.keyQuestions || [], action_items: ai.actionItems || [],
+    next_steps: ai.nextSteps || [], chapters: ai.chapters || [], highlights: ai.highlights || [],
+    coaching: ai.coaching || {}, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
+    scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
+    read_score: sc.overall || rep.read_score || 0,
+    report_version: ANALYSIS_VERSION,
+  };
+  // Keep existing per-speaker talk-time; refresh role/sentiment from the new analysis.
+  if (Array.isArray(rep.participants) && rep.participants.length) {
+    const aiP = {}; (ai.participants || []).forEach((p) => { if (p && p.name) aiP[p.name.toLowerCase()] = p; });
+    patch.participants = rep.participants.map((p) => { const x = aiP[(p.name || "").toLowerCase()] || {}; return { ...p, role: x.role || p.role, sentiment: x.sentiment || p.sentiment }; });
+  }
+  await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: patch });
+  return { ok: true, version: ANALYSIS_VERSION };
 }

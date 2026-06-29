@@ -639,6 +639,20 @@ export default function App() {
     } catch (e) { /* not connected */ }
   }, []);
 
+  // Retro-apply analysis improvements to ALL past meetings: re-analyze any report whose
+  // version is behind, from its stored transcript (no re-recording). Loops until caught up.
+  const catchUpStale = useCallback(async () => {
+    try {
+      for (let i = 0; i < 12; i++) {
+        const r = await fetch("/api/reprocess-stale", { method: "POST", cache: "no-store" });
+        if (!r.ok) break;
+        const d = await r.json();
+        if (d.updated > 0) loadReal();
+        if (!d.remaining) break;
+      }
+    } catch (e) { /* best-effort */ }
+  }, [loadReal]);
+
   useEffect(() => {
     (async () => {
       let m = await store.get("octomeet:meetings:v1", null);
@@ -650,7 +664,7 @@ export default function App() {
       try {
         const r = await fetch("/api/me", { cache: "no-store" });
         const d = await r.json();
-        if (d && d.user) { setUser(d.user); setAuthed(true); store.set("octomeet:authed", true); loadReal(); return; }
+        if (d && d.user) { setUser(d.user); setAuthed(true); store.set("octomeet:authed", true); loadReal(); catchUpStale(); return; }
       } catch (e) { /* backend not configured yet */ }
       setAuthed(localAuthed);
     })();

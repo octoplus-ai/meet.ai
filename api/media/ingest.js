@@ -3,7 +3,7 @@
 // the whole app (reports, detail, KPIs) works identically — just without a bot.
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
-import { analyzeTranscript } from "../lib/process.js";
+import { analyzeTranscript, ANALYSIS_VERSION } from "../lib/process.js";
 
 async function userId(req, body) {
   const auth = req.headers.authorization || "";
@@ -63,7 +63,7 @@ export default async function handler(req, res) {
         key_questions: ai.keyQuestions || [], topics: ai.topics || [], chapters: ai.chapters || [],
         highlights: ai.highlights || [], coaching: ai.coaching || {}, participants,
         sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
-        transcript: text, scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 }, read_score: sc.overall || 0,
+        transcript: text, scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 }, read_score: sc.overall || 0, report_version: ANALYSIS_VERSION,
       },
     });
     await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { status: "done", end_time: new Date().toISOString(), participants: participants.map((p) => p.name), duration_min: body.durationMin || meeting.duration_min || null } });
