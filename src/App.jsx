@@ -372,6 +372,15 @@ function statusSummary(status) {
     default: return "";
   }
 }
+// Detect the meeting platform from its URL so the preview badge shows the real medium
+// (Google Meet / Zoom / Teams) like Read.ai — not the generic OctoMeet icon.
+function platformFromUrl(url) {
+  if (!url) return null;
+  if (/meet\.google\.com/i.test(url)) return "Google Meet";
+  if (/zoom\.us|zoom\.com/i.test(url)) return "Zoom";
+  if (/teams\.(microsoft|live)\.com|teams\.microsoft/i.test(url)) return "Microsoft Teams";
+  return null;
+}
 // "mm:ss" / "h:mm:ss" → seconds (for seeking the video to a highlight's moment).
 function tsToSeconds(t) {
   if (typeof t !== "string" || !t.trim()) return null;
@@ -422,7 +431,7 @@ function adaptReal(m) {
   const firstHi = hl.find((h) => h.at != null);
   const coverAt = firstHi ? firstHi.at : (durSec ? Math.min(Math.round(durSec * 0.2), 600) : 12);
   return {
-    id: m.id, title: m.title || "Meeting", source: m.source || "Recall",
+    id: m.id, title: m.title || "Meeting", source: platformFromUrl(m.meeting_url) || m.source || "Google Meet",
     date: String(start || REF_TODAY).slice(0, 10),
     timeStart: hhmm(start), timeEnd: hhmm(m.end_time), durationMin: m.duration_min || 0,
     folder: "Meetings", folderLocked: false, owner: "NB", participantsCount: richParts.length,
