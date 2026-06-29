@@ -24,7 +24,9 @@ export async function analyzeTranscript(text, title, participantNames) {
   "sentimentLabel": "Positive"|"Neutral"|"Negative",
   "sentimentTimeline": number[] (8 values from -1 to 1, sentiment across the meeting)
 }\n` +
-    "Infer speaker names/roles from the transcript. If the transcript is very short or empty, still return the object with best-effort/empty values and low scores. Keep every string concise.";
+    "Infer speaker names/roles from the transcript. If the transcript is very short or empty, still return the object with best-effort/empty values and low scores. Keep every string concise.\n\n" +
+    "LANGUAGE — CRITICAL: First detect the dominant language actually spoken in the transcript. Write EVERY human-readable text value (summary, topics, keyQuestions q & a, actionItems owner/task/due, nextSteps, chapters title/summary, highlights, coaching strengths/improvements/tips, participants role) in THAT SAME language as the meeting. If the meeting is in Spanish, the entire report must be in Spanish. NEVER translate the content to English. " +
+    "EXCEPTION — keep these machine-read classification values EXACTLY in English regardless of the meeting language: every \"sentiment\" and the \"sentimentLabel\" must be exactly one of Positive | Neutral | Negative. The JSON keys themselves stay exactly as specified above (in English).";
   const known = participantNames && participantNames.length ? `Known participants: ${participantNames.join(", ")}.\n\n` : "";
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
