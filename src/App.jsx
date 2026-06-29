@@ -1922,7 +1922,15 @@ function BrandIcon({ name, size = 20 }) {
       <svg {...s}><rect x="4.5" y="4.5" width="15" height="15" rx="2.5" fill="#fff" stroke="#DADCE0" /><path d="M4.5 7a2.5 2.5 0 0 1 2.5-2.5h1.5v15H7A2.5 2.5 0 0 1 4.5 17z" fill="#4285F4" opacity=".12" /><text x="12.2" y="15.6" textAnchor="middle" fontFamily="Arial" fontSize="8.5" fontWeight="700" fill="#4285F4">31</text></svg>
     );
     case "googleMeet": return (
-      <svg {...s}><path d="M13.5 12 18 8.6v6.8L13.5 12z" fill="#00AC47" /><path d="M3 8a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="#2684FC" /><path d="M13 9.3 18 8.6 16.8 6.2 13 7z" fill="#FFBA00" /><path d="M13 14.7 18 15.4l-1.2 2.4L13 17z" fill="#00832D" /><path d="M3 8a1 1 0 0 1 1-1h4l-2 5-3 1z" fill="#EA4335" opacity=".0" /></svg>
+      <svg width={size} height={size} viewBox="0 0 87 72" aria-hidden style={{ display: "block" }}>
+        <path fill="#00832d" d="M49.5 36l8.53 9.75 11.47 7.33 2-17.02L69.5 19.42 58 25.65z" />
+        <path fill="#0066da" d="M0 51.5V66c0 3.315 2.685 6 6 6h14.5l3-10.96-3-9.54-9.95-3z" />
+        <path fill="#e94235" d="M20.5 0L0 20.5l10.55 2.96 9.95-2.96 2.96-9.41z" />
+        <path fill="#2684fc" d="M20.5 20.5H0v31h20.5z" />
+        <path fill="#00ac47" d="M82.6 8.68L69.5 19.42v33.66l13.13 10.73c1.96 1.6 4.87.2 4.87-2.3V10.98c0-2.5-2.91-3.9-4.9-2.3z" />
+        <path fill="#00ac47" d="M49.5 36v15.5h-29V72h43c3.315 0 6-2.685 6-6V53.08z" />
+        <path fill="#ffba00" d="M63.5 0h-43v20.5h29V36l20-16.58V6c0-3.315-2.685-6-6-6z" />
+      </svg>
     );
     case "outlook": return (
       <svg {...s}><rect x="3" y="5" width="18" height="14" rx="2.5" fill="#0F6CBD" /><path d="M11 8h8v8h-8z" fill="#fff" opacity=".25" /><ellipse cx="8" cy="12" rx="3.2" ry="3.6" fill="#fff" /><ellipse cx="8" cy="12" rx="1.4" ry="1.7" fill="#0F6CBD" /></svg>
