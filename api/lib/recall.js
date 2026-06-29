@@ -4,19 +4,23 @@ const RECALL_BASE = process.env.RECALL_REGION_URL || "https://us-west-2.recall.a
 
 export function recallBase() { return RECALL_BASE; }
 
-// Single source of truth for the transcript engine.
-// Default: Recall's own multilingual engine (auto language detection, no extra key,
-// billed by Recall) — a big upgrade over Google Meet captions, works immediately.
-// Opt-in: Deepgram Nova-3 "multi" (best Spanish+English code-switching) once its API
-// key is saved in the Recall dashboard and RECALL_USE_DEEPGRAM=1 is set.
+// Single source of truth for the transcript engine (a BOT's recording_config only
+// accepts STREAMING providers — async providers like recallai_async are 400-rejected).
+// Default: Recall's own engine in ACCURACY mode with automatic per-meeting language
+// detection (language_code:"auto" + mode:"prioritize_accuracy") — transcribes each
+// meeting in whatever language is actually spoken (es/pt/zh/en/…), no extra key.
+// Opt-in: Deepgram Nova-3 "multi" (top code-switching) once its API key is saved in
+// the Recall dashboard and RECALL_USE_DEEPGRAM=1 is set.
 // Recall normalizes every provider into the same diarized schema, so getTranscript is unchanged.
 export function transcriptProvider() {
   if (process.env.RECALL_USE_DEEPGRAM === "1") {
-    return { deepgram_async: { model: "nova-3", language: "multi", mip_opt_out: true } };
+    return { deepgram_streaming: { model: "nova-3", language: "multi" } };
   }
-  return { recallai_async: { language_code: "auto" } };
+  return { recallai_streaming: { language_code: "auto", mode: "prioritize_accuracy" } };
 }
-export const CAPTIONS_PROVIDER = { meeting_captions: {} }; // safe last-resort fallback
+// Last-resort fallback ONLY if the chosen provider is rejected. NOTE: meeting_captions
+// defaults to the meeting's caption language (often English), so this is a true last resort.
+export const CAPTIONS_PROVIDER = { meeting_captions: {} };
 
 export async function getBot(botId) {
   const r = await fetch(`${RECALL_BASE}/api/v1/bot/${botId}/`, {
