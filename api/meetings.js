@@ -39,7 +39,8 @@ async function syncOne(m) {
     if (ended && hasRecording) {
       try { await processMeeting(m); } catch (e) { /* will retry next poll */ }
       const rep = await sb(`meetings?id=eq.${m.id}&select=status,reports(id)`);
-      const done = rep[0] && rep[0].reports && rep[0].reports.length > 0;
+      const repArr = rep[0] && rep[0].reports ? (Array.isArray(rep[0].reports) ? rep[0].reports : [rep[0].reports]) : [];
+      const done = repArr.length > 0;
       return { ...m, status: done ? "done" : "processing", reports: done ? [{}] : [] };
     }
     // Still in progress → reflect live status.
@@ -58,6 +59,9 @@ export default async function handler(req, res) {
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t || "")}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (!s.length) return res.status(401).json({ meetings: [], error: "not authenticated" });
     const m = await sb(`meetings?user_id=eq.${s[0].user_id}&select=*,reports(*)&order=created_at.desc`);
+    // PostgREST embeds `reports` as a single OBJECT (reports.meeting_id is unique → to-one),
+    // not an array. Normalize to an array so the client (m.reports[0]) and the checks below work.
+    for (const x of m) x.reports = x.reports ? (Array.isArray(x.reports) ? x.reports : [x.reports]) : [];
 
     const active = m.filter((x) => ACTIVE.has(x.status) && x.bot_id).slice(0, 8);
     if (active.length && process.env.RECALL_API_KEY) {
@@ -66,6 +70,7 @@ export default async function handler(req, res) {
       // Re-fetch rows that just finished so the client gets the fresh report payload.
       const changed = synced.filter((x) => x.status === "done");
       const fresh = changed.length ? await sb(`meetings?id=in.(${changed.map((x) => x.id).join(",")})&select=*,reports(*)`) : [];
+      for (const x of fresh) x.reports = x.reports ? (Array.isArray(x.reports) ? x.reports : [x.reports]) : [];
       const freshById = Object.fromEntries(fresh.map((x) => [x.id, x]));
       for (let i = 0; i < m.length; i++) {
         if (freshById[m[i].id]) m[i] = freshById[m[i].id];

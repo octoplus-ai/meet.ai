@@ -353,7 +353,9 @@ function statusSummary(status) {
   }
 }
 function adaptReal(m) {
-  const r = (m.reports && m.reports[0]) || {};
+  // PostgREST may embed reports as an array (to-many) or a single object (to-one,
+  // because reports.meeting_id is unique). Handle both so the report is never lost.
+  const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
   const sc = r.scores || {};
   const done = m.status === "done";
   const overall = r.read_score || sc.overall || 0;
@@ -454,12 +456,14 @@ function PlatformBadge({ source }) {
 
 function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true }) {
   const ref = useRef(null);
+  // Seek to a frame with content so the still preview isn't a black pre-roll frame.
+  const onMeta = () => { const v = ref.current; if (v) { try { v.currentTime = Math.min(3, (v.duration && isFinite(v.duration) ? v.duration : 8) * 0.15); } catch (e) {} } };
   const onEnter = () => { const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
-  const onLeave = () => { const v = ref.current; if (v) { try { v.pause(); } catch (e) {} } };
+  const onLeave = () => { const v = ref.current; if (v) { try { v.pause(); v.currentTime = Math.min(3, (v.duration && isFinite(v.duration) ? v.duration : 8) * 0.15); } catch (e) {} } };
   return (
     <div className={"relative shrink-0 overflow-hidden bg-slate-900 " + rounded} style={{ width: size, height: size }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
       {src
-        ? <video ref={ref} src={src} muted loop playsInline preload="metadata" className="h-full w-full object-cover" />
+        ? <video ref={ref} src={src} muted loop playsInline preload="metadata" onLoadedMetadata={onMeta} className="h-full w-full object-cover" />
         : <div className="h-full w-full bg-gradient-to-br from-indigo-400 to-violet-500" />}
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15">
         <span className="flex items-center justify-center rounded-full bg-black/45" style={{ width: size * 0.4, height: size * 0.4 }}>
