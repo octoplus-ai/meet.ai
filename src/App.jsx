@@ -372,6 +372,16 @@ function statusSummary(status) {
     default: return "";
   }
 }
+// "mm:ss" / "h:mm:ss" → seconds (for seeking the video to a highlight's moment).
+function tsToSeconds(t) {
+  if (typeof t !== "string" || !t.trim()) return null;
+  const p = t.trim().split(":").map((n) => parseInt(n, 10));
+  if (p.some((n) => Number.isNaN(n))) return null;
+  if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+  if (p.length === 2) return p[0] * 60 + p[1];
+  if (p.length === 1) return p[0];
+  return null;
+}
 function adaptReal(m) {
   // PostgREST may embed reports as an array (to-many) or a single object (to-one,
   // because reports.meeting_id is unique). Handle both so the report is never lost.
@@ -417,7 +427,9 @@ function adaptReal(m) {
     keyQA: kq,
     actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", done: false })),
     chapters: r.chapters || [],
-    highlights: r.highlights || [],
+    highlights: (r.highlights || []).map((h) => (typeof h === "string"
+      ? { text: h, t: "", at: null }
+      : { text: h.text || h.quote || "", t: h.t || "", at: tsToSeconds(h.t) })),
     coaching: r.coaching || null,
     nextSteps: r.next_steps || [],
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
@@ -486,16 +498,20 @@ function PlatformBadge({ source }) {
   );
 }
 
-function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true }) {
+function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true, at = null }) {
   const ref = useRef(null);
-  // Seek to a frame with content so the still preview isn't a black pre-roll frame.
-  const onMeta = () => { const v = ref.current; if (v) { try { v.currentTime = Math.min(3, (v.duration && isFinite(v.duration) ? v.duration : 8) * 0.15); } catch (e) {} } };
+  // Show the frame at `at` seconds (a highlight's moment) — or ~8s in to skip the
+  // black join intro. The media fragment "#t=" paints that frame reliably as the still;
+  // the onLoadedMetadata seek is a backup. Hover plays from the start.
+  const seekT = at != null && at >= 0 ? at : 8;
+  const posterSrc = src ? (src.includes("#") ? src : src + "#t=" + seekT) : null;
+  const seek = () => { const v = ref.current; if (v) { try { v.currentTime = seekT; } catch (e) {} } };
   const onEnter = () => { const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
-  const onLeave = () => { const v = ref.current; if (v) { try { v.pause(); v.currentTime = Math.min(3, (v.duration && isFinite(v.duration) ? v.duration : 8) * 0.15); } catch (e) {} } };
+  const onLeave = () => { const v = ref.current; if (v) { try { v.pause(); seek(); } catch (e) {} } };
   return (
     <div className={"relative shrink-0 overflow-hidden bg-slate-900 " + rounded} style={{ width: size, height: size }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      {src
-        ? <video ref={ref} src={src} muted loop playsInline preload="metadata" onLoadedMetadata={onMeta} className="h-full w-full object-cover" />
+      {posterSrc
+        ? <video ref={ref} src={posterSrc} muted loop playsInline preload="metadata" onLoadedMetadata={seek} className="h-full w-full object-cover" />
         : <div className="h-full w-full bg-gradient-to-br from-indigo-400 to-violet-500" />}
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15">
         <span className="flex items-center justify-center rounded-full bg-black/45" style={{ width: size * 0.4, height: size * 0.4 }}>
@@ -2835,10 +2851,13 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
           <div className="space-y-3">
             {(meeting.highlights || []).map((h, i) => (
               <div key={"h" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} />
+                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} at={h.at} />
                 <div className="flex-1">
-                  <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Highlight</span>
-                  <p className="mt-1 text-sm text-slate-700">{h}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Highlight</span>
+                    {h.t && <span className="font-mono text-[11px] text-slate-400">{h.t}</span>}
+                  </div>
+                  <p className="mt-1 text-sm text-slate-700">{h.text}</p>
                 </div>
               </div>
             ))}

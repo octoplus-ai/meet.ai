@@ -17,7 +17,7 @@ export async function analyzeTranscript(text, title, participantNames) {
   "actionItems": [{"owner": string, "task": string, "due": string}] (max 10; due "" if unknown),
   "nextSteps": string[] (2-6 concrete next steps / follow-ups agreed or implied),
   "chapters": [{"title": string, "summary": string}] (3-7 chronological chapters),
-  "highlights": string[] (3-6 standout quotes or moments, short),
+  "highlights": [{"text": string, "t": string}] (3-6 standout quotes/moments; t = approximate timestamp in the meeting when it happened, format "mm:ss" or "h:mm:ss"),
   "participants": [{"name": string, "role": string, "sentiment": "Positive"|"Neutral"|"Negative"}] (one per distinct speaker),
   "coaching": {"strengths": string[] (2-4), "improvements": string[] (2-4), "tips": string[] (2-4)},
   "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int, "charisma": int} (0-100; overall = meeting quality/Read Score, balance = how evenly people talked, clarity = how clear the communication was, charisma = speaker presence/persuasiveness),
