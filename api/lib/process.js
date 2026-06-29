@@ -33,17 +33,22 @@ export async function analyzeTranscript(text, title, participantNames) {
     headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 2500,
+      // Real meetings produce a large JSON report (topics, action items, chapters,
+      // timestamped highlights, coaching…). 2500 truncated it mid-JSON → parse failure →
+      // empty report. 8000 leaves ample headroom.
+      max_tokens: 8000,
       system: sys,
       messages: [{ role: "user", content: `Title: ${title}\n\n${known}Transcript:\n${(text || "(no speech captured)").slice(0, 60000)}` }],
     }),
   });
   const d = await r.json();
+  if (d && d.stop_reason === "max_tokens") console.warn("analyzeTranscript: response hit max_tokens — JSON may be truncated");
   let out = (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
   out = out.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
   const a = out.indexOf("{"), b = out.lastIndexOf("}");
   if (a >= 0 && b >= 0) out = out.slice(a, b + 1);
-  try { return JSON.parse(out); } catch {
+  try { return JSON.parse(out); } catch (e) {
+    console.error("analyzeTranscript: JSON parse failed (", String(e.message || e), ") — first 200 chars:", out.slice(0, 200));
     return { summary: "", topics: [], keyQuestions: [], actionItems: [], chapters: [], highlights: [], participants: [], coaching: {}, scores: {}, sentimentLabel: "Neutral", sentimentTimeline: [] };
   }
 }

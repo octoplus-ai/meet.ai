@@ -77,6 +77,21 @@ export default async function handler(req, res) {
         else if (byId[m[i].id]) m[i] = { ...m[i], status: byId[m[i].id].status, error: byId[m[i].id].error };
       }
     }
+
+    // Self-heal failed ANALYSIS: a meeting that is done and has a real transcript but an
+    // empty summary means the AI report failed (e.g. earlier truncation). Regenerate it
+    // with the current pipeline. Capped to keep the request fast; succeeds → stops retrying.
+    const broken = m.filter((x) => x.status === "done" && x.bot_id && x.reports[0]
+      && !((x.reports[0].summary || "").trim())
+      && ((x.reports[0].transcript || "").length > 50)).slice(0, 2);
+    if (broken.length && process.env.ANTHROPIC_API_KEY) {
+      for (const mm of broken) { try { await processMeeting(mm, { force: true }); } catch (e) { /* retry next poll */ } }
+      const ids = broken.map((x) => x.id).join(",");
+      const fixed = await sb(`meetings?id=in.(${ids})&select=*,reports(*)`);
+      for (const x of fixed) x.reports = x.reports ? (Array.isArray(x.reports) ? x.reports : [x.reports]) : [];
+      const fixedById = Object.fromEntries(fixed.map((x) => [x.id, x]));
+      for (let i = 0; i < m.length; i++) if (fixedById[m[i].id]) m[i] = fixedById[m[i].id];
+    }
     res.status(200).json({ meetings: m });
   } catch (e) {
     console.error("meetings error:", e && (e.message || e));

@@ -413,6 +413,14 @@ function adaptReal(m) {
     const sig = [engagement, sentiment, balance, clarity].filter((n) => n > 0);
     if (sig.length) overall = Math.round(sig.reduce((a, b) => a + b, 0) / sig.length);
   }
+  const hl = (r.highlights || []).map((h) => (typeof h === "string"
+    ? { text: h, t: "", at: null }
+    : { text: h.text || h.quote || "", t: h.t || "", at: tsToSeconds(h.t) }));
+  // Cover frame: a moment likely to show people talking — the first highlight's timestamp,
+  // else ~20% into the meeting (capped at 10 min), else 12s. Skips the black join intro.
+  const durSec = (m.duration_min || 0) * 60;
+  const firstHi = hl.find((h) => h.at != null);
+  const coverAt = firstHi ? firstHi.at : (durSec ? Math.min(Math.round(durSec * 0.2), 600) : 12);
   return {
     id: m.id, title: m.title || "Meeting", source: m.source || "Recall",
     date: String(start || REF_TODAY).slice(0, 10),
@@ -427,9 +435,8 @@ function adaptReal(m) {
     keyQA: kq,
     actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", done: false })),
     chapters: r.chapters || [],
-    highlights: (r.highlights || []).map((h) => (typeof h === "string"
-      ? { text: h, t: "", at: null }
-      : { text: h.text || h.quote || "", t: h.t || "", at: tsToSeconds(h.t) })),
+    highlights: hl,
+    coverAt,
     coaching: r.coaching || null,
     nextSteps: r.next_steps || [],
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
@@ -1085,7 +1092,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                     <button key={m.id} onClick={() => onOpen(m.id)}
                       className="grid w-full grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-indigo-50/40">
                       <div className="flex min-w-0 items-center gap-4">
-                        <VideoThumb src={m.video} source={m.source} size={44} />
+                        <VideoThumb src={m.video} source={m.source} size={44} at={m.coverAt} />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-slate-800">{m.title}</div>
                           <div className="mt-1 flex items-center gap-2">
@@ -2641,7 +2648,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
-            <video key={meeting.id} src={meeting.video} controls preload="metadata" className="aspect-video w-full bg-black" />
+            <video key={meeting.id} src={meeting.video + "#t=" + (meeting.coverAt || 8)} controls preload="metadata" className="aspect-video w-full bg-black" />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-violet-50 text-center text-sm text-slate-500">
