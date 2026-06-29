@@ -2671,29 +2671,33 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
   const barRef = useRef(null), wrapRef = useRef(null);
   const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null);
 
-  const uniqAts = [...new Set((markers || []).map((m) => m.at).filter((a) => a != null).map((s) => Math.round(s)))]
-    .filter((s) => !dur || s < dur - 1).sort((a, b) => a - b);
+  const uniqAts = [...new Set((markers || []).map((m) => m.at).filter((a) => a != null && a >= 0).map((s) => Math.round(s)))].sort((a, b) => a - b);
 
-  // Build the segment list (start/end seconds) for a smart-playback mode.
-  const buildSegments = (kind) => {
-    if (!uniqAts.length || !dur) return [];
+  // Build the segment list (start/end seconds) for a smart-playback mode. Does NOT depend
+  // on the `dur` STATE (which can lag, or be Infinity for a streamed/proxied video) — the
+  // live total is passed in; segments come straight from the marker timestamps.
+  const buildSegments = (kind, total) => {
+    const cap = total && isFinite(total) && total > 0 ? total : Infinity;
+    const ats = uniqAts.filter((s) => s < cap - 0.5);
+    if (!ats.length) return [];
     if (kind === "trailer") {
-      const pick = uniqAts.length <= 7 ? uniqAts : Array.from({ length: 7 }, (_, i) => uniqAts[Math.floor((i * uniqAts.length) / 7)]);
-      return pick.map((s) => ({ start: s, end: Math.min(dur, s + 5) }));
+      const pick = ats.length <= 7 ? ats : Array.from({ length: 7 }, (_, i) => ats[Math.floor((i * ats.length) / 7)]);
+      return pick.map((s) => ({ start: s, end: Math.min(cap, s + 5) }));
     }
-    const per = Math.max(8, Math.min(14, Math.floor(120 / uniqAts.length))); // highlights ≈ 2 min total
-    return uniqAts.map((s) => ({ start: s, end: Math.min(dur, s + per) }));
+    const per = Math.max(8, Math.min(14, Math.floor(120 / ats.length))); // highlights ≈ 2 min total
+    return ats.map((s) => ({ start: s, end: Math.min(cap, s + per) }));
   };
   const segTotal = (segs) => segs.reduce((a, s) => a + (s.end - s.start), 0);
   const mins = (s) => (!s || s < 60 ? "<1m" : Math.round(s / 60) + "m");
 
   const startMode = (kind) => {
     const v = videoRef.current; if (!v) return;
-    const segs = kind === "full" ? [] : buildSegments(kind);
+    const total = isFinite(v.duration) && v.duration > 0 ? v.duration : (dur || 0);
+    const segs = kind === "full" ? [] : buildSegments(kind, total);
     if (kind !== "full" && !segs.length) kind = "full";
     segsRef.current = segs; segIdxRef.current = 0; modeRef.current = kind; setMode(kind);
-    v.currentTime = segs.length ? segs[0].start : 0;
-    v.play().catch(() => {});
+    try { v.currentTime = segs.length ? segs[0].start : 0; } catch (e) {}
+    const p = v.play(); if (p && p.catch) p.catch(() => {});
   };
   const clearMode = () => { modeRef.current = null; segsRef.current = []; setMode(null); };
 
@@ -2705,7 +2709,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
       if (seg && v.currentTime >= seg.end - 0.05) {
         const next = segIdxRef.current + 1;
         if (next >= segs.length) { v.pause(); clearMode(); }
-        else { segIdxRef.current = next; v.currentTime = segs[next].start; }
+        else { segIdxRef.current = next; try { v.currentTime = segs[next].start; } catch (er) {} const p = v.play(); if (p && p.catch) p.catch(() => {}); }
       }
     }
   };
@@ -2718,7 +2722,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
   const MENU = [
     { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
     { k: "trailer", label: "Trailer", sub: "<1m" },
-    { k: "highlights", label: "Highlights", sub: uniqAts.length ? mins(segTotal(buildSegments("highlights"))) : "—" },
+    { k: "highlights", label: "Highlights", sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "—" },
   ];
 
   return (
