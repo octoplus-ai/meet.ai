@@ -152,9 +152,9 @@ function parseTranscript(raw) {
       const right = rest.slice(ci + 1).trim();
       if (right && looksLikeSpeaker(left)) { speaker = left; body = right; }
     }
-    if (speaker) turns.push({ t, speaker, text: body });
+    if (speaker) turns.push({ t, at: tsToSeconds(t), speaker, text: body });
     else if (turns.length) turns[turns.length - 1].text += " " + rest;
-    else turns.push({ t, speaker: "Speaker", text: rest });
+    else turns.push({ t, at: tsToSeconds(t), speaker: "Speaker", text: rest });
   }
   return turns;
 }
@@ -507,11 +507,11 @@ function Toaster() {
 }
 
 /* --------------------------- small UI bits ------------------------- */
-function PlatformBadge({ source }) {
+function PlatformBadge({ source, size = 22 }) {
   const brand = source === "Google Meet" ? "googleMeet" : source === "Zoom" ? "zoom" : source === "Microsoft Teams" ? "teams" : "extension";
   return (
-    <span className="absolute -bottom-1 -right-1 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border border-white bg-white shadow-sm">
-      <BrandIcon name={brand} size={13} />
+    <span className="absolute -bottom-1.5 -right-1.5 flex items-center justify-center rounded-lg border border-slate-100 bg-white shadow-md" style={{ width: size, height: size }}>
+      <BrandIcon name={brand} size={Math.round(size * 0.66)} />
     </span>
   );
 }
@@ -526,34 +526,32 @@ function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge 
   const seek = () => { const v = ref.current; if (v) { try { v.currentTime = seekT; } catch (e) {} } };
   const onEnter = () => { const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
   const onLeave = () => { const v = ref.current; if (v) { try { v.pause(); seek(); } catch (e) {} } };
+  // Outer wrapper does NOT clip, so the platform badge can overlap the corner fully (like
+  // Read.ai); only the inner video box is rounded/clipped.
   return (
-    <div className={"relative shrink-0 overflow-hidden bg-slate-900 " + rounded} style={{ width: size, height: size }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      {posterSrc
-        ? <video ref={ref} src={posterSrc} muted loop playsInline preload="metadata" onLoadedMetadata={seek} className="h-full w-full object-cover" />
-        : <div className="h-full w-full bg-gradient-to-br from-indigo-400 to-violet-500" />}
-      <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15">
-        <span className="flex items-center justify-center rounded-full bg-black/45" style={{ width: size * 0.4, height: size * 0.4 }}>
-          <Play size={size * 0.22} className="ml-px text-white" fill="white" />
+    <div className="relative shrink-0" style={{ width: size, height: size }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      <div className={"relative h-full w-full overflow-hidden bg-slate-900 " + rounded}>
+        {posterSrc
+          ? <video ref={ref} src={posterSrc} muted loop playsInline preload="metadata" onLoadedMetadata={seek} className="h-full w-full object-cover" />
+          : <div className="h-full w-full bg-gradient-to-br from-indigo-400 to-violet-500" />}
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15">
+          <span className="flex items-center justify-center rounded-full bg-black/45" style={{ width: size * 0.4, height: size * 0.4 }}>
+            <Play size={size * 0.22} className="ml-px text-white" fill="white" />
+          </span>
         </span>
-      </span>
-      {showBadge && <PlatformBadge source={source} />}
+      </div>
+      {showBadge && <PlatformBadge source={source} size={Math.max(16, Math.round(size * 0.42))} />}
     </div>
   );
 }
 
 function ScoreChip({ value }) {
   const has = Number.isFinite(value) && value > 0;
+  const col = !has ? "#94A3B8" : value >= 80 ? "#16A34A" : value >= 60 ? "#D97706" : "#E11D48";
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5">
-      <span className="relative flex h-3.5 w-3.5 items-center justify-center">
-        <svg width="14" height="14" viewBox="0 0 14 14">
-          <circle cx="7" cy="7" r="6" fill="none" stroke="#E2E8F0" strokeWidth="2" />
-          {has && <circle cx="7" cy="7" r="6" fill="none" stroke={scoreColor(value)} strokeWidth="2"
-            strokeDasharray={2 * Math.PI * 6} strokeDashoffset={(1 - value / 100) * 2 * Math.PI * 6}
-            strokeLinecap="round" transform="rotate(-90 7 7)" />}
-        </svg>
-      </span>
-      <span className="text-[11px] font-semibold text-slate-600">{has ? value : "—"}</span>
+    <span title="OctoMeet Score — how effective the meeting was, combining real-time sentiment and engagement." className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-1.5 py-0.5">
+      <OctoLogo size={15} />
+      <span className="text-[12px] font-bold" style={{ color: col }}>{has ? value : "—"}</span>
     </span>
   );
 }
@@ -670,6 +668,19 @@ export default function App() {
     })();
   }, []);
 
+  // Browser tab: OctoMeet favicon + dynamic title "OctoMeet — <section>" (default Reports).
+  useEffect(() => {
+    const NAMES = { reports: "Reports", meeting: "Report", ask: "Ask Octo", folders: "Folders", calendar: "Calendar", "for-you": "For You", coaching: "Coaching", recommendations: "Recommendations", "meeting-policy": "Meeting Policy", integrations: "Integrations", "plan-billing": "Plan & Billing", "add-people": "Add People" };
+    document.title = "OctoMeet — " + (NAMES[view] || "Reports");
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#A855F7"/><stop offset="100%" stop-color="#7C3AED"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#g)"/><g fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round"><path d="M15 23V18Q15 15 18 15H23"/><path d="M41 15H46Q49 15 49 18V23"/><path d="M15 41V46Q15 49 18 49H23"/><path d="M41 49H46Q49 49 49 46V41"/></g><g transform="translate(13 17) scale(0.52)"><path d="M44 19L58 12Q61 10.5 61 14.5V37.5Q61 41.5 58 40L44 33Z" fill="#fff"/><path d="M10 27C10 16 19 8 28 8C37 8 46 16 46 27L46 40Q43.5 46 41 46Q38.5 46 36.5 40Q34 46 32 46Q29.5 46 27.5 40Q25 46 23 46Q20.5 46 18.5 40Q16 46 14 46Q11 46 10 40Z" fill="#fff"/><rect x="25" y="16" width="6" height="20" rx="3" fill="url(#g)"/><rect x="18" y="23" width="20" height="6" rx="3" fill="url(#g)"/></g></svg>';
+    try {
+      let link = document.querySelector("link[rel='icon']");
+      if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+      link.type = "image/svg+xml";
+      link.href = "data:image/svg+xml," + encodeURIComponent(svg);
+    } catch (e) { /* ignore */ }
+  }, [view]);
+
   // Live polling: keep real meetings fresh so recording/processing states and the
   // finished AI report appear automatically, the way Read.ai updates in place.
   useEffect(() => {
@@ -762,17 +773,28 @@ export default function App() {
 }
 
 /* ============================ SIDEBAR ============================== */
+// OctoMeet brand mark: purple gradient square, white octopus (head + plus + tentacles +
+// camera nub) framed by white scan-corner brackets. Used everywhere (sidebar, badges,
+// score chip, favicon) so the brand is consistent.
 function OctoLogo({ size = 28 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden>
       <defs><linearGradient id="octoLogo" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#A855F7" /><stop offset="100%" stopColor="#7C3AED" /></linearGradient></defs>
-      {/* camera lens nub */}
-      <path d="M44 19 L58 12 Q61 10.5 61 14.5 V37.5 Q61 41.5 58 40 L44 33 Z" fill="url(#octoLogo)" />
-      {/* head + tentacles */}
-      <path d="M10 27 C10 16 19 8 28 8 C37 8 46 16 46 27 L46 40 Q43.5 46 41 46 Q38.5 46 36.5 40 Q34 46 32 46 Q29.5 46 27.5 40 Q25 46 23 46 Q20.5 46 18.5 40 Q16 46 14 46 Q11 46 10 40 Z" fill="url(#octoLogo)" />
-      {/* plus */}
-      <rect x="25" y="16" width="6" height="20" rx="3" fill="#fff" />
-      <rect x="18" y="23" width="20" height="6" rx="3" fill="#fff" />
+      <rect x="0" y="0" width="64" height="64" rx="15" fill="url(#octoLogo)" />
+      {/* scan-frame corner brackets */}
+      <g fill="none" stroke="#fff" strokeWidth="3.6" strokeLinecap="round">
+        <path d="M15 23 V18 Q15 15 18 15 H23" />
+        <path d="M41 15 H46 Q49 15 49 18 V23" />
+        <path d="M15 41 V46 Q15 49 18 49 H23" />
+        <path d="M41 49 H46 Q49 49 49 46 V41" />
+      </g>
+      {/* octopus (white) + camera nub + purple plus, centered inside the frame */}
+      <g transform="translate(13 17) scale(0.52)">
+        <path d="M44 19 L58 12 Q61 10.5 61 14.5 V37.5 Q61 41.5 58 40 L44 33 Z" fill="#fff" />
+        <path d="M10 27 C10 16 19 8 28 8 C37 8 46 16 46 27 L46 40 Q43.5 46 41 46 Q38.5 46 36.5 40 Q34 46 32 46 Q29.5 46 27.5 40 Q25 46 23 46 Q20.5 46 18.5 40 Q16 46 14 46 Q11 46 10 40 Z" fill="#fff" />
+        <rect x="25" y="16" width="6" height="20" rx="3" fill="url(#octoLogo)" />
+        <rect x="18" y="23" width="20" height="6" rx="3" fill="url(#octoLogo)" />
+      </g>
     </svg>
   );
 }
@@ -812,8 +834,8 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
       className={"absolute inset-y-0 left-0 z-30 flex shrink-0 flex-col rai-sidebar text-slate-300 shadow-xl transition-all duration-200 " + (collapsed ? "w-[68px]" : "w-60")}>
       {/* header */}
       <div className={"flex items-center px-3 pt-4 pb-3 " + (collapsed ? "justify-center" : "gap-2")}>
-        <button onClick={() => setView("reports")} title="OctoMeet — all reports" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
-          <OctoLogo size={24} />
+        <button onClick={() => setView("reports")} title="OctoMeet — all reports" className="flex h-8 w-8 shrink-0 items-center justify-center">
+          <OctoLogo size={32} />
         </button>
         {!collapsed && <span className="whitespace-nowrap text-[15px] font-bold text-white">OctoMeet AI</span>}
         {!collapsed && (
@@ -884,7 +906,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
         )}
         {collapsed ? (
           <div className="flex flex-col items-center gap-3">
-            <button onClick={() => setCollapsed(false)} title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
+            <button onClick={() => { setPinned(true); setLiveOpen(true); }} title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
             <button onClick={copyLink} title={t("smartScheduler")} className={"flex h-8 w-8 items-center justify-center rounded-md text-white " + (copied ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500")}>{copied ? <Check size={14} /> : <Link2 size={14} />}</button>
             <button onClick={() => setMenuOpen((v) => !v)} title="Account" className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(uInit) }}>{user?.picture ? <img src={user.picture} alt="" className="h-full w-full object-cover" /> : uInit}</button>
           </div>
@@ -2712,10 +2734,12 @@ function AskPanel({ meeting }) {
   const ask = async (textArg) => {
     const question = (textArg ?? input).trim();
     if (!question || busy) return;
-    setInput(""); setMsgs((m) => [...m, { role: "user", text: question }]); setBusy(true);
+    const history = [...msgs, { role: "user", text: question }];
+    setInput(""); setMsgs(history); setBusy(true);
     try {
       const sys = "You are Octo, answering questions about ONE meeting. Use ONLY the meeting data below. Be concise and specific; mention who said what when useful. Reply in the SAME language as the question. If the answer isn't in the meeting, say you couldn't find it in this meeting.\n\n=== MEETING ===\n" + buildContext();
-      const ans = await callClaude([{ role: "user", content: question }], sys);
+      const apiMsgs = history.filter((m) => m.role === "user" || m.role === "assistant").slice(-8).map((m) => ({ role: m.role, content: m.text }));
+      const ans = await callClaude(apiMsgs, sys);
       setMsgs((m) => [...m, { role: "assistant", text: ans || "—" }]);
     } catch (e) {
       setMsgs((m) => [...m, { role: "assistant", text: "I couldn't analyze the meeting right now — make sure the report finished, then try again." }]);
@@ -2967,7 +2991,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                   <div key={i} className="flex gap-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: SPEAKER_COLORS[ci % SPEAKER_COLORS.length] }}>{initialsOf(t.speaker)}</span>
                     <div className="flex-1 rounded-xl border border-slate-100 bg-white p-3">
-                      <div className="mb-1 flex items-center gap-2"><span className="text-xs font-semibold text-slate-700">{t.speaker}</span>{t.t && <span className="text-[10px] text-slate-300">{t.t}</span>}</div>
+                      <div className="mb-1 flex items-center gap-2"><span className="text-xs font-semibold text-slate-700">{t.speaker}</span>{t.at != null ? <TimeChip t={t.t} onClick={() => seekTo(t.at)} /> : (t.t && <span className="text-[10px] text-slate-300">{t.t}</span>)}</div>
                       <p className="text-sm leading-relaxed text-slate-600">{t.text}</p>
                     </div>
                   </div>
@@ -3086,33 +3110,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 </div>
               </div>
             ))}
-            {meeting.actionItems.map((it, i) => (
-              <div key={"a" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} />
-                <div className="flex-1">
-                  <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Action Item</span>
-                  <p className="mt-1 text-sm text-slate-700">{it.task}</p>
-                </div>
-              </div>
-            ))}
-            {meeting.keyQuestions.map((qq, i) => (
-              <div key={"q" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} />
-                <div className="flex-1">
-                  <span className="rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Key Question</span>
-                  <p className="mt-1 text-sm text-slate-700">{qq}</p>
-                </div>
-              </div>
-            ))}
-            {meeting.topics.map((t, i) => (
-              <div key={"t" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} />
-                <div className="flex-1">
-                  <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">Topic</span>
-                  <p className="mt-1 text-sm text-slate-700">{t}</p>
-                </div>
-              </div>
-            ))}
+            {!(meeting.highlights && meeting.highlights.length) && <p className="text-sm text-slate-400">No highlights detected for this meeting.</p>}
           </div>
         )}
 
@@ -3259,8 +3257,8 @@ function ChatView({ meetings, onOpen, seed }) {
 
   const suggestions = [
     "What are the major takeaways from last week's meetings?",
-    "What is the {team name} team working on right now?",
-    "What are my next steps on the {project name} project?",
+    "What is my team working on right now?",
+    "What are my next steps across recent meetings?",
     "What tasks are currently at risk or overdue?",
   ];
 

@@ -44,7 +44,7 @@ export async function analyzeTranscript(text, title, participantNames) {
       // empty report. 8000 leaves ample headroom.
       max_tokens: 8000,
       system: sys,
-      messages: [{ role: "user", content: `Title: ${title}\n\n${known}Transcript:\n${(text || "(no speech captured)").slice(0, 60000)}` }],
+      messages: [{ role: "user", content: `Title: ${title}\n\n${known}Transcript:\n${(text || "(no speech captured)").slice(0, 600000)}` }],
     }),
   });
   const d = await r.json();
@@ -105,6 +105,12 @@ export async function processMeeting(meeting, { force = false } = {}) {
   }
 
   const ai = await analyzeTranscript(tr.text, meeting.title, tr.participants);
+  // If the analysis failed (e.g. truncated/invalid JSON), do NOT persist a blank 0-score
+  // report. Keep the meeting in "processing" so the next poll retries cleanly.
+  if (!(ai.summary && ai.summary.trim())) {
+    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { status: "processing", status_synced_at: new Date().toISOString() } });
+    return { skipped: "analysis empty — will retry" };
+  }
   const participants = mergeParticipants(tr.stats, ai.participants);
   const sc = ai.scores || {};
 

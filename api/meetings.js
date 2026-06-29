@@ -35,8 +35,15 @@ async function syncOne(m) {
       await patch(m.id, { status: "error", error });
       return { ...m, status: "error", error };
     }
-    // Call ended with a recording but no report yet → generate it now (don't wait for the webhook).
+    // Call ended with a recording but no report yet. ONLY analyze once the transcript
+    // artifact is actually ready — otherwise we'd read an empty transcript and wrongly
+    // mark a good meeting as "error". If not ready yet, stay "processing" and wait.
     if (ended && hasRecording) {
+      const transcriptReady = !!(rec && rec.media_shortcuts && rec.media_shortcuts.transcript && rec.media_shortcuts.transcript.data && rec.media_shortcuts.transcript.data.download_url);
+      if (!transcriptReady) {
+        if (m.status !== "processing") { await patch(m.id, { status: "processing" }); }
+        return { ...m, status: "processing" };
+      }
       try { await processMeeting(m); } catch (e) { /* will retry next poll */ }
       const rep = await sb(`meetings?id=eq.${m.id}&select=status,reports(id)`);
       const repArr = rep[0] && rep[0].reports ? (Array.isArray(rep[0].reports) ? rep[0].reports : [rep[0].reports]) : [];

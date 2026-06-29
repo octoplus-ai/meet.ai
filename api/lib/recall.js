@@ -73,7 +73,13 @@ export async function getTranscript(bot) {
     st.talkSec += talkSec;
     if (!phrase) continue;
     const tRel = words[0]?.start_timestamp?.relative;
-    const mmss = typeof tRel === "number" ? `${String(Math.floor(tRel / 60)).padStart(2, "0")}:${String(Math.floor(tRel % 60)).padStart(2, "0")}` : "";
+    let mmss = "";
+    if (typeof tRel === "number") {
+      const h = Math.floor(tRel / 3600), mm = Math.floor((tRel % 3600) / 60), ss = Math.floor(tRel % 60);
+      mmss = h > 0
+        ? `${h}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
+        : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    }
     lines.push(`[${mmss}] ${name}: ${phrase}`);
     turns.push({ speaker: name, text: phrase, t: mmss });
   }
