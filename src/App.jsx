@@ -516,20 +516,21 @@ function PlatformBadge({ source, size = 22 }) {
   );
 }
 
-function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true, at = null }) {
+function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true, at = null, onClick = null, hoverPlay = true }) {
   const ref = useRef(null);
   // Show the frame at `at` seconds (a highlight's moment) — or ~8s in to skip the
   // black join intro. The media fragment "#t=" paints that frame reliably as the still;
-  // the onLoadedMetadata seek is a backup. Hover plays from the start.
+  // the onLoadedMetadata seek is a backup. With hoverPlay=false the still frame is kept
+  // on hover (no jump-to-black); onClick makes the whole thumb seek the main player.
   const seekT = at != null && at >= 0 ? at : 8;
   const posterSrc = src ? (src.includes("#") ? src : src + "#t=" + seekT) : null;
   const seek = () => { const v = ref.current; if (v) { try { v.currentTime = seekT; } catch (e) {} } };
-  const onEnter = () => { const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
-  const onLeave = () => { const v = ref.current; if (v) { try { v.pause(); seek(); } catch (e) {} } };
+  const onEnter = () => { if (!hoverPlay) return; const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
+  const onLeave = () => { if (!hoverPlay) return; const v = ref.current; if (v) { try { v.pause(); seek(); } catch (e) {} } };
   // Outer wrapper does NOT clip, so the platform badge can overlap the corner fully (like
   // Read.ai); only the inner video box is rounded/clipped.
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+    <div className={"relative shrink-0" + (onClick ? " cursor-pointer" : "")} style={{ width: size, height: size }} onMouseEnter={onEnter} onMouseLeave={onLeave} onClick={onClick || undefined}>
       <div className={"relative h-full w-full overflow-hidden bg-slate-900 " + rounded}>
         {posterSrc
           ? <video ref={ref} src={posterSrc} muted loop playsInline preload="metadata" onLoadedMetadata={seek} className="h-full w-full object-cover" />
@@ -2658,23 +2659,84 @@ const MARKER_STYLE = {
 };
 
 // Custom video player with a marker timeline (chapters / questions / action items /
-// highlights as colored dots — hover to preview, click to jump), like Read.ai.
+// highlights as colored dots — hover to preview, click to jump) AND smart playback modes
+// on hover: Recording (full), Trailer (<1m teaser) and Highlights (~2m reel), like Read.ai.
 function MeetingVideo({ videoRef, src, coverAt, markers }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [hover, setHover] = useState(null);
+  const [hovering, setHovering] = useState(false);
+  const [mode, setMode] = useState(null);
   const barRef = useRef(null), wrapRef = useRef(null);
+  const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null);
+
+  const uniqAts = [...new Set((markers || []).map((m) => m.at).filter((a) => a != null).map((s) => Math.round(s)))]
+    .filter((s) => !dur || s < dur - 1).sort((a, b) => a - b);
+
+  // Build the segment list (start/end seconds) for a smart-playback mode.
+  const buildSegments = (kind) => {
+    if (!uniqAts.length || !dur) return [];
+    if (kind === "trailer") {
+      const pick = uniqAts.length <= 7 ? uniqAts : Array.from({ length: 7 }, (_, i) => uniqAts[Math.floor((i * uniqAts.length) / 7)]);
+      return pick.map((s) => ({ start: s, end: Math.min(dur, s + 5) }));
+    }
+    const per = Math.max(8, Math.min(14, Math.floor(120 / uniqAts.length))); // highlights ≈ 2 min total
+    return uniqAts.map((s) => ({ start: s, end: Math.min(dur, s + per) }));
+  };
+  const segTotal = (segs) => segs.reduce((a, s) => a + (s.end - s.start), 0);
+  const mins = (s) => (!s || s < 60 ? "<1m" : Math.round(s / 60) + "m");
+
+  const startMode = (kind) => {
+    const v = videoRef.current; if (!v) return;
+    const segs = kind === "full" ? [] : buildSegments(kind);
+    if (kind !== "full" && !segs.length) kind = "full";
+    segsRef.current = segs; segIdxRef.current = 0; modeRef.current = kind; setMode(kind);
+    v.currentTime = segs.length ? segs[0].start : 0;
+    v.play().catch(() => {});
+  };
+  const clearMode = () => { modeRef.current = null; segsRef.current = []; setMode(null); };
+
+  const onTime = (e) => {
+    const v = e.currentTarget; setCur(v.currentTime);
+    const segs = segsRef.current;
+    if ((modeRef.current === "highlights" || modeRef.current === "trailer") && segs.length) {
+      const seg = segs[segIdxRef.current];
+      if (seg && v.currentTime >= seg.end - 0.05) {
+        const next = segIdxRef.current + 1;
+        if (next >= segs.length) { v.pause(); clearMode(); }
+        else { segIdxRef.current = next; v.currentTime = segs[next].start; }
+      }
+    }
+  };
+
   const toggle = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play().catch(() => {}); else v.pause(); };
-  const onBar = (e) => { const b = barRef.current, v = videoRef.current; if (!b || !v || !dur) return; const r = b.getBoundingClientRect(); v.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
+  const onBar = (e) => { const b = barRef.current, v = videoRef.current; if (!b || !v || !dur) return; const r = b.getBoundingClientRect(); clearMode(); v.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
   const fs = () => { const w = wrapRef.current; if (!w) return; try { document.fullscreenElement ? document.exitFullscreen() : w.requestFullscreen(); } catch (e) {} };
   const setD = (e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDur(d); };
+
+  const MENU = [
+    { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
+    { k: "trailer", label: "Trailer", sub: "<1m" },
+    { k: "highlights", label: "Highlights", sub: uniqAts.length ? mins(segTotal(buildSegments("highlights"))) : "—" },
+  ];
+
   return (
-    <div ref={wrapRef} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
+    <div ref={wrapRef} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
       <video ref={videoRef} src={src + "#t=" + (coverAt || 8)} preload="metadata" playsInline onClick={toggle}
-        onLoadedMetadata={setD} onDurationChange={setD} onTimeUpdate={(e) => setCur(e.currentTarget.currentTime)}
+        onLoadedMetadata={setD} onDurationChange={setD} onTimeUpdate={onTime}
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} className="aspect-video w-full bg-black" />
-      {!playing && <button onClick={toggle} className="absolute inset-0 flex items-center justify-center"><span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 transition group-hover:bg-black/60"><Play size={26} className="ml-1 text-white" fill="white" /></span></button>}
+      {/* Hover menu: smart playback modes (only when paused so it doesn't block viewing). */}
+      {hovering && !playing && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2.5 bg-black/30">
+          {MENU.map((mi) => (
+            <button key={mi.k} onClick={() => startMode(mi.k)}
+              className={"flex w-60 items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-semibold backdrop-blur-sm transition " + (mi.primary ? "bg-indigo-600 text-white shadow-lg hover:bg-indigo-500" : "bg-white/15 text-white hover:bg-white/25")}>
+              {mi.label} <span className="font-normal text-white/75">{mi.sub}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-10">
         {hover && dur > 0 && (
           <div className="pointer-events-none absolute bottom-12 z-10 max-w-[260px] -translate-x-1/2 rounded-lg bg-slate-900/95 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg" style={{ left: `${(hover.at / dur) * 100}%` }}>
@@ -2687,7 +2749,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
           <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-indigo-500" style={{ width: (dur ? (cur / dur) * 100 : 0) + "%" }} />
           {dur > 0 && markers.map((mk, i) => (
             <button key={i} onMouseEnter={() => setHover(mk)} onMouseLeave={() => setHover(null)}
-              onClick={(e) => { e.stopPropagation(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
+              onClick={(e) => { e.stopPropagation(); clearMode(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
               className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 transition hover:scale-150"
               style={{ left: `${(mk.at / dur) * 100}%`, background: MARKER_STYLE[mk.type].color }} aria-label={mk.label} />
           ))}
@@ -2695,6 +2757,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers }) {
         <div className="mt-1.5 flex items-center gap-3 text-white">
           <button onClick={toggle} className="hover:text-indigo-300">{playing ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}</button>
           <span className="font-mono text-[12px] text-white/90">{fmtClock(cur)} / {fmtClock(dur)}</span>
+          {mode && mode !== "full" && <span className="rounded bg-indigo-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
           <div className="flex-1" />
           <button onClick={fs} title="Fullscreen" className="hover:text-indigo-300"><Maximize2 size={16} /></button>
         </div>
@@ -3100,7 +3163,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
           <div className="space-y-3">
             {(meeting.highlights || []).map((h, i) => (
               <div key={"h" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} at={h.at} />
+                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} at={h.at} hoverPlay={false} onClick={h.at != null ? () => seekTo(h.at) : undefined} />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Highlight</span>
