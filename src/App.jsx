@@ -3320,9 +3320,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]);
   // ===== Audio dub: speak the translated line in the chosen language as the video plays =====
-  // HD_VOICE off = use the browser's FREE built-in voice (no OpenAI cost). Flip to true (and set
-  // OPENAI_API_KEY in Vercel) to use OpenAI tts-1-hd via /api/tts for studio-quality dubbing.
-  const HD_VOICE = false;
+  // HD_VOICE on = OpenAI voices via /api/tts (cheaper tts-1 model, a consistent voice PER SPEAKER
+  // so the dub feels like a real multi-voice dub). Falls back to the free browser voice if the
+  // endpoint is unavailable (no OPENAI_API_KEY).
+  const HD_VOICE = true;
   const BCP47 = { English: "en-US", "Español (Latinoamérica)": "es-419", "Português (Brasil)": "pt-BR", Français: "fr-FR", Deutsch: "de-DE", Italiano: "it-IT", "한국어": "ko-KR", "日本語": "ja-JP" };
   // The active phrase (and a stable key) for a given language at a given time - shared by the
   // on-screen subtitle and the spoken dub so they stay in lock-step.
@@ -3330,15 +3331,15 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     const tns = turns || [];
     let idx = -1;
     for (let i = 0; i < tns.length; i++) { const tn = tns[i]; if (tn && tn.at != null && tn.at <= time + 0.3) idx = i; else if (tn && tn.at != null) break; }
-    if (idx < 0) return { text: "", key: "" };
+    if (idx < 0) return { text: "", key: "", speaker: "" };
     const raw = (subCache[lang] && subCache[lang][idx]) || (tns[idx] && tns[idx].text) || "";
     const phrases = splitPhrases(raw);
-    if (!phrases.length) return { text: "", key: "" };
+    if (!phrases.length) return { text: "", key: "", speaker: "" };
     const at = tns[idx].at || 0;
     const nextAt = (tns[idx + 1] && tns[idx + 1].at != null) ? tns[idx + 1].at : at + Math.max(2.5, phrases.length * 2.5);
     const span = Math.max(0.6, nextAt - at);
     const pi = Math.min(phrases.length - 1, Math.floor(Math.min(0.999, Math.max(0, (time - at) / span)) * phrases.length));
-    return { text: phrases[pi], key: idx + ":" + pi };
+    return { text: phrases[pi], key: idx + ":" + pi, speaker: tns[idx].speaker || "" };
   };
   const stopDub = () => { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) {} try { if (dubAudioRef.current) dubAudioRef.current.pause(); } catch (e) {} };
   const speakLocal = (text) => {
@@ -3353,23 +3354,24 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       synth.speak(u);
     } catch (e) {}
   };
-  const ttsFetch = (text) => fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: audioLang }) });
+  const ttsFetch = (text, speaker) => fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: audioLang, speaker: speaker || "" }) });
   const prefetchAhead = (time) => {
     if (!HD_VOICE || ttsModeRef.current === "local") return;
-    const { text } = phraseAt(audioLang, time + 3);
-    if (!text) return; const ck = audioLang + "|" + text;
+    const { text, speaker } = phraseAt(audioLang, time + 3);
+    if (!text) return; const ck = audioLang + "|" + (speaker || "") + "|" + text;
     if (dubCacheRef.current[ck]) return;
-    ttsFetch(text).then((r) => (r.ok ? r.blob() : null)).then((b) => { if (b) dubCacheRef.current[ck] = URL.createObjectURL(b); }).catch(() => {});
+    ttsFetch(text, speaker).then((r) => (r.ok ? r.blob() : null)).then((b) => { if (b) dubCacheRef.current[ck] = URL.createObjectURL(b); }).catch(() => {});
   };
-  const speakDub = async (text, time) => {
+  const speakDub = async (text, time, speaker) => {
     stopDub();
     if (!HD_VOICE || ttsModeRef.current === "local") { speakLocal(text); return; }
-    // HD voice (best quality) via /api/tts, cached in memory per phrase; prefetch the next one.
-    const ck = audioLang + "|" + text;
+    // OpenAI voice via /api/tts (a consistent voice per speaker), cached in memory per phrase;
+    // prefetch the next phrase so playback doesn't lag.
+    const ck = audioLang + "|" + (speaker || "") + "|" + text;
     try {
       let url = dubCacheRef.current[ck];
       if (!url) {
-        const r = await ttsFetch(text);
+        const r = await ttsFetch(text, speaker);
         if (!r.ok) { ttsModeRef.current = "local"; speakLocal(text); return; }
         url = URL.createObjectURL(await r.blob()); dubCacheRef.current[ck] = url; ttsModeRef.current = "hd";
       }
@@ -3387,8 +3389,8 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   // Drive the dub: when a phrase becomes active (and we're playing), speak it once.
   useEffect(() => {
     if (audioLang === "original" || !playing) { stopDub(); dubKeyRef.current = ""; return; }
-    const { text, key } = phraseAt(audioLang, cur);
-    if (text && key && key !== dubKeyRef.current) { dubKeyRef.current = key; speakDub(text, cur); }
+    const { text, key, speaker } = phraseAt(audioLang, cur);
+    if (text && key && key !== dubKeyRef.current) { dubKeyRef.current = key; speakDub(text, cur, speaker); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cur, audioLang, playing, subCache, rate]);
   // Cleanup on unmount.

@@ -10,7 +10,16 @@ const enc = encodeURIComponent;
 const SUPA = process.env.SUPABASE_URL || "https://xewahhatxhmfjlujitfa.supabase.co";
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const OAI = process.env.OPENAI_API_KEY;
-const VOICE = process.env.OPENAI_TTS_VOICE || "nova";
+const MODEL = process.env.OPENAI_TTS_MODEL || "tts-1"; // tts-1 = cheaper; tts-1-hd = higher quality
+// A palette of distinct OpenAI voices; each speaker is mapped to a STABLE one so the dub keeps a
+// consistent, recognizable voice per person (closest we can get to matching tone without cloning).
+const VOICES = ["onyx", "nova", "echo", "shimmer", "fable", "alloy"];
+const voiceFor = (speaker) => {
+  const s = String(speaker || "").trim();
+  if (!s) return process.env.OPENAI_TTS_VOICE || "nova";
+  let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return VOICES[h % VOICES.length];
+};
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
@@ -25,9 +34,10 @@ export default async function handler(req, res) {
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const text = String(body.text || "").replace(/\s+/g, " ").trim().slice(0, 800);
     const lang = String(body.lang || "").slice(0, 40);
+    const voice = voiceFor(body.speaker);
     if (!text) return res.status(400).json({ error: "no text" });
 
-    const hash = crypto.createHash("sha1").update(lang + "|" + VOICE + "|" + text).digest("hex");
+    const hash = crypto.createHash("sha1").update(MODEL + "|" + lang + "|" + voice + "|" + text).digest("hex");
     const publicUrl = `${SUPA}/storage/v1/object/public/tts/${hash}.mp3`;
 
     // Cache hit -> serve stored clip.
@@ -38,11 +48,11 @@ export default async function handler(req, res) {
       return res.end(Buffer.from(await cached.arrayBuffer()));
     }
 
-    // Generate with OpenAI tts-1-hd.
+    // Generate with OpenAI (tts-1 by default = cheaper), one voice per speaker.
     const r = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: { Authorization: `Bearer ${OAI}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "tts-1-hd", voice: VOICE, input: text, response_format: "mp3" }),
+      body: JSON.stringify({ model: MODEL, voice, input: text, response_format: "mp3" }),
     });
     if (!r.ok) { const tx = await r.text().catch(() => ""); return res.status(502).json({ error: "tts_failed", detail: tx.slice(0, 200) }); }
     const audio = Buffer.from(await r.arrayBuffer());
