@@ -8,7 +8,7 @@ import {
   Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play, Pause, Maximize2, Volume2, VolumeX, PictureInPicture2,
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type, Copy, Pencil,
   HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, KeyRound,
-  ChevronsDownUp, ChevronsUpDown,
+  ChevronsDownUp, ChevronsUpDown, Eye, ChevronUp, MinusCircle, MoreVertical,
 } from "lucide-react";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -831,7 +831,7 @@ export default function App() {
           </div>
         )}
         {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} user={user} onRename={renameMeeting} onDelete={deleteMeeting} />}
-        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} />}
+        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} onRename={renameMeeting} onDelete={(m) => { deleteMeeting(m); setView("reports"); }} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
         {view === "plans" && <PlansView onBack={() => setView("plan-billing")} />}
@@ -3285,7 +3285,35 @@ function AskPanel({ meeting }) {
   );
 }
 
-function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shared }) {
+// Per-person access role chooser (Viewer / Editor / Remove Access) - matches Read.ai.
+function RoleDropdown({ role, onChange, onRemove }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
+      <button onClick={() => setOpen((o) => !o)} className={"flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 " + (open ? "border-violet-400" : "border-slate-200")}>{role} {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-50 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl">
+            {[{ k: "Viewer", icon: <Eye size={16} />, d: "Can view and download the detailed meeting report and metrics" }, { k: "Editor", icon: <Pencil size={16} />, d: "Can view the full report, edit the notes and transcript, download, and share" }].map((o) => (
+              <button key={o.k} onClick={() => { onChange(o.k); setOpen(false); }} className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50">
+                <span className="mt-0.5 text-slate-500">{o.icon}</span>
+                <span className="flex-1">
+                  <span className="flex items-center justify-between text-[14px] font-semibold text-slate-800">{o.k}{role === o.k && <Check size={15} className="text-violet-600" />}</span>
+                  <span className="mt-0.5 block text-[12px] leading-snug text-slate-500">{o.d}</span>
+                </span>
+              </button>
+            ))}
+            <div className="my-1 border-t border-slate-100" />
+            <button onClick={() => { onRemove(); setOpen(false); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[14px] font-medium text-rose-600 hover:bg-rose-50"><MinusCircle size={16} /> Remove Access</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shared, onRename, onDelete }) {
   const [tab, setTab] = useState("notes");
   const [q, setQ] = useState("");
   const [showDesc, setShowDesc] = useState(true);
@@ -3301,10 +3329,17 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   };
 
   const [summaryMode, setSummaryMode] = useState("standard");
-  const [menu, setMenu] = useState(null); // header dropdown: "download" | "push" | null
+  const [menu, setMenu] = useState(null); // header dropdown: "download" | "push" | "more" | null
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState("");
+  const [access, setAccess] = useState([]); // per-person shares [{email,role,name}]
   const [shareOpen, setShareOpen] = useState(false);
   // Opened via the list "⋯ → Share": jump straight into the share modal.
   useEffect(() => { if (initialShare) setShareOpen(true); }, [initialShare, meeting.id]);
+  // Load the persisted per-person access list when the share modal opens.
+  useEffect(() => { if (shareOpen && !shared) { fetch("/api/report-access?meetingId=" + encodeURIComponent(meeting.id)).then((r) => (r.ok ? r.json() : { shares: [] })).then((d) => setAccess(d.shares || [])).catch(() => {}); } }, [shareOpen, shared, meeting.id]);
+  const setAccessRole = (email, role) => { setAccess((a) => a.map((s) => (s.email === email ? { ...s, role } : s))); fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email, role }) }).catch(() => {}); };
+  const removeAccess = (email) => { setAccess((a) => a.filter((s) => s.email !== email)); fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email, remove: true }) }).catch(() => {}); };
   const [addPeople, setAddPeople] = useState([]); // people invited via the Share modal
   const [shareQuery, setShareQuery] = useState("");
   const [linkAccess, setLinkAccess] = useState("restricted"); // "restricted" | "public"
@@ -3319,6 +3354,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   const doShare = async () => {
     const emails = addPeople.filter((p) => /.+@.+\..+/.test(p));
     const n = addPeople.length, msg = shareMsg;
+    // Persist each added email into the per-person access list with the chosen role.
+    emails.forEach((em) => { fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email: em, role: shareRole || "Viewer" }) }).catch(() => {}); });
     closeShare();
     if (notify && emails.length) {
       toast("Sending email…");
@@ -3503,6 +3540,16 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 </div></>)}
             </div>
             <button onClick={() => { setShareOpen(true); setShareStep(1); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Share2 size={14} /> Share</button>
+            {/* 3-dots: Rename / Remove Report */}
+            <div className="relative">
+              <button onClick={() => setMenu(menu === "more" ? null : "more")} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><MoreVertical size={18} /></button>
+              {menu === "more" && (<>
+                <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
+                <div className="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl">
+                  <button onClick={() => { setMenu(null); setRenameVal(meeting.title); setRenaming(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Pencil size={15} className="text-slate-400" /> Rename Report</button>
+                  <button onClick={() => { setMenu(null); if (window.confirm("Delete this report? This cannot be undone.")) onDelete && onDelete(meeting); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-rose-600 hover:bg-rose-50"><Trash2 size={15} /> Remove Report</button>
+                </div></>)}
+            </div>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-400">
@@ -3557,11 +3604,12 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                     <div className="flex-1"><div className="text-[13px] font-medium text-slate-700">You</div><div className="text-[11px] text-slate-400">Owner</div></div>
                     <span className="text-[12px] text-slate-400">Owner</span>
                   </div>
-                  {meeting.participants.map((p) => (
-                    <div key={p.name} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">{p.initials || initialsOf(p.name)}</span>
-                      <div className="flex-1"><div className="text-[13px] font-medium text-slate-700">{p.name}</div><div className="text-[11px] text-slate-400">Participant</div></div>
-                      <span className="text-[12px] text-slate-400">Can view</span>
+                  {access.length > 0 && <div className="px-2 pt-1.5 text-[11px] font-semibold text-slate-400">Individuals</div>}
+                  {access.map((s) => (
+                    <div key={s.email} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">{initialsOf(s.name || s.email)}</span>
+                      <div className="min-w-0 flex-1">{s.name ? <><div className="truncate text-[13px] font-medium text-slate-700">{s.name}</div><div className="truncate text-[11px] text-slate-400">{s.email}</div></> : <div className="truncate text-[13px] font-medium text-slate-700">{s.email}</div>}</div>
+                      <RoleDropdown role={s.role || "Viewer"} onChange={(r) => setAccessRole(s.email, r)} onRemove={() => removeAccess(s.email)} />
                     </div>
                   ))}
                 </div>
@@ -3621,6 +3669,18 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
         </div>
       )}
 
+      {renaming && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setRenaming(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-3 text-base font-bold text-slate-900">Rename Report</h3>
+            <input value={renameVal} onChange={(e) => setRenameVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && renameVal.trim()) { onRename && onRename(meeting, renameVal.trim()); setRenaming(false); toast("Renamed"); } }} autoFocus className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setRenaming(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={() => { if (renameVal.trim()) { onRename && onRename(meeting, renameVal.trim()); setRenaming(false); toast("Renamed"); } }} disabled={!renameVal.trim()} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:bg-slate-200 disabled:text-slate-400">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
       {cfg && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setCfg(null)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
