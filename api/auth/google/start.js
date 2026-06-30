@@ -20,6 +20,8 @@ export default function handler(req, res) {
       // Meet Media API (botless capture): read the space + receive conference audio.
       "https://www.googleapis.com/auth/meetings.space.readonly",
       "https://www.googleapis.com/auth/meetings.conference.media.audio.readonly",
+      // Send shared-report emails automatically from the user's own Gmail.
+      "https://www.googleapis.com/auth/gmail.send",
     ].join(" "),
   });
   if (addon) { params.set("state", "addon"); params.delete("prompt"); } // silent re-auth for the add-on once already authorized

@@ -3016,17 +3016,23 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   const [roleOpen, setRoleOpen] = useState(false);
   const [notify, setNotify] = useState(true);
   const addPerson = (v) => { const x = (v || "").trim().replace(/,$/, ""); if (!x) return; setAddPeople((p) => (p.includes(x) ? p : [...p, x])); setShareQuery(""); };
-  const closeShare = () => { setShareOpen(false); setShareStep(1); setShareQuery(""); setShareMsg(""); setAccessOpen(false); setRoleOpen(false); };
-  const doShare = () => {
-    const emails = addPeople.filter((p) => /@/.test(p));
-    const n = addPeople.length;
-    if (notify && emails.length) {
-      const subj = encodeURIComponent(`Shared report: ${meeting.title}`);
-      const bodyTxt = encodeURIComponent(`${shareMsg ? shareMsg + "\n\n" : ""}View the meeting report:\n${window.location.href}\n\n- shared via OctoMeet`);
-      try { window.open(`mailto:${emails.join(",")}?subject=${subj}&body=${bodyTxt}`, "_blank"); } catch (e) {}
-    }
+  const closeShare = () => { setShareOpen(false); setShareStep(1); setShareQuery(""); setShareMsg(""); setAccessOpen(false); setRoleOpen(false); setAddPeople([]); };
+  const doShare = async () => {
+    const emails = addPeople.filter((p) => /.+@.+\..+/.test(p));
+    const n = addPeople.length, msg = shareMsg;
     closeShare();
-    toast(n ? `Report shared with ${n} ${n > 1 ? "people" : "person"}` : "Report shared");
+    if (notify && emails.length) {
+      toast("Sending email…");
+      try {
+        const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg }) });
+        const d = await r.json();
+        if (r.ok) toast(`Report emailed to ${d.sent} ${d.sent > 1 ? "people" : "person"} ✓`);
+        else if (d.needScope) toast("Re-connect Google (email permission) - log out & in, then try again");
+        else toast("Couldn't send the email: " + (d.detail || d.error || ""));
+      } catch (e) { toast("Couldn't send the email"); }
+    } else {
+      toast(n ? `Report shared with ${n} ${n > 1 ? "people" : "person"}` : "Report shared");
+    }
   };
 
   // Push-to integrations (free: webhooks + Notion token).
