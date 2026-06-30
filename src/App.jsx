@@ -17,7 +17,7 @@ import {
 /*  Octomeet.ai - Meeting Intelligence (Read.ai-style clone - Phase 0) */
 /* ------------------------------------------------------------------ */
 
-const SPEAKER_COLORS = ["#6366F1", "#0EA5E9", "#10B981", "#F59E0B", "#F43F5E", "#14B8A6", "#8B5CF6", "#EC4899"];
+const SPEAKER_COLORS = ["#7C3AED", "#0EA5E9", "#10B981", "#F59E0B", "#F43F5E", "#14B8A6", "#8B5CF6", "#EC4899"];
 const REF_TODAY = "2026-06-26";
 
 const VIDEOS = [
@@ -430,11 +430,14 @@ function adaptReal(m) {
   const durSec = (m.duration_min || 0) * 60;
   const firstHi = hl.find((h) => h.at != null);
   const coverAt = firstHi ? firstHi.at : (durSec ? Math.min(Math.round(durSec * 0.2), 600) : 12);
+  // A meeting can live in MULTIPLE folders (multi-select). Fall back to the single manual
+  // folder, then the AI category, then "Meetings".
+  const mFolders = (Array.isArray(m.folders) && m.folders.length) ? m.folders : (m.folder ? [m.folder] : (r.category ? [r.category] : ["Meetings"]));
   return {
     id: m.id, title: m.title || "Meeting", source: platformFromUrl(m.meeting_url) || m.source || "Google Meet",
     date: String(start || REF_TODAY).slice(0, 10),
     timeStart: hhmm(start), timeEnd: hhmm(m.end_time), durationMin: m.duration_min || 0,
-    folder: m.folder || r.category || "Meetings", folderLocked: false, owner: "NB", participantsCount: richParts.length,
+    folder: mFolders[0], folders: mFolders, folderLocked: false, owner: "NB", participantsCount: richParts.length,
     scores: { overall, engagement, sentiment, balance, clarity, charisma: sc.charisma || 0 },
     sentimentLabel: r.sentiment_label || "Neutral",
     sentimentTimeline: (Array.isArray(r.sentiment_timeline) && r.sentiment_timeline.length) ? r.sentiment_timeline : [],
@@ -534,7 +537,7 @@ function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge 
       <div className={"relative h-full w-full overflow-hidden bg-slate-900 " + rounded}>
         {posterSrc
           ? <video ref={ref} src={posterSrc} muted loop playsInline preload="metadata" onLoadedMetadata={seek} className="h-full w-full object-cover" />
-          : <div className="h-full w-full bg-gradient-to-br from-indigo-400 to-violet-500" />}
+          : <div className="h-full w-full bg-gradient-to-br from-violet-400 to-violet-500" />}
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15">
           <span className="flex items-center justify-center rounded-full bg-black/45" style={{ width: size * 0.4, height: size * 0.4 }}>
             <Play size={size * 0.22} className="ml-px text-white" fill="white" />
@@ -566,7 +569,7 @@ const STATUS_META = {
   joining: { label: "Joining…", cls: "bg-amber-100 text-amber-700", spin: true },
   in_call: { label: "In call", cls: "bg-amber-100 text-amber-700", dot: "bg-amber-500", pulse: true },
   recording: { label: "Recording", cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500", pulse: true },
-  processing: { label: "Processing report…", cls: "bg-indigo-100 text-indigo-700", spin: true },
+  processing: { label: "Processing report…", cls: "bg-violet-100 text-violet-700", spin: true },
   error: { label: "Failed", cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500" },
 };
 function StatusBadge({ status }) {
@@ -734,7 +737,16 @@ export default function App() {
   // The demo/email login still sees seeded meetings so the app isn't empty for previews.
   const allMeetings = useMemo(() => (user ? realMeetings : [...realMeetings, ...(meetings || [])]), [realMeetings, meetings, user]);
   const active = useMemo(() => allMeetings.find((m) => m.id === activeId), [allMeetings, activeId]);
-  const openMeeting = (id) => { setActiveId(id); setView("meeting"); };
+  const [shareIntent, setShareIntent] = useState(false);
+  const openMeeting = (id, opts) => { setActiveId(id); setShareIntent(!!(opts && opts.share)); setView("meeting"); };
+  const renameMeeting = async (m, title) => {
+    persist(allMeetings.map((x) => (x.id === m.id ? { ...x, title } : x)));
+    if (m.real) { try { await fetch("/api/meeting-rename", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: m.id, title }) }); } catch (e) { /* ignore */ } }
+  };
+  const deleteMeeting = async (m) => {
+    persist(allMeetings.filter((x) => x.id !== m.id));
+    if (m.real) { try { await fetch("/api/meeting-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: m.id }) }); } catch (e) { /* ignore */ } }
+  };
   const goAsk = (q) => { setAskSeed(q || ""); setView("ask"); };
   const handleUploadSave = useCallback(async (m) => {
     await persist([m, ...meetings]); setUploadOpen(false); setActiveId(m.id); setView("meeting");
@@ -755,13 +767,13 @@ export default function App() {
       <Toaster />
       <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
       <main className="flex flex-1 flex-col overflow-hidden pl-[68px]">
-        {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} />}
-        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} />}
+        {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} user={user} onRename={renameMeeting} onDelete={deleteMeeting} />}
+        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
         {view === "plans" && <PlansView onBack={() => setView("plan-billing")} />}
         {view === "plan-billing" && <PlanBillingView onBack={() => setView("reports")} onComparePlans={() => setView("plans")} user={user} />}
-        {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} />}
+        {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} user={user} />}
         {view === "support" && <SupportView onBack={() => setView("reports")} />}
         {view === "logout" && <LogoutView onCancel={() => setView("reports")} onLogout={logout} />}
         {view === "folders" && <FoldersView onAsk={goAsk} meetings={allMeetings} onOpenFolder={(name) => { setFolderFilter(name); setView("reports"); }} />}
@@ -846,7 +858,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
         {!collapsed && (
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <button onClick={() => setLangOpen((v) => !v)} className="flex items-center gap-0.5 rounded px-1 text-[11px] font-semibold text-slate-300 hover:text-white">{LCODE[lang]}<ChevronDown size={11} /></button>
-            <button onClick={() => setPinned((v) => !v)} title={pinned ? "Unpin (auto-collapse)" : "Keep open"}><PanelRightClose size={16} className={"hover:text-white " + (pinned ? "text-indigo-300" : "text-slate-400")} /></button>
+            <button onClick={() => setPinned((v) => !v)} title={pinned ? "Unpin (auto-collapse)" : "Keep open"}><PanelRightClose size={16} className={"hover:text-white " + (pinned ? "text-violet-300" : "text-slate-400")} /></button>
           </div>
         )}
       </div>
@@ -859,7 +871,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
             {LANGS.map((l) => (
               <button key={l.code} onClick={() => { setLang(l.code); setLangOpen(false); }}
                 className="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
-                <span>{l.label}</span>{lang === l.code && <Check size={15} className="text-indigo-600" />}
+                <span>{l.label}</span>{lang === l.code && <Check size={15} className="text-violet-600" />}
               </button>
             ))}
           </div>
@@ -869,11 +881,11 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
       {/* enterprise */}
       <div className={"mx-3 mb-3 flex items-center rounded-lg px-1 " + (collapsed ? "justify-center" : "justify-between")}>
         {collapsed ? (
-          <button onClick={() => setView("plan-billing")} title={t("enterprise")}><Rocket size={16} className="text-indigo-300 hover:text-indigo-200" /></button>
+          <button onClick={() => setView("plan-billing")} title={t("enterprise")}><Rocket size={16} className="text-violet-300 hover:text-violet-200" /></button>
         ) : (
           <>
-            <button onClick={() => setView("plan-billing")} className="flex items-center gap-1.5 text-xs font-semibold text-white hover:text-indigo-200"><Rocket size={13} className="text-indigo-300" /> {t("enterprise")}</button>
-            <button onClick={() => setView("plan-billing")} className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200">{t("manage")}</button>
+            <button onClick={() => setView("plan-billing")} className="flex items-center gap-1.5 text-xs font-semibold text-white hover:text-violet-200"><Rocket size={13} className="text-violet-300" /> {t("enterprise")}</button>
+            <button onClick={() => setView("plan-billing")} className="text-[11px] font-semibold text-violet-300 hover:text-violet-200">{t("manage")}</button>
           </>
         )}
       </div>
@@ -885,7 +897,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
             <button onClick={() => setView(n.k)} title={t(n.tkey)}
               className={"group mb-0.5 flex w-full items-center rounded-lg px-3 py-2 text-[13px] font-medium transition " +
                 (collapsed ? "justify-center" : "gap-2.5") + " " +
-                (view === n.k ? "bg-indigo-600 text-white shadow" : "text-slate-300 hover:bg-white/5 hover:text-white")}>
+                (view === n.k ? "bg-violet-600 text-white shadow" : "text-slate-300 hover:bg-white/5 hover:text-white")}>
               <n.icon size={16} className="shrink-0" />
               {!collapsed && <span className="flex-1 text-left">{t(n.tkey)}</span>}
               {!collapsed && n.plus && <FolderPlus size={14} className="text-slate-500 group-hover:text-slate-300" />}
@@ -912,8 +924,8 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
         {collapsed ? (
           <div className="flex flex-col items-center gap-3">
             <button onClick={() => { setPinned(true); setLiveOpen(true); }} title={t("addToLive")} className="text-slate-300 hover:text-white"><PlusCircle size={18} /></button>
-            <button onClick={copyLink} title={t("smartScheduler")} className={"flex h-8 w-8 items-center justify-center rounded-md text-white " + (copied ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500")}>{copied ? <Check size={14} /> : <Link2 size={14} />}</button>
-            <button onClick={() => setMenuOpen((v) => !v)} title="Account" className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(uInit) }}>{user?.picture ? <img src={user.picture} alt="" className="h-full w-full object-cover" /> : uInit}</button>
+            <button onClick={copyLink} title={t("smartScheduler")} className={"flex h-8 w-8 items-center justify-center rounded-md text-white " + (copied ? "bg-emerald-500" : "bg-violet-600 hover:bg-violet-500")}>{copied ? <Check size={14} /> : <Link2 size={14} />}</button>
+            <button onClick={() => setMenuOpen((v) => !v)} title="Account" className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(uInit) }}>{user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : uInit}</button>
           </div>
         ) : (
           <>
@@ -931,7 +943,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
                     } catch (er) { toast("Network error"); }
                   }
                 }}
-                placeholder="Paste meeting URL + Enter" className="mb-3 w-full rounded-md border border-indigo-400 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-slate-500 outline-none" />
+                placeholder="Paste meeting URL + Enter" className="mb-3 w-full rounded-md border border-violet-400 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-slate-500 outline-none" />
             ) : (
               <button onClick={() => setLiveOpen(true)} className="mb-3 flex w-full items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-[13px] font-medium text-slate-300 hover:bg-white/5 hover:text-white">
                 <PlusCircle size={16} /> {t("addToLive")}
@@ -942,7 +954,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
                 {t("smartScheduler")} <span className="text-slate-600">ⓘ</span>
               </div>
               <div className="flex gap-1.5">
-                <button onClick={() => setDurOpen((v) => !v)} className={"flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-semibold text-white transition " + (copied ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500")}>
+                <button onClick={() => setDurOpen((v) => !v)} className={"flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-semibold text-white transition " + (copied ? "bg-emerald-500" : "bg-violet-600 hover:bg-violet-500")}>
                   {copied ? <><Check size={12} /> {t("copied")}</> : <><Link2 size={12} /> {t("copyLink")}</>}
                 </button>
                 <button onClick={openScheduling} className="rounded-md bg-white/10 px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/15">{t("manage")}</button>
@@ -959,7 +971,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
               )}
             </div>
             <button onClick={() => setMenuOpen((v) => !v)} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-white/5">
-              <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(uInit) }}>{user?.picture ? <img src={user.picture} alt="" className="h-full w-full object-cover" /> : uInit}</div>
+              <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(uInit) }}>{user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : uInit}</div>
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-[13px] font-medium text-white">{uName}</div>
                 <div className="truncate text-[11px] text-slate-500">{uEmail}</div>
@@ -988,16 +1000,16 @@ function FilterDropdown({ label, icon: Icon, value, onChange, options }) {
   const cur = options.find((o) => o.value === value);
   return (
     <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (active ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
-        {Icon && <Icon size={14} className={active ? "text-indigo-500" : "text-slate-400"} />}{active ? cur?.label : label}<ChevronDown size={14} className={active ? "text-indigo-400" : "text-slate-400"} />
+      <button onClick={() => setOpen((o) => !o)} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (active ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+        {Icon && <Icon size={14} className={active ? "text-violet-500" : "text-slate-400"} />}{active ? cur?.label : label}<ChevronDown size={14} className={active ? "text-violet-400" : "text-slate-400"} />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute left-0 z-20 mt-1 max-h-72 min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
             {options.map((o) => (
-              <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} className={"flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-50 " + (o.value === value ? "font-semibold text-indigo-700" : "text-slate-600")}>
-                {o.label}{o.value === value && <Check size={14} className="text-indigo-600" />}
+              <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} className={"flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-50 " + (o.value === value ? "font-semibold text-violet-700" : "text-slate-600")}>
+                {o.label}{o.value === value && <Check size={14} className="text-violet-600" />}
               </button>
             ))}
           </div>
@@ -1011,54 +1023,78 @@ function FilterDropdown({ label, icon: Icon, value, onChange, options }) {
 // and the user can pick/create more. Mirrors Read.ai's folder set.
 const BASE_FOLDERS = ["Sales Call", "Sales Strategy", "Customer Success", "Customer Support", "Customer Feedback", "Onboarding", "One-on-One", "Planning Meeting", "Partnership Alignment", "Product Demo", "Job Interview", "Program Interview", "Professional Consultation", "Technical Troubleshooting", "Training", "Educational", "Standup", "Kickoff", "Team Meeting", "Meetings"];
 
-// Per-row folder dropdown: shows the current folder, lets you search / pick another /
-// create a new one. Assignment persists (manual override of the AI auto-classification).
-function FolderPicker({ meeting, folders, onAssign, onCreate }) {
+// "Smart folder" glyph: a folder with a small AI sparkle (matches Read.ai's folder icon).
+function SmartFolderIcon({ size = 16 }) {
+  return (
+    <span className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
+      <Folder size={size} className="text-violet-400" />
+      <Sparkles size={Math.round(size * 0.5)} className="absolute -bottom-0.5 -right-1 text-violet-500" fill="currentColor" />
+    </span>
+  );
+}
+
+// Per-row folder picker: MULTI-select (a meeting can live in several folders, like Read.ai).
+// Checkboxes + Save/Cancel; search; create a new folder; positioned FIXED so the scrolling
+// list never clips it. Selection persists via onSave (manual override of AI auto-foldering).
+function FolderPicker({ meeting, folders, onSave, onCreate }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [pos, setPos] = useState(null);
+  const [sel, setSel] = useState([]);
   const btnRef = useRef(null);
-  const cur = meeting.folder;
+  const current = (meeting.folders && meeting.folders.length) ? meeting.folders : (meeting.folder ? [meeting.folder] : []);
   const list = folders.filter((f) => !q || f.toLowerCase().includes(q.toLowerCase()));
   const canCreate = q.trim() && !folders.some((f) => f.toLowerCase() === q.trim().toLowerCase());
-  // The reports list scrolls (overflow), so position the menu with FIXED coords from the
-  // trigger's rect — it never gets clipped, and flips upward if there's no room below.
-  const toggle = () => {
-    if (open) { setOpen(false); return; }
+  const dirty = JSON.stringify([...sel].sort()) !== JSON.stringify([...current].sort());
+  const openMenu = () => {
     const r = btnRef.current && btnRef.current.getBoundingClientRect();
-    if (r) {
-      const W = 240, below = window.innerHeight - r.bottom;
-      setPos({ left: Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8)), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 });
-    }
-    setQ(""); setOpen(true);
+    if (r) { const W = 288, below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - W - 8)), top: below > 380 ? r.bottom + 4 : null, bottom: below > 380 ? null : window.innerHeight - r.top + 4 }); }
+    setSel(current); setQ(""); setOpen(true);
   };
+  const toggle = (f) => setSel((s) => (s.includes(f) ? s.filter((x) => x !== f) : [...s, f]));
+  const createAndCheck = () => { const name = q.trim(); if (!name) return; onCreate(name); setSel((s) => (s.includes(name) ? s : [...s, name])); setQ(""); };
+  const save = () => { onSave(meeting.id, sel); setOpen(false); };
   return (
     <div className="relative" onClick={(e) => e.stopPropagation()}>
-      <button ref={btnRef} onClick={toggle} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600 transition hover:bg-slate-200">
-        <Folder size={12} className="shrink-0 text-indigo-400" />
-        <span className="truncate">{cur}</span>
-        <ChevronDown size={12} className="shrink-0 text-slate-400" />
-      </button>
+      {current.length ? (
+        <button ref={btnRef} onClick={() => (open ? setOpen(false) : openMenu())} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600 transition hover:bg-slate-200">
+          <SmartFolderIcon size={13} />
+          <span className="truncate">{current[0]}{current.length > 1 ? ` +${current.length - 1}` : ""}</span>
+          <Lock size={10} className="shrink-0 text-slate-400" />
+          <ChevronDown size={12} className="shrink-0 text-slate-400" />
+        </button>
+      ) : (
+        <button ref={btnRef} onClick={() => (open ? setOpen(false) : openMenu())} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[12px] text-slate-500 transition hover:bg-slate-50">
+          <Folder size={12} className="shrink-0 text-slate-400" /> Add to Folder <ChevronDown size={12} className="shrink-0 text-slate-400" />
+        </button>
+      )}
       {open && pos && (
         <>
           <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
-          <div className="fixed z-[56] w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search folders..." autoFocus
-              className="mb-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-indigo-400" />
-            <div className="max-h-56 overflow-y-auto">
+          <div className="fixed z-[56] flex w-72 flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
+            <div className="flex items-center gap-2 p-2.5">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-violet-400" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search folders..." autoFocus className="w-full rounded-lg border border-violet-200 py-2 pl-8 pr-2 text-[13px] outline-none focus:border-violet-400" />
+              </div>
+              <button onClick={createAndCheck} title="Create folder" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50"><FolderPlus size={16} /></button>
+            </div>
+            <div className="max-h-60 overflow-y-auto px-1.5">
               {list.map((f) => (
-                <button key={f} onClick={() => { onAssign(meeting.id, f); setOpen(false); }}
-                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[13px] text-slate-700 transition hover:bg-slate-50">
-                  <span className="flex items-center gap-2 truncate"><Folder size={13} className="shrink-0 text-indigo-400" />{f}</span>
-                  {cur === f && <Check size={14} className="shrink-0 text-indigo-600" />}
+                <button key={f} onClick={() => toggle(f)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition hover:bg-slate-50">
+                  <SmartFolderIcon size={16} />
+                  <span className="flex flex-1 items-center gap-1.5 truncate text-[14px] text-slate-700">{f}<Lock size={11} className="shrink-0 text-slate-300" /></span>
+                  <span className={"flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border transition " + (sel.includes(f) ? "border-violet-600 bg-violet-600" : "border-slate-300")}>{sel.includes(f) && <Check size={12} className="text-white" />}</span>
                 </button>
               ))}
               {canCreate && (
-                <button onClick={() => { onCreate(q.trim()); onAssign(meeting.id, q.trim()); setOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] font-medium text-indigo-600 transition hover:bg-indigo-50">
-                  <FolderPlus size={13} /> Create &ldquo;{q.trim()}&rdquo;
-                </button>
+                <button onClick={createAndCheck} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] font-medium text-violet-600 transition hover:bg-violet-50"><FolderPlus size={14} /> Create &ldquo;{q.trim()}&rdquo;</button>
               )}
+              {!list.length && !canCreate && <p className="px-2 py-3 text-center text-[13px] text-slate-400">No folders yet - type to create one.</p>}
+            </div>
+            <div className="flex items-center justify-end gap-1 border-t border-slate-100 p-2.5">
+              <button onClick={() => setOpen(false)} className="rounded-lg px-3 py-1.5 text-[13px] font-semibold text-violet-600 transition hover:bg-violet-50">Cancel</button>
+              <button onClick={save} disabled={!dirty} className="rounded-lg bg-violet-600 px-4 py-1.5 text-[13px] font-semibold text-white transition hover:bg-violet-500 disabled:cursor-default disabled:bg-slate-200 disabled:text-slate-400">Save</button>
             </div>
           </div>
         </>
@@ -1067,11 +1103,44 @@ function FolderPicker({ meeting, folders, onAssign, onCreate }) {
   );
 }
 
-function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder }) {
+// Per-row "⋯" actions menu: Share / Download / Rename / Delete. Fixed-positioned so the
+// scrolling list never clips it.
+function RowMenu({ onShare, onDownload, onRename, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const openMenu = () => {
+    const r = btnRef.current && btnRef.current.getBoundingClientRect();
+    if (r) { const W = 200, below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.right - W), top: below > 220 ? r.bottom + 4 : null, bottom: below > 220 ? null : window.innerHeight - r.top + 4 }); }
+    setOpen(true);
+  };
+  const act = (fn) => (e) => { e.stopPropagation(); setOpen(false); fn(); };
+  return (
+    <div className="relative flex justify-center" onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} onClick={(e) => { e.stopPropagation(); open ? setOpen(false) : openMenu(); }} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"><MoreHorizontal size={16} /></button>
+      {open && pos && (
+        <>
+          <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+          <div className="fixed z-[56] w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
+            <button onClick={act(onShare)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Share2 size={15} className="text-slate-400" /> Share</button>
+            <button onClick={act(onDownload)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Download size={15} className="text-slate-400" /> Download</button>
+            <button onClick={act(onRename)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Pencil size={15} className="text-slate-400" /> Rename Report</button>
+            <button onClick={act(onDelete)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-rose-600 hover:bg-rose-50"><Trash2 size={15} /> Delete Report</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder, user, onRename, onDelete }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
   const [tab, setTab] = useState("reports");
   const [showCrm, setShowCrm] = useState(true);
+  const [renaming, setRenaming] = useState(null);   // meeting being renamed
+  const [renameVal, setRenameVal] = useState("");
+  const [deleting, setDeleting] = useState(null);    // meeting pending delete confirm
   const [fOwner, setFOwner] = useState("all");
   const [fDate, setFDate] = useState("all");
   const [fType, setFType] = useState("all");
@@ -1079,19 +1148,37 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const [fFolder, setFFolder] = useState("all");
   const [manualFolders, setManualFolders] = useState([]);
   useEffect(() => { store.get("octomeet:folders", []).then((f) => setManualFolders(Array.isArray(f) ? f : [])); }, []);
-  // All folders: base catalog ∪ folders already in use (AI-assigned) ∪ manually created.
-  const allFolders = useMemo(() => [...new Set([...BASE_FOLDERS, ...meetings.map((m) => m.folder).filter(Boolean), ...manualFolders])].sort(), [meetings, manualFolders]);
-  const assignFolder = async (meetingId, folder) => {
-    try { await fetch("/api/meeting-folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId, folder }) }); } catch (e) { /* ignore */ }
-    toast("Moved to " + folder); if (onRefresh) onRefresh();
+  // Only folders actually in use (AI-assigned across meetings) + ones you created manually.
+  // The BASE_FOLDERS catalog is just the AI's classification vocabulary, NOT the UI list -
+  // a folder appears here once a meeting actually uses it (or you create it).
+  const allFolders = useMemo(() => [...new Set([...meetings.flatMap((m) => m.folders || (m.folder ? [m.folder] : [])).filter(Boolean), ...manualFolders])].sort(), [meetings, manualFolders]);
+  const saveFolders = async (meetingId, folders) => {
+    try { await fetch("/api/meeting-folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId, folders }) }); } catch (e) { /* ignore */ }
+    toast(folders.length ? "Saved to " + folders.length + (folders.length > 1 ? " folders" : " folder") : "Removed from folders"); if (onRefresh) onRefresh();
   };
   const createFolder = (name) => setManualFolders((prev) => { const next = [...new Set([...prev, name])]; store.set("octomeet:folders", next); return next; });
+
+  // Quick download of a single report as Markdown (from "⋯ → Download").
+  const downloadMeeting = (m) => {
+    const L = [`# ${m.title}`, "", `${fmtDateFull(m.date)} · ${m.timeStart} - ${m.timeEnd}`, `OctoMeet Score: ${m.scores?.overall ?? "-"}`, ""];
+    if (m.summary) L.push("## Summary", m.summary, "");
+    if (m.keyQA?.length) { L.push("## Key Questions"); m.keyQA.forEach((k) => L.push(`- **${k.q}**${k.a ? `\n  ${k.a}` : ""}`)); L.push(""); }
+    if (m.actionItems?.length) { L.push("## Action Items"); m.actionItems.forEach((a) => L.push(`- [ ] ${a.task}${a.owner ? ` (${a.owner})` : ""}${a.due ? ` - due ${a.due}` : ""}`)); L.push(""); }
+    if (m.nextSteps?.length) { L.push("## Next Steps"); m.nextSteps.forEach((n) => L.push(`- ${typeof n === "string" ? n : n.task || ""}`)); L.push(""); }
+    if (m.chapters?.length) { L.push("## Chapters & Topics"); m.chapters.forEach((c) => L.push(`### ${c.title}${c.t ? ` (${c.t})` : ""}${c.summary ? `\n${c.summary}` : ""}`)); L.push(""); }
+    const blob = new Blob([L.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `${m.title.replace(/[^\w\s-]/g, "").trim() || "report"}.md`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000); toast("Downloaded");
+  };
+  const submitRename = () => { if (renaming && renameVal.trim()) { onRename && onRename(renaming, renameVal.trim()); toast("Renamed"); } setRenaming(null); };
+  const confirmDelete = () => { if (deleting) { onDelete && onDelete(deleting); toast("Report deleted"); } setDeleting(null); };
 
   // "error" is intentionally excluded: a failed capture never shows anywhere -
   // it's either a real report (recorded) or nothing at all.
   const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing"];
   const sourceOpts = useMemo(() => [{ value: "all", label: "All sources" }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
-  const folderOpts = useMemo(() => [{ value: "all", label: "All folders" }, ...[...new Set(meetings.map((m) => m.folder).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
+  const folderOpts = useMemo(() => [{ value: "all", label: "All folders" }, ...[...new Set(meetings.flatMap((m) => m.folders || (m.folder ? [m.folder] : [])).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
   const typeOpts = [{ value: "all", label: "All types" }, { value: "completed", label: "Completed" }, { value: "processing", label: "In progress" }];
   const dateOpts = [{ value: "all", label: "Anytime" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }];
   const ownerOpts = [{ value: "all", label: "All Reports" }, { value: "mine", label: "My reports" }, { value: "real", label: "Recorded by OctoMeet" }];
@@ -1101,10 +1188,10 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
       ? meetings.filter((m) => m.real && INCOMPLETE.includes(m.status))
       // Reports tab: only finished reports (or demo rows). Never failed, never in-progress.
       : meetings.filter((m) => !m.real || m.status === "done"))
-      .filter((m) => !folderFilter || m.folder === folderFilter)
-      .filter((m) => fOwner === "all" || (fOwner === "mine" ? m.owner === "NB" : m.real))
+      .filter((m) => !folderFilter || (m.folders || (m.folder ? [m.folder] : [])).includes(folderFilter))
+      .filter((m) => fOwner === "all" || (fOwner === "mine" ? !m.shared : m.real))
       .filter((m) => fSource === "all" || m.source === fSource)
-      .filter((m) => fFolder === "all" || m.folder === fFolder)
+      .filter((m) => fFolder === "all" || (m.folders || (m.folder ? [m.folder] : [])).includes(fFolder))
       .filter((m) => fType === "all" || (fType === "completed" ? (!m.real || m.status === "done") : (m.real && INCOMPLETE.includes(m.status))))
       .filter((m) => { if (fDate === "all") return true; const d = daysAgo(m.date); return fDate === "today" ? d <= 0 : fDate === "week" ? d <= 7 : d <= 31; })
       .filter((m) => !q || m.title.toLowerCase().includes(q.toLowerCase()))
@@ -1128,11 +1215,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
           <h1 className="text-lg font-bold text-slate-900">{t("reports")}</h1>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
-          className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-white shadow-sm px-3 py-2 focus-within:border-indigo-400">
+          className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-white shadow-sm px-3 py-2 focus-within:border-violet-400">
           <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-slate-400"><Globe size={15} /><ChevronDown size={13} /></button>
           <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder={t("askAnything")}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
-          <button type="submit" className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40" disabled={!ask.trim()}>
+          <button type="submit" className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white transition hover:bg-violet-500 disabled:opacity-40" disabled={!ask.trim()}>
             <Send size={15} />
           </button>
         </form>
@@ -1140,14 +1227,14 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
           <div className="flex gap-5">
             {[{ k: "reports", key: "reportsTab" }, { k: "incomplete", key: "incompleteTab" }].map((tb) => (
               <button key={tb.k} onClick={() => setTab(tb.k)}
-                className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
+                className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-violet-600 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
                 {t(tb.key)}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-3 pb-1.5">
             <button onClick={() => { if (onRefresh) onRefresh(); toast("Refreshed"); }} className="flex items-center gap-1.5 text-[13px] text-slate-400 transition hover:text-slate-600"><RefreshCw size={13} /> {t("lastRefreshed")}</button>
-            <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-500">
+            <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-violet-500">
               <Upload size={15} /> {t("upload")}
             </button>
           </div>
@@ -1157,21 +1244,21 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
       <div className="flex-1 overflow-y-auto px-6 py-5">
           <>
             {(live.length > 0 || proc.length > 0) && (
-              <div className={"mb-5 flex items-center gap-3 rounded-xl border px-4 py-3 " + (live.length ? "border-rose-200 bg-rose-50" : "border-indigo-200 bg-indigo-50")}>
+              <div className={"mb-5 flex items-center gap-3 rounded-xl border px-4 py-3 " + (live.length ? "border-rose-200 bg-rose-50" : "border-violet-200 bg-violet-50")}>
                 {live.length ? (
                   <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" /></span>
-                ) : <Loader2 size={15} className="animate-spin text-indigo-600" />}
+                ) : <Loader2 size={15} className="animate-spin text-violet-600" />}
                 <span className="flex-1 text-sm font-medium text-slate-700">
                   {live.length
                     ? <>OctoMeet is <b className="text-rose-700">recording live</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - the AI report will appear here automatically.</>
-                    : <>Generating <b className="text-indigo-700">{proc.length}</b> AI report{proc.length > 1 ? "s" : ""} from your meeting{proc.length > 1 ? "s" : ""}… this updates automatically.</>}
+                    : <>Generating <b className="text-violet-700">{proc.length}</b> AI report{proc.length > 1 ? "s" : ""} from your meeting{proc.length > 1 ? "s" : ""}… this updates automatically.</>}
                 </span>
                 <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> Refresh</button>
               </div>
             )}
             {tab === "reports" && showCrm && (
-              <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-indigo-50 px-4 py-3">
-                <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">✨ NEW!</span>
+              <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-violet-50 px-4 py-3">
+                <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">✨ NEW!</span>
                 <span className="flex-1 text-sm text-slate-700">Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.</span>
                 <button onClick={() => toast("Connect HubSpot - coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="hubspot" size={14} /></span> Add Hubspot</button>
                 <button onClick={() => toast("Connect Salesforce - coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="salesforce" size={14} /></span> Add Salesforce</button>
@@ -1183,10 +1270,10 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("filterByTitle")}
-                  className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400" />
+                  className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-violet-400" />
               </div>
               {folderFilter && (
-                <span className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-2 text-[13px] font-semibold text-indigo-700"><Folder size={13} /> {folderFilter}<button onClick={onClearFolder} className="ml-1 text-indigo-400 hover:text-indigo-700"><X size={13} /></button></span>
+                <span className="flex items-center gap-1.5 rounded-lg bg-violet-50 px-3 py-2 text-[13px] font-semibold text-violet-700"><Folder size={13} /> {folderFilter}<button onClick={onClearFolder} className="ml-1 text-violet-400 hover:text-violet-700"><X size={13} /></button></span>
               )}
               <FilterDropdown label={t("allReports")} icon={ClipboardList} value={fOwner} onChange={setFOwner} options={ownerOpts} />
               <FilterDropdown label={t("anytime")} icon={Calendar} value={fDate} onChange={setFDate} options={dateOpts} />
@@ -1212,7 +1299,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                   <div className="bg-slate-50/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t(BUCKET_TKEY[g.label] || "today")}</div>
                   {g.items.map((m) => (
                     <div key={m.id} onClick={() => onOpen(m.id)} role="button" tabIndex={0}
-                      className="grid w-full cursor-pointer grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-indigo-50/40">
+                      className="grid w-full cursor-pointer grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-violet-50/40">
                       <div className="flex min-w-0 items-center gap-4">
                         <VideoThumb src={m.video} source={m.source} size={44} at={m.coverAt} />
                         <div className="min-w-0">
@@ -1228,14 +1315,23 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                         <div className="text-[12px] text-slate-400">{m.timeStart} - {m.timeEnd}</div>
                       </div>
                       <div>
-                        {m.real
-                          ? <FolderPicker meeting={m} folders={allFolders} onAssign={assignFolder} onCreate={createFolder} />
-                          : <span className="inline-flex max-w-[90%] items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[12px] text-slate-600"><Folder size={12} className="shrink-0 text-indigo-400" /><span className="truncate">{m.folder}</span>{m.folderLocked && <Lock size={10} className="shrink-0 text-slate-400" />}</span>}
+                        <FolderPicker meeting={m} folders={allFolders} onSave={saveFolders} onCreate={createFolder} />
                       </div>
                       <div>
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(m.owner) }}>{m.owner}</span>
+                        {(() => {
+                          const ownerName = m.real ? (user?.name || user?.email || "You") : "Nicolas Benech";
+                          const pic = m.real ? user?.picture : null;
+                          return (
+                            <span className="group relative inline-flex">
+                              {pic
+                                ? <img src={pic} alt={ownerName} referrerPolicy="no-referrer" className="h-7 w-7 rounded-full object-cover" />
+                                : <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(initialsOf(ownerName)) }}>{initialsOf(ownerName)}</span>}
+                              <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">{ownerName}</span>
+                            </span>
+                          );
+                        })()}
                       </div>
-                      <div className="flex justify-center"><MoreHorizontal size={16} className="text-slate-300" /></div>
+                      <RowMenu onShare={() => onOpen(m.id, { share: true })} onDownload={() => downloadMeeting(m)} onRename={() => { setRenaming(m); setRenameVal(m.title); }} onDelete={() => setDeleting(m)} />
                     </div>
                   ))}
                 </div>
@@ -1244,6 +1340,31 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
             </div>
           </>
       </div>
+
+      {renaming && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setRenaming(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-3 text-base font-bold text-slate-900">Rename Report</h3>
+            <input value={renameVal} onChange={(e) => setRenameVal(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitRename()} autoFocus className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setRenaming(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={submitRename} disabled={!renameVal.trim()} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:bg-slate-200 disabled:text-slate-400">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleting && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setDeleting(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center gap-2"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-50 text-rose-600"><Trash2 size={18} /></span><h3 className="text-base font-bold text-slate-900">Delete Report</h3></div>
+            <p className="text-[13px] leading-relaxed text-slate-500">Delete <b className="text-slate-700">“{deleting.title}”</b>? This permanently removes the report and its analysis. This can't be undone.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setDeleting(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={confirmDelete} className="rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-rose-500">Delete Report</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1253,12 +1374,12 @@ function Placeholder({ section, onReports, t }) {
   const Icon = section?.icon || ClipboardList;
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500"><Icon size={26} /></div>
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-500"><Icon size={26} /></div>
       <h2 className="text-xl font-bold text-slate-800">{section ? t(section.tkey) : ""}</h2>
       <p className="mt-1 max-w-md text-sm text-slate-500">
         This section is coming soon. For now, the <b>Reports</b> screen is fully working.
       </p>
-      <button onClick={onReports} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Go to Reports</button>
+      <button onClick={onReports} className="mt-5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">Go to Reports</button>
     </div>
   );
 }
@@ -1266,7 +1387,7 @@ function Placeholder({ section, onReports, t }) {
 /* ===================== CREATE WORKSPACE (Add People) =============== */
 function Toggle({ on, onChange }) {
   return (
-    <button type="button" onClick={() => onChange(!on)} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (on ? "bg-indigo-600" : "bg-slate-200")}>
+    <button type="button" onClick={() => onChange(!on)} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (on ? "bg-violet-600" : "bg-slate-200")}>
       <span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (on ? "left-[22px]" : "left-0.5")} />
     </button>
   );
@@ -1302,10 +1423,10 @@ function CreateWorkspace({ onCancel, onDone }) {
             <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-slate-500">Workspaces allow companies to build holistic views of meeting metrics, and allow for custom permissions across teams and individuals.</p>
             <label className="mt-7 block text-sm font-medium text-slate-600">Name your new organization</label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your workspace name, e.g., Acme Inc..."
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400" />
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-400" />
             <button onClick={() => setAgreed(!agreed)} className="mt-5 flex items-center gap-2.5 text-left text-sm text-slate-600">
-              <span className={"flex h-5 w-5 shrink-0 items-center justify-center rounded border " + (agreed ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white")}>{agreed && <Check size={13} />}</span>
-              <span>I have read and agree to the <span className="font-medium text-indigo-600">Data Processing Agreement</span></span>
+              <span className={"flex h-5 w-5 shrink-0 items-center justify-center rounded border " + (agreed ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 bg-white")}>{agreed && <Check size={13} />}</span>
+              <span>I have read and agree to the <span className="font-medium text-violet-600">Data Processing Agreement</span></span>
             </button>
           </>
         )}
@@ -1320,7 +1441,7 @@ function CreateWorkspace({ onCancel, onDone }) {
                   <div className="relative flex-1">
                     <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
                     <input value={iv.email} onChange={(e) => setInvites(invites.map((x, j) => j === i ? { ...x, email: e.target.value } : x))} placeholder="name@company.com"
-                      className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-400" />
+                      className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-violet-400" />
                   </div>
                   <select value={iv.role} onChange={(e) => setInvites(invites.map((x, j) => j === i ? { ...x, role: e.target.value } : x))}
                     className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-600 outline-none">
@@ -1330,7 +1451,7 @@ function CreateWorkspace({ onCancel, onDone }) {
                 </div>
               ))}
             </div>
-            <button onClick={() => setInvites([...invites, { email: "", role: "Member" }])} className="mt-3 flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800"><Plus size={15} /> Add another</button>
+            <button onClick={() => setInvites([...invites, { email: "", role: "Member" }])} className="mt-3 flex items-center gap-1.5 text-sm font-medium text-violet-600 hover:text-violet-800"><Plus size={15} /> Add another</button>
           </>
         )}
 
@@ -1359,7 +1480,7 @@ function CreateWorkspace({ onCancel, onDone }) {
             <p className="mt-3 text-[15px] text-slate-500">Connect a calendar so Octomeet can auto-join your meetings. Optional.</p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               {[{ label: "Google Calendar", brand: "googleCalendar" }, { label: "Outlook Calendar", brand: "outlook" }].map((c) => (
-                <button key={c.label} onClick={() => toast("Connecting " + c.label + "…")} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-indigo-300">
+                <button key={c.label} onClick={() => toast("Connecting " + c.label + "…")} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-violet-300">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white"><BrandIcon name={c.brand} size={20} /></div>
                   <div><div className="text-sm font-medium text-slate-700">{c.label}</div><div className="text-xs text-slate-400">Connect</div></div>
                 </button>
@@ -1383,10 +1504,10 @@ function CreateWorkspace({ onCancel, onDone }) {
 
         <div className="mt-8 flex items-center gap-3">
           <button onClick={next} disabled={!canNext}
-            className={"rounded-lg px-5 py-2.5 text-sm font-semibold transition " + (canNext ? "bg-indigo-600 text-white hover:bg-indigo-500" : "cursor-not-allowed bg-slate-200 text-slate-400")}>
+            className={"rounded-lg px-5 py-2.5 text-sm font-semibold transition " + (canNext ? "bg-violet-600 text-white hover:bg-violet-500" : "cursor-not-allowed bg-slate-200 text-slate-400")}>
             {step >= total ? "Finish" : "Next Step"}
           </button>
-          <button onClick={onCancel} className="rounded-lg px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50">Cancel</button>
+          <button onClick={onCancel} className="rounded-lg px-4 py-2.5 text-sm font-medium text-violet-600 hover:bg-violet-50">Cancel</button>
         </div>
       </div>
     </div>
@@ -1404,10 +1525,10 @@ function SectionTop({ title, onAsk, right }) {
       </div>
       <div className="flex items-center gap-3">
         <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
-          className="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white shadow-sm px-3 py-2 focus-within:border-indigo-400">
+          className="flex flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white shadow-sm px-3 py-2 focus-within:border-violet-400">
           <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-slate-400"><Globe size={15} /><ChevronDown size={13} /></button>
           <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Ask Octo anything..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
-          <button type="submit" disabled={!ask.trim()} className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40"><Send size={15} /></button>
+          <button type="submit" disabled={!ask.trim()} className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white transition hover:bg-violet-500 disabled:opacity-40"><Send size={15} /></button>
         </form>
         {right}
       </div>
@@ -1452,18 +1573,18 @@ function FoldersView({ onAsk, meetings, onOpenFolder }) {
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by folder title..." className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by folder title..." className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-violet-400" />
             </div>
           </div>
-          <button onClick={newFolder} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><FolderPlus size={15} /> New Folder</button>
+          <button onClick={newFolder} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-violet-500"><FolderPlus size={15} /> New Folder</button>
         </div>
         <div className="grid grid-cols-[1fr_120px_90px_140px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
           <div>Folder</div><div>Members</div><div>Reports</div><div>Last Updated</div>
         </div>
         {folders.map((f) => (
-          <button key={f.name} onClick={() => onOpenFolder && onOpenFolder(f.name)} className="grid w-full grid-cols-[1fr_120px_90px_140px] items-center border-b border-slate-100 px-3 py-3.5 text-left transition hover:bg-indigo-50/40">
+          <button key={f.name} onClick={() => onOpenFolder && onOpenFolder(f.name)} className="grid w-full grid-cols-[1fr_120px_90px_140px] items-center border-b border-slate-100 px-3 py-3.5 text-left transition hover:bg-violet-50/40">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500"><Folder size={18} /></div>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-500"><Folder size={18} /></div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">{f.name}</div>
                 <div className="truncate text-[12px] text-slate-500">{f.desc}</div>
@@ -1557,17 +1678,17 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
     : events;
   return (
     <>
-      <SectionTop title="Calendar" onAsk={onAsk} right={<button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Scheduling link copied"); }} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500"><Link2 size={15} /> Scheduling Link</button>} />
+      <SectionTop title="Calendar" onAsk={onAsk} right={<button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Scheduling link copied"); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-violet-500"><Link2 size={15} /> Scheduling Link</button>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="mb-5 flex items-center gap-5 border-b border-slate-200">
           {[{ k: "upcoming", l: "Upcoming" }, { k: "scheduling", l: "Scheduling" }].map((tb) => (
-            <button key={tb.k} onClick={() => setTab(tb.k)} className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{tb.l}</button>
+            <button key={tb.k} onClick={() => setTab(tb.k)} className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-violet-600 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{tb.l}</button>
           ))}
         </div>
 
         {tab === "upcoming" ? (
           <>
-            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3">
               <OctoLogo size={22} />
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">Auto-join your meetings {recallConnected && autoJoin && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Calendar connected</span>}</div>
@@ -1601,7 +1722,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
                     {mtg && mtg.status === "done" ? (
                       <button onClick={() => onOpen(mtg.id)} className="flex items-center gap-2 text-left">
                         <span className="flex h-7 items-center rounded-md bg-emerald-100 px-2 text-[12px] font-bold text-emerald-700">{mtg.scores.engagement || mtg.scores.overall}</span>
-                        <span className="text-[12px] font-semibold text-indigo-600 hover:text-indigo-800">View report ↗</span>
+                        <span className="text-[12px] font-semibold text-violet-600 hover:text-violet-800">View report ↗</span>
                       </button>
                     ) : mtg && mtg.status && mtg.status !== "scheduled" ? (
                       <StatusBadge status={mtg.status} />
@@ -1621,17 +1742,17 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
           <div className="space-y-6">
             <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm">
               <span className="flex items-center gap-1.5 text-slate-600"><BrandIcon name="googleCalendar" size={16} /> Scheduling based on: <b>nicolas@octomeet.ai</b> (Google Calendar)</span>
-              <span className="flex gap-4 text-[13px] font-semibold text-indigo-600"><button onClick={() => toast("Change calendar - coming soon")}>Change Calendar</button><button onClick={() => toast("Scheduling settings - coming soon")}>Scheduling Settings</button></span>
+              <span className="flex gap-4 text-[13px] font-semibold text-violet-600"><button onClick={() => toast("Change calendar - coming soon")}>Change Calendar</button><button onClick={() => toast("Scheduling settings - coming soon")}>Scheduling Settings</button></span>
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-900">Default scheduling links</h3>
-              <p className="mb-4 text-sm text-slate-500">Allows others to schedule a meeting with you. <span className="text-indigo-600">cal.octomeet.ai/nicolas-82n88</span></p>
+              <p className="mb-4 text-sm text-slate-500">Allows others to schedule a meeting with you. <span className="text-violet-600">cal.octomeet.ai/nicolas-82n88</span></p>
               <div className="space-y-3">
                 {links.map((l) => (
                   <div key={l.m} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4">
                     <div className="flex items-center gap-3">
                       <CalToggle on={true} />
-                      <div><div className="text-sm font-semibold text-slate-800">{l.m}-minute Meeting</div><div className="text-[12px] text-indigo-600">cal.octomeet.ai/nicolas-82n88/{l.m}-min</div></div>
+                      <div><div className="text-sm font-semibold text-slate-800">{l.m}-minute Meeting</div><div className="text-[12px] text-violet-600">cal.octomeet.ai/nicolas-82n88/{l.m}-min</div></div>
                     </div>
                     <Link2 size={16} className="text-slate-400" />
                   </div>
@@ -1671,7 +1792,7 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
         <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
           <div className="space-y-5">
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
-              <h2 className="text-2xl font-bold text-indigo-700">{hi}, {uName}</h2>
+              <h2 className="text-2xl font-bold text-violet-700">{hi}, {uName}</h2>
               <p className="mt-1 text-sm font-medium text-slate-500">A digest from your {meetings.length} most recent meeting{meetings.length === 1 ? "" : "s"}</p>
               <div className="mt-3 flex gap-4">
                 <p className="flex-1 text-sm leading-relaxed text-slate-600">{lead ? lead.summary : "Once your meetings are analyzed, your personalized digest - top topics, summaries and action items across meetings - will appear here."}</p>
@@ -1682,10 +1803,10 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
               <p className="mb-3 text-[13px] text-slate-400">Topic progression across your meetings</p>
               {topTopics.length ? <div className="space-y-2">
                 {topTopics.map(([t, n], i) => (
-                  <div key={i} className="rounded-xl bg-indigo-50/60 p-4">
+                  <div key={i} className="rounded-xl bg-violet-50/60 p-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold text-slate-800">{t}</h4>
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-indigo-600">{Math.round((n / meetings.length) * 100)}% of meetings</span>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-violet-600">{Math.round((n / meetings.length) * 100)}% of meetings</span>
                     </div>
                     <div className="mt-1 text-[12px] text-slate-400">From {n} meeting{n === 1 ? "" : "s"}</div>
                   </div>
@@ -1705,19 +1826,19 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
           </div>
 
           <div className="space-y-5">
-            <div className="rounded-2xl bg-indigo-900 p-5 text-white">
-              <div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-base font-bold">Daily Read <span className="rounded bg-indigo-500 px-1.5 py-0.5 text-[10px]">✨ beta</span></h3><Link2 size={15} className="text-indigo-300" /></div>
-              <p className="mt-0.5 text-sm text-indigo-200">June 26, 2026</p>
-              <div className="mt-3 h-1 w-full rounded-full bg-indigo-700"><div className="h-1 w-0 rounded-full bg-white" /></div>
-              <div className="mt-2 flex items-center gap-3"><Play size={18} fill="white" /><span className="text-[12px] text-indigo-300">--:-- / --:--</span></div>
-              <div className="mt-3 flex items-start gap-2 rounded-lg bg-indigo-800 p-2.5 text-[12px] text-indigo-200">ℹ The text-to-speech voice you are hearing is AI-generated and not a human voice.</div>
+            <div className="rounded-2xl bg-violet-900 p-5 text-white">
+              <div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-base font-bold">Daily Read <span className="rounded bg-violet-500 px-1.5 py-0.5 text-[10px]">✨ beta</span></h3><Link2 size={15} className="text-violet-300" /></div>
+              <p className="mt-0.5 text-sm text-violet-200">June 26, 2026</p>
+              <div className="mt-3 h-1 w-full rounded-full bg-violet-700"><div className="h-1 w-0 rounded-full bg-white" /></div>
+              <div className="mt-2 flex items-center gap-3"><Play size={18} fill="white" /><span className="text-[12px] text-violet-300">--:-- / --:--</span></div>
+              <div className="mt-3 flex items-start gap-2 rounded-lg bg-violet-800 p-2.5 text-[12px] text-violet-200">ℹ The text-to-speech voice you are hearing is AI-generated and not a human voice.</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><CheckCircle2 size={16} className="text-indigo-500" /> Action Items</h3><div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]"><button onClick={() => setAiFilter("me")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "me" ? "bg-indigo-600 text-white" : "text-slate-500")}>For me</button><button onClick={() => setAiFilter("all")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "all" ? "bg-indigo-600 text-white" : "text-slate-500")}>All</button></div></div>
+              <div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><CheckCircle2 size={16} className="text-violet-500" /> Action Items</h3><div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]"><button onClick={() => setAiFilter("me")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "me" ? "bg-violet-600 text-white" : "text-slate-500")}>For me</button><button onClick={() => setAiFilter("all")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "all" ? "bg-violet-600 text-white" : "text-slate-500")}>All</button></div></div>
               <div className="space-y-3">
                 {actions.map((a, i) => (
                   <button key={i} onClick={() => onOpen(a.id)} className="block w-full border-b border-slate-100 pb-3 text-left last:border-0">
-                    <div className="text-[13px] text-slate-700">{a.task} <span className="font-semibold text-indigo-600">Ask Octo</span></div>
+                    <div className="text-[13px] text-slate-700">{a.task} <span className="font-semibold text-violet-600">Ask Octo</span></div>
                     <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><Calendar size={11} /> {a.date ? fmtDateFull(a.date) : ""} · <FileText size={11} /> {a.meeting}</div>
                   </button>
                 ))}
@@ -1766,7 +1887,7 @@ function CoachingView({ onAsk }) {
               <p className="mt-1 text-sm text-slate-500">Your average rate of speech in words per minute. <b>You speak at 130 WPM, within the recommended range of 130-175 WPM. Keep it up!</b></p>
               <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between text-[12px] text-slate-400"><span>Range</span><span>Your pace</span></div>
-                <div className="relative mt-2 h-2 rounded-full" style={{ background: "linear-gradient(90deg,#10B981,#F59E0B,#F43F5E)" }}><span className="absolute -top-1 h-4 w-4 rounded-full border-2 border-indigo-600 bg-white" style={{ left: "0%" }} /></div>
+                <div className="relative mt-2 h-2 rounded-full" style={{ background: "linear-gradient(90deg,#10B981,#F59E0B,#F43F5E)" }}><span className="absolute -top-1 h-4 w-4 rounded-full border-2 border-violet-600 bg-white" style={{ left: "0%" }} /></div>
                 <div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>130</span><span>270</span></div>
               </div>
             </div>
@@ -1800,8 +1921,8 @@ function CoachingView({ onAsk }) {
 }
 function CoachMetric({ icon: Icon, label, value, ok, active }) {
   return (
-    <div className={"flex items-center justify-between rounded-xl border bg-white p-3.5 " + (active ? "border-indigo-300 ring-1 ring-indigo-200" : "border-slate-200")}>
-      <span className="flex items-center gap-2 text-sm text-slate-700"><Icon size={15} className="text-indigo-400" /> {label}</span>
+    <div className={"flex items-center justify-between rounded-xl border bg-white p-3.5 " + (active ? "border-violet-300 ring-1 ring-violet-200" : "border-slate-200")}>
+      <span className="flex items-center gap-2 text-sm text-slate-700"><Icon size={15} className="text-violet-400" /> {label}</span>
       <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">{value} {ok && <CheckCircle2 size={15} className="text-emerald-500" />}</span>
     </div>
   );
@@ -1831,26 +1952,26 @@ function RecommendationsView({ onAsk }) {
       <div className="flex flex-1 overflow-hidden">
         <div className="w-80 shrink-0 overflow-y-auto border-r border-slate-200">
           <div className="flex items-center gap-4 border-b border-slate-200 px-4 py-3 text-sm font-semibold">
-            <button onClick={() => setRecTab("new")} className={"flex items-center gap-1 " + (recTab === "new" ? "text-indigo-700" : "text-slate-400")}>New <span className="rounded-full bg-indigo-600 px-1.5 text-[11px] text-white">19</span></button>
-            <button onClick={() => setRecTab("reviewed")} className={recTab === "reviewed" ? "text-indigo-700" : "text-slate-400"}>Reviewed</button>
-            <button onClick={() => toast("Filters - coming soon")} className="ml-auto text-[13px] font-medium text-indigo-600">Show filters</button>
+            <button onClick={() => setRecTab("new")} className={"flex items-center gap-1 " + (recTab === "new" ? "text-violet-700" : "text-slate-400")}>New <span className="rounded-full bg-violet-600 px-1.5 text-[11px] text-white">19</span></button>
+            <button onClick={() => setRecTab("reviewed")} className={recTab === "reviewed" ? "text-violet-700" : "text-slate-400"}>Reviewed</button>
+            <button onClick={() => toast("Filters - coming soon")} className="ml-auto text-[13px] font-medium text-violet-600">Show filters</button>
           </div>
           {recTab === "reviewed" && <div className="px-4 py-16 text-center text-sm text-slate-400">No reviewed recommendations yet.</div>}
           {recTab === "new" && list.map((r, i) => (
-            <button key={i} onClick={() => setSel(i)} className={"block w-full border-b border-slate-100 px-4 py-3 text-left transition " + (sel === i ? "bg-indigo-50/60" : "hover:bg-slate-50")}>
-              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-800">{r.name}</span><span className="flex items-center gap-1 text-[12px] text-slate-500"><Zap size={12} className="text-indigo-400" /> {r.n}</span></div>
+            <button key={i} onClick={() => setSel(i)} className={"block w-full border-b border-slate-100 px-4 py-3 text-left transition " + (sel === i ? "bg-violet-50/60" : "hover:bg-slate-50")}>
+              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-800">{r.name}</span><span className="flex items-center gap-1 text-[12px] text-slate-500"><Zap size={12} className="text-violet-400" /> {r.n}</span></div>
               <div className="mt-1 flex items-center gap-1 text-[12px] text-slate-400"><Calendar size={11} /> {r.date}</div>
             </button>
           ))}
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="mb-4 flex items-center gap-2"><h2 className="text-lg font-bold text-slate-900">{list[sel].name}</h2><span className="flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[12px] font-semibold text-indigo-700"><Zap size={12} /> {list[sel].n}</span></div>
+          <div className="mb-4 flex items-center gap-2"><h2 className="text-lg font-bold text-slate-900">{list[sel].name}</h2><span className="flex items-center gap-1 rounded bg-violet-50 px-2 py-0.5 text-[12px] font-semibold text-violet-700"><Zap size={12} /> {list[sel].n}</span></div>
           <div className="space-y-4">
             {!items.length && <div className="rounded-2xl border border-dashed border-slate-200 py-16 text-center text-sm text-slate-400">All recommendations handled 🎉</div>}
             {items.map((it, i) => (
               <div key={i} className="rounded-2xl border border-slate-200 bg-white p-5">
                 <div className="mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-sm font-semibold text-slate-800"><CheckCircle2 size={16} className="text-indigo-500" /> Action item for you</span>
+                  <span className="flex items-center gap-2 text-sm font-semibold text-slate-800"><CheckCircle2 size={16} className="text-violet-500" /> Action item for you</span>
                   <div className="flex gap-2">
                     <button onClick={() => resolve(i, "Acknowledged")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><ThumbsUp size={14} /> Acknowledge</button>
                     <button onClick={() => resolve(i, "Ignored")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-rose-600 hover:bg-rose-50"><X size={14} /> Ignore</button>
@@ -1894,8 +2015,8 @@ function IntegrationsView({ onAsk }) {
               </div>
             </div>
             {conn[it.name]
-              ? <button onClick={() => toggle(it.name)} className="rounded-lg border border-indigo-300 px-4 py-1.5 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-50">Manage</button>
-              : <button onClick={() => toggle(it.name)} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500">Connect</button>}
+              ? <button onClick={() => toggle(it.name)} className="rounded-lg border border-violet-300 px-4 py-1.5 text-[13px] font-semibold text-violet-700 hover:bg-violet-50">Manage</button>
+              : <button onClick={() => toggle(it.name)} className="rounded-lg bg-violet-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500">Connect</button>}
           </div>
         ))}
       </div>
@@ -1950,7 +2071,7 @@ function MeetingPolicyView({ onAsk }) {
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-2xl space-y-5">
           <SecHead icon={ShieldCheck} title="Meeting Policy" desc="Set organization-wide rules for how Octomeet joins, records, and shares meetings." />
-          <div className="rounded-lg bg-indigo-50 p-3 text-[13px] text-indigo-700">These defaults apply to everyone in your workspace (octomeet.ai). Members can be allowed to override them below.</div>
+          <div className="rounded-lg bg-violet-50 p-3 text-[13px] text-violet-700">These defaults apply to everyone in your workspace (octomeet.ai). Members can be allowed to override them below.</div>
 
           <div className="text-sm font-bold text-slate-800">Auto-Join</div>
           <ToggleRow title="Auto-Join meetings" desc="Octomeet automatically joins scheduled meetings from connected calendars." on={p.autoJoin} onChange={(v) => set1("autoJoin", v)}>
@@ -1977,14 +2098,14 @@ function MeetingPolicyView({ onAsk }) {
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="text-sm font-semibold text-slate-800">Data retention</div>
             <p className="mb-2 text-[13px] text-slate-500">How long meeting data is kept before automatic deletion.</p>
-            <select value={retention} onChange={(e) => set1("retention", e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
+            <select value={retention} onChange={(e) => set1("retention", e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400">
               <option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="forever">Keep forever</option>
             </select>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="text-sm font-semibold text-slate-800">Notetaker display name</div>
             <p className="mb-2 text-[13px] text-slate-500">The name the bot shows as when it joins your meetings.</p>
-            <input value={p.notetakerName} onChange={(e) => set1("notetakerName", e.target.value)} placeholder="OctoMeet AI" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
+            <input value={p.notetakerName} onChange={(e) => set1("notetakerName", e.target.value)} placeholder="OctoMeet AI" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
           </div>
 
           <div className="text-sm font-bold text-slate-800">Permissions</div>
@@ -2076,7 +2197,7 @@ function BrandIcon({ name, size = 20 }) {
     case "openai": return (
       <svg {...s}><rect width="24" height="24" rx="6" fill="#111" /><path d="M12 7.5a3 3 0 0 1 3 3v3a3 3 0 0 1-6 0v-3a3 3 0 0 1 3-3z" fill="none" stroke="#fff" strokeWidth="1.4" /></svg>
     );
-    case "mcp": return <span style={{ display: "inline-flex" }}><Link2 size={size - 2} className="text-indigo-500" /></span>;
+    case "mcp": return <span style={{ display: "inline-flex" }}><Link2 size={size - 2} className="text-violet-500" /></span>;
     case "api": return <span className="text-[12px] font-bold text-slate-600">{"{ }"}</span>;
     case "extension": return <span style={{ display: "inline-flex" }}><OctoLogo size={size} /></span>;
     default: return <span style={{ display: "inline-flex" }}><LayoutGrid size={size - 2} className="text-slate-400" /></span>;
@@ -2122,18 +2243,18 @@ function LoginView({ onLogin, onGoogle }) {
             </button>
           ))}
           <div className="flex items-center gap-3 py-1 text-[12px] text-slate-400"><span className="h-px flex-1 bg-slate-200" /> or <span className="h-px flex-1 bg-slate-200" /></div>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
-          <button onClick={onLogin} className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">{signup ? "Create account" : "Continue with email"}</button>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
+          <button onClick={onLogin} className="w-full rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500">{signup ? "Create account" : "Continue with email"}</button>
         </div>
 
         <div className="mt-4 text-center text-[13px] text-slate-500">
           {signup
-            ? <>Already have an account? <button onClick={() => setMode("signin")} className="font-semibold text-indigo-600">Sign in</button></>
-            : <>New to Octomeet? <button onClick={() => setMode("signup")} className="font-semibold text-indigo-600">Create an account</button></>}
+            ? <>Already have an account? <button onClick={() => setMode("signin")} className="font-semibold text-violet-600">Sign in</button></>
+            : <>New to Octomeet? <button onClick={() => setMode("signup")} className="font-semibold text-violet-600">Create an account</button></>}
         </div>
 
         <div className="relative mt-6 flex justify-center">
-          <button onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)} className="text-[13px] font-medium text-indigo-600 underline">Why does Octomeet need calendar access?</button>
+          <button onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)} className="text-[13px] font-medium text-violet-600 underline">Why does Octomeet need calendar access?</button>
           {tip && (
             <div className="absolute bottom-full left-1/2 z-10 mb-2 w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-2xl">
               <div className="text-sm font-bold text-slate-800">Effortless meeting notes.</div>
@@ -2144,7 +2265,7 @@ function LoginView({ onLogin, onGoogle }) {
 
         {signup && (
           <p className="mt-5 text-center text-[11px] leading-relaxed text-slate-400">
-            By creating an account, I agree to Octomeet's <a href="https://octomeet.ai/termsofservice" target="_blank" rel="noreferrer" className="text-indigo-500 underline">Terms of Service</a> and acknowledge I have read the <a href="https://octomeet.ai/privacy-policy" target="_blank" rel="noreferrer" className="text-indigo-500 underline">Privacy Policy</a>.
+            By creating an account, I agree to Octomeet's <a href="https://octomeet.ai/termsofservice" target="_blank" rel="noreferrer" className="text-violet-500 underline">Terms of Service</a> and acknowledge I have read the <a href="https://octomeet.ai/privacy-policy" target="_blank" rel="noreferrer" className="text-violet-500 underline">Privacy Policy</a>.
           </p>
         )}
       </div>
@@ -2171,8 +2292,8 @@ function SupportView({ onBack }) {
         <p className="mt-1 text-sm text-slate-500">Find answers, contact us, or send feedback.</p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           {cards.map((c) => (
-            <button key={c.title} onClick={() => { if (c.title === "Email support") { window.location.href = "mailto:support@octomeet.ai"; } else { toast(c.title + " - coming soon"); } }} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-indigo-300 hover:shadow-sm">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500"><c.icon size={18} /></div>
+            <button key={c.title} onClick={() => { if (c.title === "Email support") { window.location.href = "mailto:support@octomeet.ai"; } else { toast(c.title + " - coming soon"); } }} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-violet-300 hover:shadow-sm">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-500"><c.icon size={18} /></div>
               <div><div className="text-sm font-semibold text-slate-800">{c.title}</div><div className="text-[13px] text-slate-500">{c.desc}</div></div>
             </button>
           ))}
@@ -2216,13 +2337,13 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-base font-bold text-slate-900">Current Plan</h2>
-              <button onClick={onComparePlans} className="flex items-center gap-1 text-[13px] font-semibold text-indigo-600 hover:text-indigo-800">Compare plans <ArrowDown size={13} className="-rotate-90" /></button>
+              <button onClick={onComparePlans} className="flex items-center gap-1 text-[13px] font-semibold text-violet-600 hover:text-violet-800">Compare plans <ArrowDown size={13} className="-rotate-90" /></button>
             </div>
             <div className="flex items-center gap-2"><span className="text-xl font-bold text-slate-900">{planName}</span><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">Monthly</span></div>
             <p className="mt-1 text-[13px] text-slate-500">Next invoice July 4, 2026. ($29.75)</p>
             <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-              <button onClick={onComparePlans} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Change plan</button>
-              <button onClick={() => toast("Create a Workspace - coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Create a Workspace</button>
+              <button onClick={onComparePlans} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Change plan</button>
+              <button onClick={() => toast("Create a Workspace - coming soon")} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Create a Workspace</button>
               <button onClick={() => { if (window.confirm("Cancel your plan? You'll keep access until the end of the billing period.")) toast("Plan cancellation requested"); }} className="rounded-lg px-4 py-2 text-[13px] font-semibold text-rose-600 hover:bg-rose-50">Cancel plan</button>
             </div>
           </div>
@@ -2230,8 +2351,8 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="mb-3 text-base font-bold text-slate-900">License Usage</h2>
             <p className="text-sm text-slate-600">1 of 1 license is in use</p>
-            <div className="mt-2 h-2 w-full rounded-full bg-slate-100"><div className="h-2 rounded-full bg-indigo-600" style={{ width: "100%" }} /></div>
-            <button onClick={() => toast("Add licenses - coming soon")} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Add licenses</button>
+            <div className="mt-2 h-2 w-full rounded-full bg-slate-100"><div className="h-2 rounded-full bg-violet-600" style={{ width: "100%" }} /></div>
+            <button onClick={() => toast("Add licenses - coming soon")} className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Add licenses</button>
           </div>
           {/* File Upload Credits */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2241,7 +2362,7 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
               <div><div className="text-[12px] text-slate-400">Purchased credits</div><div className="text-xl font-bold text-slate-900">0 minutes</div></div>
             </div>
             <p className="mt-1 text-[12px] text-slate-400">Resets Jul 1, 2026</p>
-            <button onClick={() => toast("Buy file upload credits - coming soon")} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Buy file upload credits</button>
+            <button onClick={() => toast("Buy file upload credits - coming soon")} className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Buy file upload credits</button>
           </div>
           {/* Payment Method */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2251,8 +2372,8 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
               <span className="text-[13px] text-slate-400">Expires 1/2030</span>
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <button onClick={() => toast("Update payment method - coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Update payment method</button>
-              <button onClick={() => toast("Add Tax ID - coming soon")} className="flex items-center gap-1 rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-indigo-600 hover:bg-slate-50"><Plus size={14} /> Add Tax ID</button>
+              <button onClick={() => toast("Update payment method - coming soon")} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Update payment method</button>
+              <button onClick={() => toast("Add Tax ID - coming soon")} className="flex items-center gap-1 rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-violet-600 hover:bg-slate-50"><Plus size={14} /> Add Tax ID</button>
             </div>
           </div>
         </div>
@@ -2265,7 +2386,7 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
           {history.map((h) => (
             <div key={h.date} className="grid grid-cols-[1fr_1.4fr_0.6fr_1fr_40px] items-center border-b border-slate-100 px-4 py-3 text-[13px] text-slate-600 last:border-0">
               <div>{h.date}</div><div>{planName} Plan</div><div>1</div><div>{h.period}</div>
-              <div className="flex justify-end gap-2 text-[12px] font-semibold text-indigo-600">
+              <div className="flex justify-end gap-2 text-[12px] font-semibold text-violet-600">
                 <button onClick={() => toast("Opening invoice…")}>Invoice</button>
               </div>
             </div>
@@ -2308,17 +2429,17 @@ function PlansView({ onBack }) {
       </div>
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-7 flex flex-col items-center text-center">
-          <span className="rounded-full bg-indigo-50 px-3 py-1 text-[12px] font-semibold text-indigo-700">Your current plan: Enterprise</span>
+          <span className="rounded-full bg-violet-50 px-3 py-1 text-[12px] font-semibold text-violet-700">Your current plan: Enterprise</span>
           <h2 className="mt-3 text-2xl font-bold text-slate-900">Choose the plan that fits your team</h2>
           <div className="mt-4 inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 text-sm">
-            <button onClick={() => setAnnual(true)} className={"rounded-md px-3 py-1.5 font-medium transition " + (annual ? "bg-indigo-600 text-white" : "text-slate-500")}>Annual <span className="text-[11px] opacity-80">-25%</span></button>
-            <button onClick={() => setAnnual(false)} className={"rounded-md px-3 py-1.5 font-medium transition " + (!annual ? "bg-indigo-600 text-white" : "text-slate-500")}>Monthly</button>
+            <button onClick={() => setAnnual(true)} className={"rounded-md px-3 py-1.5 font-medium transition " + (annual ? "bg-violet-600 text-white" : "text-slate-500")}>Annual <span className="text-[11px] opacity-80">-25%</span></button>
+            <button onClick={() => setAnnual(false)} className={"rounded-md px-3 py-1.5 font-medium transition " + (!annual ? "bg-violet-600 text-white" : "text-slate-500")}>Monthly</button>
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {plans.map((p) => (
-            <div key={p.name} className={"relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm " + (p.popular ? "border-indigo-400 ring-2 ring-indigo-200" : "border-slate-200")}>
-              {p.popular && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Most Popular</span>}
+            <div key={p.name} className={"relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm " + (p.popular ? "border-violet-400 ring-2 ring-violet-200" : "border-slate-200")}>
+              {p.popular && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-violet-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Most Popular</span>}
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-bold text-slate-900">{p.name}</h3>
                 {p.current && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Current</span>}
@@ -2328,7 +2449,7 @@ function PlansView({ onBack }) {
               </div>
               <p className="mt-1 text-[11px] text-slate-400">{p.note}{annual && p.name !== "Free" ? " · billed annually" : ""}</p>
               <button disabled={p.disabled} onClick={() => toast(p.cta + " - coming soon")} className={"mt-4 rounded-lg py-2.5 text-sm font-semibold transition " +
-                (p.disabled ? "cursor-default bg-slate-100 text-slate-400" : "bg-indigo-600 text-white hover:bg-indigo-500")}>{p.cta}</button>
+                (p.disabled ? "cursor-default bg-slate-100 text-slate-400" : "bg-violet-600 text-white hover:bg-violet-500")}>{p.cta}</button>
               <ul className="mt-5 space-y-2">
                 {p.features.map((f, i) => (
                   <li key={i} className="flex items-start gap-2 text-[12.5px] text-slate-600">
@@ -2371,8 +2492,8 @@ function IntegRow({ name, brand, connectedAs }) {
         </div>
       </div>
       {connectedAs
-        ? <button onClick={() => toast("Manage " + name)} className="rounded-lg border border-indigo-300 px-4 py-1.5 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-50">Manage</button>
-        : <button onClick={() => toast("Connecting " + name + "…")} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500">Connect</button>}
+        ? <button onClick={() => toast("Manage " + name)} className="rounded-lg border border-violet-300 px-4 py-1.5 text-[13px] font-semibold text-violet-700 hover:bg-violet-50">Manage</button>
+        : <button onClick={() => toast("Connecting " + name + "…")} className="rounded-lg bg-violet-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500">Connect</button>}
     </div>
   );
 }
@@ -2388,25 +2509,28 @@ function EditableField({ label, value, onSave, placeholder }) {
         <div className="flex items-center gap-2">
           <input autoFocus value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder}
             onKeyDown={(e) => { if (e.key === "Enter") { onSave(v); setEditing(false); toast("Saved"); } if (e.key === "Escape") setEditing(false); }}
-            className="w-56 rounded-lg border border-indigo-300 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-500" />
-          <button onClick={() => { onSave(v); setEditing(false); toast("Saved"); }} className="rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Save</button>
+            className="w-56 rounded-lg border border-violet-300 px-2.5 py-1.5 text-sm outline-none focus:border-violet-500" />
+          <button onClick={() => { onSave(v); setEditing(false); toast("Saved"); }} className="rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-violet-500">Save</button>
           <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600"><X size={15} /></button>
         </div>
       ) : (
         <div className="flex items-center gap-3">
           <span className={"text-sm " + (value ? "text-slate-700" : "italic text-slate-400")}>{value || placeholder || "Not provided"}</span>
-          <button onClick={() => setEditing(true)} className="text-slate-300 transition hover:text-indigo-500" title="Edit">✎</button>
+          <button onClick={() => setEditing(true)} className="text-slate-300 transition hover:text-violet-500" title="Edit">✎</button>
         </div>
       )}
     </div>
   );
 }
 
-function AccountSettings({ onBack, lang, setLang }) {
-  const [profile, setProfile] = useState({ name: "Nicolas Benech", jobTitle: "", roleLevel: "", department: "", email: "nicolas@octomeet.ai", photo: null });
+function AccountSettings({ onBack, lang, setLang, user }) {
+  // Default from the real signed-in Google account (name / email / profile photo).
+  const [profile, setProfile] = useState(() => ({ name: user?.name || "Your Name", jobTitle: "", roleLevel: "", department: "", email: user?.email || "you@company.com", photo: user?.picture || null }));
+  // Keep in sync if the user object loads after this view mounts (and the user hasn't edited yet).
+  useEffect(() => { if (user) setProfile((p) => ({ ...p, name: p.name === "Your Name" ? (user.name || p.name) : p.name, email: p.email === "you@company.com" ? (user.email || p.email) : p.email, photo: p.photo || user.picture || null })); }, [user]);
   const [vocab, setVocab] = useState([]);
   const [newWord, setNewWord] = useState("");
-  const [slug, setSlug] = useState("nicolas-82n88");
+  const [slug, setSlug] = useState(((user?.email || "user").split("@")[0]) + "-82n88");
   const fileRef = useRef(null);
   const onPhoto = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -2440,7 +2564,7 @@ function AccountSettings({ onBack, lang, setLang }) {
         <div className="w-56 shrink-0 border-r border-slate-200 bg-white py-3">
           {SUBNAV.map((s, i) => (
             <button key={s} onClick={() => setSec(i)}
-              className={"block w-full px-5 py-2.5 text-left text-[14px] transition " + (sec === i ? "bg-indigo-50 font-semibold text-indigo-700" : "text-slate-600 hover:bg-slate-50")}>
+              className={"block w-full px-5 py-2.5 text-left text-[14px] transition " + (sec === i ? "bg-violet-50 font-semibold text-violet-700" : "text-slate-600 hover:bg-slate-50")}>
               {s}
             </button>
           ))}
@@ -2454,7 +2578,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <SecHead icon={Users} title="Profile & Account" desc="Manage name, role, email, password, and SSO settings." />
               <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5">
                 <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full text-xl font-bold text-white" style={{ background: ownerColor(initialsOf(profile.name)) }}>
-                  {profile.photo ? <img src={profile.photo} alt="" className="h-full w-full object-cover" /> : initialsOf(profile.name)}
+                  {profile.photo ? <img src={profile.photo} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : initialsOf(profile.name)}
                 </div>
                 <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} className="hidden" />
                 <button onClick={() => fileRef.current && fileRef.current.click()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Upload photo</button>
@@ -2474,7 +2598,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <label className="text-sm font-semibold text-slate-800">Default Language</label>
                 <p className="mb-2 text-[13px] text-slate-500">Set your default language for the Octomeet dashboard</p>
-                <select value={lang} onChange={(e) => setLang(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
+                <select value={lang} onChange={(e) => setLang(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400">
                   {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
                 </select>
               </div>
@@ -2483,8 +2607,8 @@ function AccountSettings({ onBack, lang, setLang }) {
                 <p className="mb-3 text-[13px] text-slate-500">Connect your accounts to sign in to Octomeet using your credentials from these providers.</p>
                 <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3"><BrandIcon name="google" size={18} /> <span className="text-sm font-medium text-slate-700">Google</span><Check size={15} className="ml-auto text-emerald-500" /></div>
                 <div className="mt-3 flex gap-2">
-                  <button onClick={() => toast("Sign-in method - coming soon")} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Add Sign-In Method</button>
-                  <button onClick={() => toast("Add password - coming soon")} className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Add Account Password</button>
+                  <button onClick={() => toast("Sign-in method - coming soon")} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">Add Sign-In Method</button>
+                  <button onClick={() => toast("Add password - coming soon")} className="rounded-lg border border-violet-300 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50">Add Account Password</button>
                 </div>
               </div>
             </>)}
@@ -2537,7 +2661,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="text-sm font-semibold text-slate-800">Assistant Name</div>
                 <p className="mb-2 text-[13px] text-slate-500">Choose the name your Assistant will show when it joins a meeting.</p>
-                <select className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
+                <select className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400">
                   <option>octomeet.ai meeting notes</option><option>Meeting Analytics from Octomeet</option><option>Nicolas's Assistant</option><option>Nicolas's Notetaker</option>
                 </select>
               </div>
@@ -2550,7 +2674,7 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="text-sm font-semibold text-slate-800">Output Language</div>
                 <p className="mb-2 text-[13px] text-slate-500">Octomeet generates transcripts and notes in the meeting's primary language. You can override this.</p>
-                <select className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400"><option>Auto-Detected (Default)</option>{LANGS.map((l) => <option key={l.code}>{l.label}</option>)}</select>
+                <select className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400"><option>Auto-Detected (Default)</option>{LANGS.map((l) => <option key={l.code}>{l.label}</option>)}</select>
               </div>
               <ToggleRow title="Audio & Video Playback" desc="Enable playback for meeting reports you own. Only available with an Enterprise or Enterprise+ plan." on={tg.playback} onChange={(v) => set1("playback", v)} />
               <ToggleRow title="Affective metrics" desc="Include metrics that calculate engagement, sentiment, charisma, and bias in reports." on={tg.affective} onChange={(v) => set1("affective", v)} />
@@ -2597,7 +2721,7 @@ function AccountSettings({ onBack, lang, setLang }) {
                 <div><div className="text-sm font-semibold text-slate-800">Default conferencing platform</div><select className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-500 outline-none"><option>Select one</option><option>Google Meet</option><option>Zoom</option><option>Microsoft Teams</option></select></div>
                 <div>
                   <div className="text-sm font-semibold text-slate-800">Custom URL</div>
-                  <div className="mt-1 flex items-center gap-2"><span className="text-sm text-slate-500">cal.octomeet.ai/</span><input value={slug} onChange={(e) => setSlug(e.target.value)} className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" /><button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/" + slug); } catch (e) {} toast("Link copied"); }} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Copy</button></div>
+                  <div className="mt-1 flex items-center gap-2"><span className="text-sm text-slate-500">cal.octomeet.ai/</span><input value={slug} onChange={(e) => setSlug(e.target.value)} className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" /><button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/" + slug); } catch (e) {} toast("Link copied"); }} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white">Copy</button></div>
                 </div>
               </div>
               <ToggleRow title="Available hours" desc="Restrict scheduling to the hours you've designated as available (Mon-Fri, 9:00 AM - 5:00 PM)." on={tg.availHours} onChange={(v) => set1("availHours", v)} />
@@ -2606,13 +2730,13 @@ function AccountSettings({ onBack, lang, setLang }) {
 
             {sec === 8 && (<>
               <SecHead icon={Folder} title="Folders" desc="Control how meeting reports are sorted and displayed in folders." />
-              <div><div className="mb-1 text-sm font-bold text-slate-800">Custom Folders</div><p className="mb-3 text-[13px] text-slate-500">Create and manage your own folders to organize meeting reports your way.</p><button onClick={() => toast("New folder - coming soon")} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><FolderPlus size={16} /> Add New Folder</button></div>
+              <div><div className="mb-1 text-sm font-bold text-slate-800">Custom Folders</div><p className="mb-3 text-[13px] text-slate-500">Create and manage your own folders to organize meeting reports your way.</p><button onClick={() => toast("New folder - coming soon")} className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"><FolderPlus size={16} /> Add New Folder</button></div>
               <div>
                 <div className="mb-1 text-sm font-bold text-slate-800">Smart Folders</div>
                 <p className="mb-3 text-[13px] text-slate-500">Auto-organize reports by topic. Show or hide folders that aren't relevant to you.</p>
                 <div className="flex flex-wrap gap-2">
                   {["Account Review","Business Review","Coaching Session","Customer Feedback","Customer Success","Educational","Investor Pitch","Job Interview","One-on-One","Partnership Alignment","Planning Meeting","Sales Call","Sales Strategy","Status Update","Training"].map((f) => (
-                    <span key={f} className="flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1.5 text-[12px] text-slate-600"><Folder size={12} className="text-indigo-400" /> {f}</span>
+                    <span key={f} className="flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1.5 text-[12px] text-slate-600"><Folder size={12} className="text-violet-400" /> {f}</span>
                   ))}
                 </div>
               </div>
@@ -2631,11 +2755,11 @@ function AccountSettings({ onBack, lang, setLang }) {
 
             {sec === 10 && (<>
               <SecHead icon={Type} title="Custom Vocabulary" desc="Boost words for better transcript accuracy." />
-              <div className="rounded-lg bg-indigo-50 p-3 text-[13px] text-indigo-700">Maximum 100 entries.</div>
+              <div className="rounded-lg bg-violet-50 p-3 text-[13px] text-violet-700">Maximum 100 entries.</div>
               <div className="text-sm font-semibold text-slate-700">{vocab.length} custom words</div>
               <div className="flex gap-2">
-                <input value={newWord} onChange={(e) => setNewWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} placeholder="Add a word, name or term…" className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
-                <button onClick={() => { if (newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><Plus size={16} /> Add new</button>
+                <input value={newWord} onChange={(e) => setNewWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} placeholder="Add a word, name or term…" className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
+                <button onClick={() => { if (newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"><Plus size={16} /> Add new</button>
               </div>
               <div className="flex flex-wrap gap-2">
                 {vocab.map((w, i) => (<span key={i} className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">{w}<button onClick={() => setVocab((v) => v.filter((_, j) => j !== i))} className="text-slate-400 hover:text-rose-500"><X size={13} /></button></span>))}
@@ -2648,8 +2772,8 @@ function AccountSettings({ onBack, lang, setLang }) {
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="text-sm font-semibold text-slate-800">Active Sessions</div>
                 <p className="mb-3 text-[13px] text-slate-500">See where your account is signed in.</p>
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3"><div><div className="text-sm font-medium text-slate-700">Chrome Browser (Current)</div><div className="text-[12px] text-slate-400">BR · Active just now</div></div><button onClick={() => toast("Session logged out")} className="text-[13px] font-semibold text-indigo-600">Log out</button></div>
-                <button onClick={() => toast("Logged out of all sessions")} className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Log out of all sessions</button>
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3"><div><div className="text-sm font-medium text-slate-700">Chrome Browser (Current)</div><div className="text-[12px] text-slate-400">BR · Active just now</div></div><button onClick={() => toast("Session logged out")} className="text-[13px] font-semibold text-violet-600">Log out</button></div>
+                <button onClick={() => toast("Logged out of all sessions")} className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white">Log out of all sessions</button>
               </div>
               <div className="rounded-xl border border-rose-200 bg-white p-4">
                 <div className="text-sm font-semibold text-slate-800">Delete Account</div>
@@ -2667,7 +2791,7 @@ function AccountSettings({ onBack, lang, setLang }) {
 function SecHead({ icon: Icon, title, desc }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500"><Icon size={20} /></div>
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-500"><Icon size={20} /></div>
       <div><h2 className="text-lg font-bold text-slate-900">{title}</h2><p className="text-[13px] text-slate-500">{desc}</p></div>
     </div>
   );
@@ -2676,14 +2800,14 @@ function Field({ label, value, muted, edit }) {
   return (
     <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 last:border-0">
       <div><span className="text-sm font-medium text-slate-700">{label}</span></div>
-      <div className="flex items-center gap-3"><span className={"text-sm " + (muted ? "italic text-slate-400" : "text-slate-700")}>{value}</span>{edit && <button className="text-slate-300 hover:text-indigo-500">✎</button>}</div>
+      <div className="flex items-center gap-3"><span className={"text-sm " + (muted ? "italic text-slate-400" : "text-slate-700")}>{value}</span>{edit && <button className="text-slate-300 hover:text-violet-500">✎</button>}</div>
     </div>
   );
 }
 function Radio({ label, desc, def, checked, onClick }) {
   return (
     <button onClick={onClick} className="flex w-full items-start gap-2.5 py-1.5 text-left">
-      <span className={"mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 " + (checked ? "border-indigo-600" : "border-slate-300")}>{checked && <span className="h-2 w-2 rounded-full bg-indigo-600" />}</span>
+      <span className={"mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 " + (checked ? "border-violet-600" : "border-slate-300")}>{checked && <span className="h-2 w-2 rounded-full bg-violet-600" />}</span>
       <span><span className="text-[13px] font-medium text-slate-700">{label}</span>{def && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">Default</span>}<span className="block text-[12px] text-slate-400">{desc}</span></span>
     </button>
   );
@@ -2700,7 +2824,7 @@ function metricSeries(value, sentimentTimeline) {
 }
 
 // Lightweight inline sparkline (line + soft gradient fill) that stretches to its container.
-function Sparkline({ data, color = "#4F46E5", className = "h-9 w-full" }) {
+function Sparkline({ data, color = "#7C3AED", className = "h-9 w-full" }) {
   const vals = (Array.isArray(data) && data.length > 1) ? data : [50, 52, 51, 53, 52, 54, 53, 55];
   const n = vals.length, W = 100, H = 30, pad = 3;
   const min = Math.min(...vals), max = Math.max(...vals), range = (max - min) || 1;
@@ -2723,7 +2847,7 @@ function fmtClock(s) {
   return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(ss).padStart(2, "0");
 }
 const MARKER_STYLE = {
-  chapter: { color: "#6366F1", label: "Chapter" },
+  chapter: { color: "#7C3AED", label: "Chapter" },
   question: { color: "#0EA5E9", label: "Key Question" },
   action: { color: "#F59E0B", label: "Action Item" },
   highlight: { color: "#8B5CF6", label: "Highlight" },
@@ -2861,7 +2985,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2.5 bg-black/30">
           {MENU.map((mi) => (
             <button key={mi.k} onClick={() => startMode(mi.k)}
-              className={"flex w-60 items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-semibold backdrop-blur-sm transition " + (mi.primary ? "bg-indigo-600 text-white shadow-lg hover:bg-indigo-500" : "bg-white/15 text-white hover:bg-white/25")}>
+              className={"flex w-60 items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-semibold backdrop-blur-sm transition " + (mi.primary ? "bg-violet-600 text-white shadow-lg hover:bg-violet-500" : "bg-white/15 text-white hover:bg-white/25")}>
               {mi.label} <span className="font-normal text-white/75">{mi.sub}</span>
             </button>
           ))}
@@ -2878,7 +3002,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
           /* Trailer: one continuous clean line, no dots. */
           <div ref={barRef} onClick={onBar} className="relative h-3 cursor-pointer">
             <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/30" />
-            <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-indigo-500" style={{ width: barPct + "%" }} />
+            <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-violet-500" style={{ width: barPct + "%" }} />
           </div>
         ) : (
           /* Recording / Highlights: chapter-segmented track with colored dots ABOVE it. */
@@ -2893,22 +3017,22 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
               const f = Math.min(1, Math.max(0, (cur - sg.start) / Math.max(0.5, sg.end - sg.start)));
               return (
                 <div key={i} className="absolute bottom-0.5 h-1 overflow-hidden rounded-full bg-white/30" style={{ left: `calc(${(sg.start / dur) * 100}% + 1.5px)`, width: `calc(${((sg.end - sg.start) / dur) * 100}% - 3px)` }}>
-                  <div className="h-full rounded-full bg-indigo-500" style={{ width: f * 100 + "%" }} />
+                  <div className="h-full rounded-full bg-violet-500" style={{ width: f * 100 + "%" }} />
                 </div>
               );
             })}
           </div>
         )}
         <div className="mt-1.5 flex items-center gap-3 text-white">
-          <button onClick={toggle} className="hover:text-indigo-300">{playing ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}</button>
+          <button onClick={toggle} className="hover:text-violet-300">{playing ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}</button>
           <span className="whitespace-nowrap font-mono text-[12px] text-white/90">{tLeft} / {tRight}</span>
           {!isTrailer && curChapter && <span className="truncate text-[12px] text-white/70">• {curChapter}</span>}
-          {mode && mode !== "full" && <span className="shrink-0 rounded bg-indigo-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
+          {mode && mode !== "full" && <span className="shrink-0 rounded bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
           <div className="flex-1" />
-          <button onClick={toggleMute} title="Mute" className="hover:text-indigo-300">{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
-          <button onClick={cycleRate} title="Playback speed" className="flex items-center gap-0.5 hover:text-indigo-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
-          <button onClick={pip} title="Picture in picture" className="hover:text-indigo-300"><PictureInPicture2 size={16} /></button>
-          <button onClick={fs} title="Fullscreen" className="hover:text-indigo-300"><Maximize2 size={16} /></button>
+          <button onClick={toggleMute} title="Mute" className="hover:text-violet-300">{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
+          <button onClick={cycleRate} title="Playback speed" className="flex items-center gap-0.5 hover:text-violet-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
+          <button onClick={pip} title="Picture in picture" className="hover:text-violet-300"><PictureInPicture2 size={16} /></button>
+          <button onClick={fs} title="Fullscreen" className="hover:text-violet-300"><Maximize2 size={16} /></button>
         </div>
       </div>
     </div>
@@ -2920,7 +3044,7 @@ function TimeChip({ t, onClick, className = "" }) {
   if (!t) return null;
   return (
     <button onClick={onClick} title="Jump to this moment in the video"
-      className={"inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-indigo-600 transition hover:bg-indigo-100 " + className}>
+      className={"inline-flex shrink-0 items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-violet-600 transition hover:bg-violet-100 " + className}>
       <Play size={9} fill="currentColor" />{t}
     </button>
   );
@@ -2960,12 +3084,12 @@ function AskPanel({ meeting }) {
 
   return (
     <aside className="hidden w-[340px] shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
-      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3"><Sparkles size={16} className="text-indigo-500" /><span className="text-sm font-bold text-slate-900">Ask Octo</span></div>
+      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3"><Sparkles size={16} className="text-violet-500" /><span className="text-sm font-bold text-slate-900">Ask Octo</span></div>
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {msgs.length === 0 && <p className="text-[13px] leading-relaxed text-slate-400">Ask anything about this meeting - Octo answers from the transcript & report.</p>}
         {msgs.map((m, i) => (
           <div key={i} className={m.role === "user"
-            ? "ml-auto max-w-[88%] rounded-2xl bg-indigo-600 px-3 py-2 text-sm text-white"
+            ? "ml-auto max-w-[88%] rounded-2xl bg-violet-600 px-3 py-2 text-sm text-white"
             : "mr-auto max-w-[92%] whitespace-pre-wrap rounded-2xl bg-slate-100 px-3 py-2 text-sm leading-relaxed text-slate-700"}>{m.text}</div>
         ))}
         {busy && <div className="mr-auto flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" />Octo is thinking…</div>}
@@ -2974,21 +3098,21 @@ function AskPanel({ meeting }) {
       {msgs.length === 0 && (
         <div className="space-y-2 px-4 pb-1">
           {sug.map((q, i) => (
-            <button key={i} onClick={() => ask(q)} className="flex w-full items-start gap-2 rounded-xl border border-slate-200 px-3 py-2 text-left text-[13px] text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50/50"><Sparkles size={13} className="mt-0.5 shrink-0 text-indigo-400" />{q}</button>
+            <button key={i} onClick={() => ask(q)} className="flex w-full items-start gap-2 rounded-xl border border-slate-200 px-3 py-2 text-left text-[13px] text-slate-600 transition hover:border-violet-300 hover:bg-violet-50/50"><Sparkles size={13} className="mt-0.5 shrink-0 text-violet-400" />{q}</button>
           ))}
         </div>
       )}
       <div className="border-t border-slate-200 p-3">
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 focus-within:border-indigo-400">
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 focus-within:border-violet-400">
           <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} placeholder="Ask Octo anything…" className="flex-1 bg-transparent text-sm outline-none" />
-          <button onClick={() => ask()} disabled={busy} className="text-indigo-600 transition disabled:text-slate-300"><Send size={16} /></button>
+          <button onClick={() => ask()} disabled={busy} className="text-violet-600 transition disabled:text-slate-300"><Send size={16} /></button>
         </div>
       </div>
     </aside>
   );
 }
 
-function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
+function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
   const [tab, setTab] = useState("notes");
   const [q, setQ] = useState("");
   const [showDesc, setShowDesc] = useState(true);
@@ -3006,6 +3130,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   const [summaryMode, setSummaryMode] = useState("standard");
   const [menu, setMenu] = useState(null); // header dropdown: "download" | "push" | null
   const [shareOpen, setShareOpen] = useState(false);
+  // Opened via the list "⋯ → Share": jump straight into the share modal.
+  useEffect(() => { if (initialShare) setShareOpen(true); }, [initialShare, meeting.id]);
   const [addPeople, setAddPeople] = useState([]); // people invited via the Share modal
   const [shareQuery, setShareQuery] = useState("");
   const [linkAccess, setLinkAccess] = useState("restricted"); // "restricted" | "public"
@@ -3176,7 +3302,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               {menu === "download" && (<>
                 <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
                 <div className="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl">
-                  {DOWNLOAD_OPTS.map((o) => <button key={o.k} onClick={() => doDownload(o.k)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Download size={13} className="text-indigo-400" /> {o.label}</button>)}
+                  {DOWNLOAD_OPTS.map((o) => <button key={o.k} onClick={() => doDownload(o.k)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Download size={13} className="text-violet-400" /> {o.label}</button>)}
                 </div></>)}
             </div>
             {/* Push to dropdown */}
@@ -3190,13 +3316,13 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50">{o.brand === "confluence" ? <LayoutGrid size={16} className="text-sky-600" /> : o.brand === "zapier" ? <Zap size={16} className="text-orange-500" /> : <BrandIcon name={o.brand} size={18} />}</span>
                       <span className="flex-1 text-[13px] font-medium text-slate-700">{o.name}{conn[o.key] && <span className="ml-1.5 text-[10px] font-semibold text-emerald-600">connected</span>}</span>
                       {conn[o.key]
-                        ? <button onClick={() => doPush(o.key)} className="rounded-lg bg-indigo-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-indigo-500">Push</button>
+                        ? <button onClick={() => doPush(o.key)} className="rounded-lg bg-violet-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-violet-500">Push</button>
                         : <button onClick={() => { setMenu(null); setCfg(o); setCfgA(""); setCfgB(""); }} className="rounded-lg border border-slate-200 px-3 py-1 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">Add</button>}
                     </div>
                   ))}
                 </div></>)}
             </div>
-            <button onClick={() => { setShareOpen(true); setShareStep(1); }} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500"><Share2 size={14} /> Share</button>
+            <button onClick={() => { setShareOpen(true); setShareStep(1); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Share2 size={14} /> Share</button>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-400">
@@ -3219,7 +3345,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               <>
                 <div className="relative mb-3">
                   {/* combined input: selected chips + free text — add ANY email/name */}
-                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-300 px-2 py-2">
+                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-violet-300 px-2 py-2">
                     {addPeople.map((n) => <span key={n} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[12px] font-medium text-slate-700">{n}<button onClick={() => setAddPeople((p) => p.filter((x) => x !== n))}><X size={12} /></button></span>)}
                     <input value={shareQuery} onChange={(e) => setShareQuery(e.target.value)}
                       onKeyDown={(e) => { if ((e.key === "Enter" || e.key === ",") && shareQuery.trim()) { e.preventDefault(); addPerson(shareQuery); } else if (e.key === "Backspace" && !shareQuery && addPeople.length) { setAddPeople((p) => p.slice(0, -1)); } }}
@@ -3228,9 +3354,9 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                   {shareQuery.trim() && (
                     <div className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
                       {!addPeople.includes(shareQuery.trim()) && (
-                        <button onClick={() => addPerson(shareQuery)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Plus size={14} className="text-indigo-500" /> Share with: <span className="font-medium">{shareQuery.trim()}</span></button>
+                        <button onClick={() => addPerson(shareQuery)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Plus size={14} className="text-violet-500" /> Share with: <span className="font-medium">{shareQuery.trim()}</span></button>
                       )}
-                      {shareMatches.map((n) => <button key={n} onClick={() => addPerson(n)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700">{initialsOf(n)}</span>{n}</button>)}
+                      {shareMatches.map((n) => <button key={n} onClick={() => addPerson(n)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-700">{initialsOf(n)}</span>{n}</button>)}
                     </div>
                   )}
                 </div>
@@ -3241,7 +3367,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 )}
                 {false && (
                   <div className="mb-3 flex flex-wrap gap-1.5">
-                    {addPeople.map((n) => <span key={n} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[12px] font-medium text-indigo-700">{n}<button onClick={() => setAddPeople((p) => p.filter((x) => x !== n))}><X size={12} /></button></span>)}
+                    {addPeople.map((n) => <span key={n} className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-[12px] font-medium text-violet-700">{n}<button onClick={() => setAddPeople((p) => p.filter((x) => x !== n))}><X size={12} /></button></span>)}
                   </div>
                 )}
                 <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who has access</div>
@@ -3270,15 +3396,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                     <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
                       {[{ k: "restricted", t: "Restricted access", d: "Only people with access", ic: <Lock size={15} className="text-slate-500" /> }, { k: "public", t: "Anyone with the link", d: "Public to anyone with the link", ic: <Globe size={15} className="text-emerald-600" /> }].map((o) => (
                         <button key={o.k} onClick={() => { setLinkAccess(o.k); setAccessOpen(false); }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
-                          {o.ic}<div className="flex-1"><div className="text-[13px] font-medium text-slate-700">{o.t}</div><div className="text-[11px] text-slate-400">{o.d}</div></div>{linkAccess === o.k && <Check size={15} className="text-indigo-600" />}
+                          {o.ic}<div className="flex-1"><div className="text-[13px] font-medium text-slate-700">{o.t}</div><div className="text-[11px] text-slate-400">{o.d}</div></div>{linkAccess === o.k && <Check size={15} className="text-violet-600" />}
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
                 <div className="mt-5 flex items-center justify-between">
-                  <button onClick={shareReport} className="flex items-center gap-1.5 text-[13px] font-medium text-indigo-600 hover:text-indigo-700"><Link2 size={14} /> Copy link</button>
-                  <button onClick={() => (addPeople.length ? setShareStep(2) : doShare())} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">{addPeople.length ? "Next" : "Done"}</button>
+                  <button onClick={shareReport} className="flex items-center gap-1.5 text-[13px] font-medium text-violet-600 hover:text-violet-700"><Link2 size={14} /> Copy link</button>
+                  <button onClick={() => (addPeople.length ? setShareStep(2) : doShare())} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">{addPeople.length ? "Next" : "Done"}</button>
                 </div>
               </>
             ) : (
@@ -3289,13 +3415,13 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 <div className="mb-3 flex items-center gap-3">
                   <div className="relative">
                     <button onClick={() => setRoleOpen((o) => !o)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50"><HelpCircle size={14} className="text-slate-400" />{shareRole} <ChevronDown size={13} /></button>
-                    {roleOpen && (<div className="absolute z-10 mt-1 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-xl">{["Viewer", "Commenter", "Editor"].map((r) => <button key={r} onClick={() => { setShareRole(r); setRoleOpen(false); }} className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px] text-slate-700 hover:bg-slate-50">{r}{shareRole === r && <Check size={14} className="text-indigo-600" />}</button>)}</div>)}
+                    {roleOpen && (<div className="absolute z-10 mt-1 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-xl">{["Viewer", "Commenter", "Editor"].map((r) => <button key={r} onClick={() => { setShareRole(r); setRoleOpen(false); }} className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px] text-slate-700 hover:bg-slate-50">{r}{shareRole === r && <Check size={14} className="text-violet-600" />}</button>)}</div>)}
                   </div>
                   <button onClick={() => setNotify((v) => !v)} className="flex items-center gap-2 text-[13px] text-slate-600">
-                    <span className={"flex h-4 w-4 items-center justify-center rounded border " + (notify ? "border-indigo-600 bg-indigo-600" : "border-slate-300")}>{notify && <Check size={11} className="text-white" />}</span> Notify via email
+                    <span className={"flex h-4 w-4 items-center justify-center rounded border " + (notify ? "border-violet-600 bg-violet-600" : "border-slate-300")}>{notify && <Check size={11} className="text-white" />}</span> Notify via email
                   </button>
                 </div>
-                <textarea value={shareMsg} onChange={(e) => setShareMsg(e.target.value)} placeholder="Add a message (optional)" rows={3} className="mb-4 w-full rounded-lg border border-slate-200 p-2.5 text-sm outline-none focus:border-indigo-400" />
+                <textarea value={shareMsg} onChange={(e) => setShareMsg(e.target.value)} placeholder="Add a message (optional)" rows={3} className="mb-4 w-full rounded-lg border border-slate-200 p-2.5 text-sm outline-none focus:border-violet-400" />
                 {shareCandidates.length > 0 && (
                   <>
                     <div className="mb-2 border-t border-slate-100 pt-3 text-[13px] font-bold text-slate-800">More Sharing Suggestions</div>
@@ -3307,7 +3433,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                   </>
                 )}
                 <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
-                  <button onClick={doShare} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Share Report</button>
+                  <button onClick={doShare} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Share Report</button>
                 </div>
               </>
             )}
@@ -3326,28 +3452,28 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             {cfg.kind === "notion" ? (
               <>
                 <label className="text-[12px] font-medium text-slate-500">Notion integration token</label>
-                <input value={cfgA} onChange={(e) => setCfgA(e.target.value)} placeholder="secret_…" className="mb-3 mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                <input value={cfgA} onChange={(e) => setCfgA(e.target.value)} placeholder="secret_…" className="mb-3 mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
                 <label className="text-[12px] font-medium text-slate-500">Parent page ID</label>
-                <input value={cfgB} onChange={(e) => setCfgB(e.target.value)} placeholder="paste the 32-char page id" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                <input value={cfgB} onChange={(e) => setCfgB(e.target.value)} placeholder="paste the 32-char page id" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
                 <p className="mt-2 text-[11px] leading-relaxed text-slate-400">Free: create an integration at notion.so/my-integrations, share a page with it, and paste the token + that page's ID. OctoMeet will add a report sub-page.</p>
               </>
             ) : (
               <>
                 <label className="text-[12px] font-medium text-slate-500">{cfg.kind === "slack" ? "Slack Incoming Webhook URL" : "Webhook URL"}</label>
-                <input value={cfgA} onChange={(e) => setCfgA(e.target.value)} placeholder="https://…" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                <input value={cfgA} onChange={(e) => setCfgA(e.target.value)} placeholder="https://…" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
                 <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{cfg.kind === "slack" ? "Free: create a Slack Incoming Webhook (api.slack.com/messaging/webhooks) and paste it here." : cfg.key === "webhooks" ? "Any endpoint that accepts a POST (Discord webhook, your server, etc.). The report is sent as JSON." : `Free: paste a Zapier/Make webhook that creates the ${cfg.name} record. The report is POSTed as JSON.`}</p>
               </>
             )}
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setCfg(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-              <button onClick={saveIntegration} className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-500">Connect &amp; push</button>
+              <button onClick={saveIntegration} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Connect &amp; push</button>
             </div>
           </div>
         </div>
       )}
 
       {meeting.status && meeting.status !== "done" && (
-        <div className={"flex items-center gap-3 border-b px-6 py-3 " + (["recording", "error"].includes(meeting.status) ? "border-rose-200 bg-rose-50" : "border-indigo-200 bg-indigo-50")}>
+        <div className={"flex items-center gap-3 border-b px-6 py-3 " + (["recording", "error"].includes(meeting.status) ? "border-rose-200 bg-rose-50" : "border-violet-200 bg-violet-50")}>
           {meeting.status === "recording"
             ? <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" /></span>
             : <StatusBadge status={meeting.status} />}
@@ -3361,8 +3487,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} />
           </div>
         ) : (
-          <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-violet-50 text-center text-sm text-slate-500">
-            <div className="px-6">{meeting.status && meeting.status !== "done" ? <span className="inline-flex items-center gap-2"><StatusBadge status={meeting.status} /> {statusSummary(meeting.status)}</span> : <><Video size={28} className="mx-auto mb-2 text-indigo-300" />Recording will appear here once processed.</>}</div>
+          <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
+            <div className="px-6">{meeting.status && meeting.status !== "done" ? <span className="inline-flex items-center gap-2"><StatusBadge status={meeting.status} /> {statusSummary(meeting.status)}</span> : <><Video size={28} className="mx-auto mb-2 text-violet-300" />Recording will appear here once processed.</>}</div>
           </div>
         )}
 
@@ -3394,7 +3520,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
           {TABS.map((t) => (
             <button key={t.k} onClick={() => setTab(t.k)}
               className={"flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition " +
-                (tab === t.k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
+                (tab === t.k ? "border-violet-600 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
               <t.icon size={14} /> {t.label}
             </button>
           ))}
@@ -3406,7 +3532,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               copyText={meeting.summary} editText={meeting.summary} onSaveEdit={(v) => editField("summary", v)}
               right={meeting.summary ? (
                 <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]">
-                  {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-indigo-700 shadow-sm" : "text-slate-500")}>{m}</button>)}
+                  {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-violet-700 shadow-sm" : "text-slate-500")}>{m}</button>)}
                 </div>) : null}>
               {meeting.summary ? <p className="text-sm leading-relaxed text-slate-600">{summaryMode === "short" ? shortSummary : meeting.summary}</p> : <p className="text-sm text-slate-400">No summary available for this meeting.</p>}
             </Card>
@@ -3417,7 +3543,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 {meeting.actionItems.map((it, i) => (
                   <div key={i} className={"flex items-center gap-3 rounded-xl border p-3 " + (it.done ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white")}>
                     <button onClick={() => toggleItem(i)} className="shrink-0">
-                      {it.done ? <CheckCircle2 size={20} className="text-emerald-500" /> : <Circle size={20} className="text-slate-300 hover:text-indigo-400" />}
+                      {it.done ? <CheckCircle2 size={20} className="text-emerald-500" /> : <Circle size={20} className="text-slate-300 hover:text-violet-400" />}
                     </button>
                     <div className="flex-1">
                       <div className={"text-sm " + (it.done ? "text-slate-400 line-through" : "text-slate-700")}>{it.task}</div>
@@ -3435,7 +3561,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               copyText={(meeting.nextSteps || []).join("\n")} editText={(meeting.nextSteps || []).join("\n")} onSaveEdit={(v) => editField("next_steps", v)}>
               <ul className="space-y-2">
                 {(meeting.nextSteps || []).map((s, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-slate-600"><ChevronRight size={16} className="mt-0.5 shrink-0 text-indigo-400" />{s}</li>
+                  <li key={i} className="flex gap-2 text-sm text-slate-600"><ChevronRight size={16} className="mt-0.5 shrink-0 text-violet-400" />{s}</li>
                 ))}
                 {!(meeting.nextSteps && meeting.nextSteps.length) && <p className="text-sm text-slate-400">No next steps detected.</p>}
               </ul>
@@ -3447,7 +3573,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                   <li key={i} className="flex gap-2.5 text-sm">
                     {qq.at != null
                       ? <TimeChip t={qq.t} onClick={() => seekTo(qq.at)} className="mt-0.5" />
-                      : <span className="mt-0.5 font-mono text-[12px] text-indigo-400">{String(i + 1).padStart(2, "0")}</span>}
+                      : <span className="mt-0.5 font-mono text-[12px] text-violet-400">{String(i + 1).padStart(2, "0")}</span>}
                     <div className="flex-1">
                       <div className="font-medium text-slate-700">{qq.q}</div>
                       {qq.a && <div className="mt-0.5 text-[13px] text-slate-500"><span className="font-semibold text-emerald-600">Suggested answer:</span> {qq.a}</div>}
@@ -3468,7 +3594,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             <div className="relative mb-4">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the transcript…"
-                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-400" />
+                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-violet-400" />
             </div>
             <div className="space-y-3">
               {filteredTurns.map((t, i) => {
@@ -3516,11 +3642,11 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               {meeting.sentimentTimeline.length ? (
               <ResponsiveContainer width="100%" height={170}>
                 <AreaChart data={meeting.sentimentTimeline.map((v, i) => ({ i, v }))} margin={{ left: -20, right: 6, top: 6 }}>
-                  <defs><linearGradient id="gScore" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366F1" stopOpacity={0.35} /><stop offset="100%" stopColor="#6366F1" stopOpacity={0} /></linearGradient></defs>
+                  <defs><linearGradient id="gScore" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7C3AED" stopOpacity={0.35} /><stop offset="100%" stopColor="#7C3AED" stopOpacity={0} /></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                   <XAxis dataKey="i" hide /><YAxis domain={[-1, 1]} tick={{ fontSize: 10, fill: "#CBD5E1" }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12 }} />
-                  <Area type="monotone" dataKey="v" stroke="#6366F1" strokeWidth={2.5} fill="url(#gScore)" />
+                  <Area type="monotone" dataKey="v" stroke="#7C3AED" strokeWidth={2.5} fill="url(#gScore)" />
                 </AreaChart>
               </ResponsiveContainer>
               ) : <p className="py-8 text-center text-sm text-slate-400">Not enough data for a sentiment timeline.</p>}
@@ -3539,7 +3665,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                   <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.improvements || []).map((x, i) => <li key={i} className="flex gap-2"><Circle size={15} className="mt-0.5 shrink-0 text-amber-500" />{x}</li>)}</ul>
                 </Card>
                 <Card title="Tips" icon={Lightbulb}>
-                  <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.tips || []).map((x, i) => <li key={i} className="flex gap-2"><Sparkles size={15} className="mt-0.5 shrink-0 text-indigo-500" />{x}</li>)}</ul>
+                  <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.tips || []).map((x, i) => <li key={i} className="flex gap-2"><Sparkles size={15} className="mt-0.5 shrink-0 text-violet-500" />{x}</li>)}</ul>
                 </Card>
               </div>
             )}
@@ -3616,7 +3742,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
                 {meeting.chapters.map((c, i) => (
                   <div key={i}>
                     <div className="flex items-center gap-2">
-                      {c.at != null ? <TimeChip t={c.t} onClick={() => seekTo(c.at)} /> : <span className="font-mono text-[12px] text-indigo-500">{String(i + 1).padStart(2, "0")}</span>}
+                      {c.at != null ? <TimeChip t={c.t} onClick={() => seekTo(c.at)} /> : <span className="font-mono text-[12px] text-violet-500">{String(i + 1).padStart(2, "0")}</span>}
                       <span className="text-[15px] font-semibold text-slate-800">{c.title}</span>
                     </div>
                     {showDesc && c.summary && <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600">{c.summary}</p>}
@@ -3632,7 +3758,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
               </div>
             ) : meeting.topics && meeting.topics.length ? (
               <div className="flex flex-wrap gap-2">
-                {meeting.topics.map((t, i) => (<span key={i} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">{t}</span>))}
+                {meeting.topics.map((t, i) => (<span key={i} className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">{t}</span>))}
               </div>
             ) : <p className="text-sm text-slate-400">No chapters detected.</p>}
           </Card>
@@ -3664,7 +3790,7 @@ function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEd
   return (
     <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2">
-        {Icon && <Icon size={15} className="text-indigo-500" />}
+        {Icon && <Icon size={15} className="text-violet-500" />}
         <h3 className="text-sm font-bold text-slate-900">{title}</h3>
         {!editing && (copyText != null || onSaveEdit) && (
           <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
@@ -3677,9 +3803,9 @@ function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEd
       {editing ? (
         <div>
           <textarea value={val} onChange={(e) => setVal(e.target.value)} autoFocus rows={Math.min(16, Math.max(3, val.split("\n").length + 1))}
-            className="w-full rounded-lg border border-slate-200 p-2.5 text-sm leading-relaxed text-slate-700 outline-none focus:border-indigo-400" />
+            className="w-full rounded-lg border border-slate-200 p-2.5 text-sm leading-relaxed text-slate-700 outline-none focus:border-violet-400" />
           <div className="mt-2 flex gap-2">
-            <button onClick={save} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500">Save</button>
+            <button onClick={save} className="rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500">Save</button>
             <button onClick={() => setEditing(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
           </div>
           {onSaveEdit && <p className="mt-1.5 text-[11px] text-slate-400">One item per line.</p>}
@@ -3694,7 +3820,7 @@ function RecentSearches({ groups, onPick }) {
   return (
     <aside className="hidden w-72 shrink-0 flex-col border-l border-slate-200 bg-white xl:flex">
       <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3.5">
-        <ClipboardList size={16} className="text-indigo-500" />
+        <ClipboardList size={16} className="text-violet-500" />
         <h2 className="text-sm font-bold text-slate-800">Recent Searches</h2>
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -3702,12 +3828,12 @@ function RecentSearches({ groups, onPick }) {
           <div key={g.bucket}>
             <div className="bg-slate-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.bucket}</div>
             {g.items.map((qq, i) => (
-              <button key={i} onClick={() => onPick(qq)} className="block w-full truncate px-4 py-2.5 text-left text-[13px] text-slate-600 transition hover:bg-indigo-50/50">{qq}</button>
+              <button key={i} onClick={() => onPick(qq)} className="block w-full truncate px-4 py-2.5 text-left text-[13px] text-slate-600 transition hover:bg-violet-50/50">{qq}</button>
             ))}
           </div>
         ))}
       </div>
-      <button onClick={() => toast("Search history - coming soon")} className="flex items-center justify-center gap-2 border-t border-slate-200 py-3 text-[13px] font-semibold text-indigo-600 hover:bg-indigo-50/50"><Clock size={14} /> All Search History</button>
+      <button onClick={() => toast("Search history - coming soon")} className="flex items-center justify-center gap-2 border-t border-slate-200 py-3 text-[13px] font-semibold text-violet-600 hover:bg-violet-50/50"><Clock size={14} /> All Search History</button>
     </aside>
   );
 }
@@ -3778,7 +3904,7 @@ function ChatView({ meetings, onOpen, seed }) {
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
           <ChevronLeft size={18} className="text-slate-400" />
-          <Sparkles size={16} className="text-indigo-500" />
+          <Sparkles size={16} className="text-violet-500" />
           <h1 className="text-lg font-bold text-slate-900">Ask Octo</h1>
         </div>
 
@@ -3787,15 +3913,15 @@ function ChatView({ meetings, onOpen, seed }) {
             <div className="mt-8 w-full max-w-3xl">
               <h2 className="mb-7 text-center text-3xl font-bold text-slate-900">What can I help you discover?</h2>
               <form onSubmit={(e) => { e.preventDefault(); send(); }}
-                className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white shadow-sm px-3 py-2.5 shadow-sm focus-within:border-indigo-400">
+                className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white shadow-sm px-3 py-2.5 shadow-sm focus-within:border-violet-400">
                 <button type="button" className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-400"><Globe size={16} /><ChevronDown size={13} /></button>
                 <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask Octo anything..." className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-slate-400" />
-                <button type="submit" disabled={!input.trim()} className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:opacity-40"><Send size={16} /></button>
+                <button type="submit" disabled={!input.trim()} className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600 text-white transition hover:bg-violet-500 disabled:opacity-40"><Send size={16} /></button>
               </form>
               <div className="mt-5 flex flex-wrap justify-center gap-3">
                 {suggestions.map((s) => (
-                  <button key={s} onClick={() => send(s)} className="flex items-center gap-2 rounded-xl bg-indigo-50/70 px-4 py-2.5 text-sm text-indigo-700 transition hover:bg-indigo-100">
-                    <Sparkles size={14} className="text-indigo-400" /> {s}
+                  <button key={s} onClick={() => send(s)} className="flex items-center gap-2 rounded-xl bg-violet-50/70 px-4 py-2.5 text-sm text-violet-700 transition hover:bg-violet-100">
+                    <Sparkles size={14} className="text-violet-400" /> {s}
                   </button>
                 ))}
               </div>
@@ -3816,19 +3942,19 @@ function ChatView({ meetings, onOpen, seed }) {
             <div className="mx-auto w-full max-w-3xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
               {msgs.map((m, i) => (
                 <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
-                  <div className={"max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed " + (m.role === "user" ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-700 shadow-sm")}>
+                  <div className={"max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed " + (m.role === "user" ? "bg-violet-600 text-white" : "border border-slate-200 bg-white text-slate-700 shadow-sm")}>
                     <div className="whitespace-pre-wrap">{m.text}</div>
                     {m.refs && m.refs.length > 0 && (
                       <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
                         {m.refs.map((id) => { const mt = meetings.find((x) => x.id === id); return mt ? (
-                          <button key={id} onClick={() => onOpen(id)} className="flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100"><FileText size={11} /> {mt.title}</button>
+                          <button key={id} onClick={() => onOpen(id)} className="flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100"><FileText size={11} /> {mt.title}</button>
                         ) : null; })}
                       </div>
                     )}
                   </div>
                 </div>
               ))}
-              {busy && <div className="flex justify-start"><div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-400 shadow-sm"><Loader2 size={14} className="animate-spin text-indigo-500" /> Reading your meetings…</div></div>}
+              {busy && <div className="flex justify-start"><div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-400 shadow-sm"><Loader2 size={14} className="animate-spin text-violet-500" /> Reading your meetings…</div></div>}
               <div ref={endRef} />
             </div>
             <div className="border-t border-slate-200 bg-white px-6 py-3">
@@ -3836,7 +3962,7 @@ function ChatView({ meetings, onOpen, seed }) {
                 <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                   placeholder="Ask Octo anything…" className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none" />
-                <button onClick={() => send()} disabled={busy || !input.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white transition disabled:opacity-40"><Send size={16} /></button>
+                <button onClick={() => send()} disabled={busy || !input.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-white transition disabled:opacity-40"><Send size={16} /></button>
               </div>
             </div>
           </>
@@ -3919,8 +4045,8 @@ function UploadModal({ onClose, onSave }) {
         </div>
         <div className="mb-4 flex items-center gap-3 text-sm">
           <span className="text-slate-500">You have <b className="text-slate-700">200 minutes</b> remaining.</span>
-          <button onClick={() => toast("Get more credits - coming soon")} className="font-semibold text-indigo-600 hover:text-indigo-800">Get more credits</button>
-          <button onClick={() => toast("Upload supports transcript files today; video transcription is coming soon")} className="font-semibold text-indigo-600 hover:text-indigo-800">Learn more</button>
+          <button onClick={() => toast("Get more credits - coming soon")} className="font-semibold text-violet-600 hover:text-violet-800">Get more credits</button>
+          <button onClick={() => toast("Upload supports transcript files today; video transcription is coming soon")} className="font-semibold text-violet-600 hover:text-violet-800">Learn more</button>
         </div>
 
         <input ref={inputRef} type="file" accept=".txt,.vtt,.srt,.md,.json,audio/*,video/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
@@ -3929,12 +4055,12 @@ function UploadModal({ onClose, onSave }) {
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => { e.preventDefault(); setDrag(false); handleFiles(e.dataTransfer.files); }}
           onClick={() => inputRef.current && inputRef.current.click()}
-          className={"flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition " + (drag ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:border-indigo-300")}>
-          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm"><Upload size={20} className="text-indigo-500" /></div>
+          className={"flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition " + (drag ? "border-violet-400 bg-violet-50" : "border-slate-200 bg-slate-50 hover:border-violet-300")}>
+          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm"><Upload size={20} className="text-violet-500" /></div>
           {fileName ? (
             <div className="text-sm font-semibold text-slate-700">{fileName}{transcript ? " ✓" : ""}</div>
           ) : (
-            <div className="text-[15px] text-slate-600">Drop a file here, or <span className="font-semibold text-indigo-600">browse files</span></div>
+            <div className="text-[15px] text-slate-600">Drop a file here, or <span className="font-semibold text-violet-600">browse files</span></div>
           )}
           <div className="mt-1 text-[12px] text-slate-400">MP4 or M4A, maximum 5GB each - or a transcript (.txt/.vtt/.srt)</div>
         </div>
@@ -3943,25 +4069,25 @@ function UploadModal({ onClose, onSave }) {
           <div className="mt-3">
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-[10px] uppercase tracking-wider text-slate-400">Or paste a transcript</label>
-              <button onClick={() => { setTranscript(EXAMPLE_TRANSCRIPT); setFileName(fileName || "Pasted transcript"); }} className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800">Load example</button>
+              <button onClick={() => { setTranscript(EXAMPLE_TRANSCRIPT); setFileName(fileName || "Pasted transcript"); }} className="text-[11px] font-medium text-violet-600 hover:text-violet-800">Load example</button>
             </div>
-            <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5} placeholder={"[00:12] Name: what they said\n[00:30] Other Name: their reply"} className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs leading-relaxed outline-none focus:border-indigo-400" />
+            <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={5} placeholder={"[00:12] Name: what they said\n[00:30] Other Name: their reply"} className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs leading-relaxed outline-none focus:border-violet-400" />
           </div>
         )}
         {!showPaste && (
-          <button onClick={() => setShowPaste(true)} className="mt-2 text-[12px] font-medium text-indigo-600 hover:text-indigo-800">…or paste a transcript instead</button>
+          <button onClick={() => setShowPaste(true)} className="mt-2 text-[12px] font-medium text-violet-600 hover:text-violet-800">…or paste a transcript instead</button>
         )}
 
         {err && <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800"><AlertTriangle size={15} className="mt-0.5 shrink-0" /> {err}</div>}
 
         <label className="mt-4 flex items-center gap-2.5 text-sm text-slate-600">
-          <button type="button" onClick={() => setNotify((v) => !v)} className={"flex h-5 w-5 items-center justify-center rounded border transition " + (notify ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white")}>{notify && <Check size={13} />}</button>
+          <button type="button" onClick={() => setNotify((v) => !v)} className={"flex h-5 w-5 items-center justify-center rounded border transition " + (notify ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 bg-white")}>{notify && <Check size={13} />}</button>
           Notify me by email when my reports are ready
         </label>
 
         <div className="mt-5 flex items-center justify-end gap-3">
-          <button onClick={onClose} className="text-sm font-semibold text-indigo-600 hover:text-indigo-800">Cancel</button>
-          <button onClick={generate} disabled={busy} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50">
+          <button onClick={onClose} className="text-sm font-semibold text-violet-600 hover:text-violet-800">Cancel</button>
+          <button onClick={generate} disabled={busy} className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-500 disabled:opacity-50">
             {busy ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : "Generate Reports"}
           </button>
         </div>

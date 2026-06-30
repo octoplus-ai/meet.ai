@@ -1,4 +1,4 @@
-// Set (or clear) the folder of a meeting — manual override of the AI auto-classification.
+// Delete a meeting and its report (from the reports list "⋯ → Delete Report").
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 
@@ -11,11 +11,13 @@ export default async function handler(req, res) {
     if (!s.length) return res.status(401).json({ error: "not authenticated" });
     const uid = s[0].user_id;
     if (!body.meetingId) return res.status(400).json({ error: "no meetingId" });
-    const folders = Array.isArray(body.folders)
-      ? [...new Set(body.folders.map((f) => String(f).trim()).filter(Boolean).map((f) => f.slice(0, 60)))]
-      : (typeof body.folder === "string" && body.folder.trim() ? [body.folder.trim().slice(0, 60)] : []);
-    await sb(`meetings?id=eq.${encodeURIComponent(body.meetingId)}&user_id=eq.${uid}`, { method: "PATCH", body: { folders, folder: folders[0] || null } });
-    res.status(200).json({ ok: true, folders });
+    const id = encodeURIComponent(body.meetingId);
+    // Verify ownership before deleting.
+    const own = await sb(`meetings?id=eq.${id}&user_id=eq.${uid}&select=id`);
+    if (!own.length) return res.status(404).json({ error: "not found" });
+    await sb(`reports?meeting_id=eq.${id}`, { method: "DELETE" });
+    await sb(`meetings?id=eq.${id}&user_id=eq.${uid}`, { method: "DELETE" });
+    res.status(200).json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
