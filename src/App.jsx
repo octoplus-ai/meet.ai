@@ -3193,10 +3193,12 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
               NO gap) and while dragging; it disappears as soon as you move away. No clicking. */}
           <div className="relative" onMouseEnter={() => setVolOpen(true)} onMouseLeave={() => { if (!volDragRef.current) setVolOpen(false); }}>
             {volOpen && (
-              <div className="absolute left-1/2 z-50 flex -translate-x-1/2 flex-col items-center rounded-full border border-white/10 bg-neutral-900/95 px-3 py-3.5 shadow-xl" style={{ bottom: "calc(100% - 6px)" }}>
-                <div ref={volRef} onMouseDown={startVolDrag} className="relative h-20 w-2 cursor-pointer rounded-full bg-white/20">
-                  <div className="absolute bottom-0 left-0 w-full rounded-full bg-violet-500" style={{ height: (muted ? 0 : volume) * 100 + "%" }} />
-                  <div className="absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow-md ring-1 ring-black/10" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
+              <div className="absolute bottom-full left-1/2 z-50 -translate-x-1/2 pb-2">{/* pb-2 = transparent hover bridge so the card sits above the icon without breaking hover */}
+                <div className="flex flex-col items-center rounded-full border border-white/10 bg-neutral-900/95 px-3 py-3.5 shadow-xl">
+                  <div ref={volRef} onMouseDown={startVolDrag} className="relative h-20 w-2 cursor-pointer rounded-full bg-white/20">
+                    <div className="absolute bottom-0 left-0 w-full rounded-full bg-violet-500" style={{ height: (muted ? 0 : volume) * 100 + "%" }} />
+                    <div className="absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow-md ring-1 ring-black/10" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
+                  </div>
                 </div>
               </div>
             )}
