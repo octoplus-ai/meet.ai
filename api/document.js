@@ -51,7 +51,7 @@ export default async function handler(req, res) {
       (r.topics && r.topics.length) ? `Topics: ${r.topics.join(", ")}` : "",
       ai ? `Action items:\n${ai}` : "",
       (r.chapters && r.chapters.length) ? `Chapters: ${r.chapters.map((c) => (typeof c === "string" ? c : c.title)).join(", ")}` : "",
-      transcriptText ? `\nTranscript:\n${transcriptText.slice(0, 24000)}` : "",
+      transcriptText ? `\nTranscript:\n${transcriptText.slice(0, 12000)}` : "",
     ].filter(Boolean).join("\n");
 
     const sys = `You are an expert meeting analyst and document designer. Read the meeting below and produce a POLISHED, executive-ready document - the kind that scores 100/100 for clarity and structure. Decide the perfect structure yourself based on what was actually discussed (it differs for a sales call vs a 1:1 vs a planning session).
@@ -62,6 +62,7 @@ Return ONLY valid JSON (no markdown fences) with EXACTLY this shape:
 {
   "title": "string - punchy document title",
   "subtitle": "string - one line describing the meeting",
+  "summaryLabel": "string - heading for the summary box IN THE DOCUMENT'S LANGUAGE, e.g. 'Resumen ejecutivo' or 'Executive summary' (NOT 'TL;DR')",
   "tldr": "string - 1-2 sentence executive summary",
   "tags": ["3-5 short topic tags"],
   "sections": [
@@ -77,7 +78,7 @@ Rules: 4-7 sections; bullets and paragraphs may be empty arrays where not needed
     const up = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 3000, system: sys, messages: [{ role: "user", content: ctx }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 2200, system: sys, messages: [{ role: "user", content: ctx }] }),
     });
     if (!up.ok) { const tx = await up.text().catch(() => ""); return res.status(502).json({ error: "claude_failed", detail: tx.slice(0, 300) }); }
     const data = await up.json();
