@@ -8,6 +8,7 @@ import {
   Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play, Pause, Maximize2, Volume2, VolumeX, PictureInPicture2,
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type, Copy, Pencil,
   HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, KeyRound,
+  ChevronsDownUp, ChevronsUpDown,
 } from "lucide-react";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -2932,7 +2933,19 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const [fading, setFading] = useState(false);
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1);
-  const barRef = useRef(null), wrapRef = useRef(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(true);
+  const [showHighlights, setShowHighlights] = useState(true);
+  const [autoplayClick, setAutoplayClick] = useState(true);
+  const [volume, setVolume] = useState(1);
+  const [volOpen, setVolOpen] = useState(false);
+  const [subLang, setSubLang] = useState("off"); // subtitles language - OFF by default
+  const [subMenu, setSubMenu] = useState(false);
+  const [subCache, setSubCache] = useState({}); // { lang: [translated text per turn] }
+  const [subBusy, setSubBusy] = useState(false);
+  const cc = subLang !== "off";
+  const barRef = useRef(null), wrapRef = useRef(null), volRef = useRef(null);
   const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null), transRef = useRef(false);
 
   const uniqAts = [...new Set((markers || []).map((m) => m.at).filter((a) => a != null && a >= 0).map((s) => Math.round(s)))].sort((a, b) => a - b);
@@ -3010,6 +3023,26 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const setD = (e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDur(d); };
   const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); };
   const cycleRate = () => { const v = videoRef.current; if (!v) return; const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1; v.playbackRate = next; setRate(next); };
+  const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  const setRateTo = (r) => { const v = videoRef.current; if (v) v.playbackRate = r; setRate(r); };
+  const applyVol = (val) => { const x = Math.min(1, Math.max(0, val)); setVolume(x); const v = videoRef.current; if (v) { v.volume = x; v.muted = x === 0; } setMuted(x === 0); };
+  const volFromEvent = (e) => { const t = volRef.current; if (!t) return; const r = t.getBoundingClientRect(); applyVol(1 - (e.clientY - r.top) / r.height); };
+  const startVolDrag = (e) => { e.preventDefault(); volFromEvent(e); const mv = (ev) => volFromEvent(ev); const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }; window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); };
+  const SUB_LANGS = ["English", "Español (Latinoamérica)", "Português (Brasil)", "Português (Portugal)", "Français", "Deutsch", "Italiano"];
+  const chooseLang = async (k) => {
+    setSubLang(k); setSubMenu(false);
+    if (k === "off" || subCache[k]) return;
+    const texts = (turns || []).map((t) => t.text || "");
+    if (!texts.length) return;
+    setSubBusy(true);
+    try {
+      const sys = `You are a subtitle translator. Translate each item to ${k}. Return ONLY a JSON array of strings, same length and order as the input, no commentary.`;
+      const out = await callClaude([{ role: "user", content: JSON.stringify(texts).slice(0, 60000) }], sys);
+      const arr = JSON.parse(out.slice(out.indexOf("["), out.lastIndexOf("]") + 1));
+      if (Array.isArray(arr) && arr.length) setSubCache((c) => ({ ...c, [k]: arr }));
+    } catch (e) { /* fall back to original text */ }
+    setSubBusy(false);
+  };
   const pip = async () => { const v = videoRef.current; if (!v) return; try { document.pictureInPictureElement ? await document.exitPictureInPicture() : await v.requestPictureInPicture(); } catch (e) {} };
 
   // Chapter-segmented progress track + current chapter name (Read.ai-style).
@@ -3017,6 +3050,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const bounds = [0, ...chapAts, dur];
   const segs2 = []; for (let i = 0; i < bounds.length - 1; i++) if (bounds[i + 1] > bounds[i]) segs2.push({ start: bounds[i], end: bounds[i + 1] });
   let curChapter = ""; { const cm = (markers || []).filter((m) => m.type === "chapter" && m.at != null).sort((a, b) => a.at - b.at); for (const c of cm) { if (c.at <= cur) curChapter = c.label; else break; } }
+  // Current subtitle line (the latest transcript turn whose timestamp has passed), in the
+  // chosen language (translated cache when available, else the original text).
+  let capIdx = -1; if (cc) { for (let i = 0; i < (turns || []).length; i++) { const tn = turns[i]; if (tn && tn.at != null && tn.at <= cur + 0.3) capIdx = i; else if (tn && tn.at != null) break; } }
+  const capText = capIdx >= 0 ? ((subCache[subLang] && subCache[subLang][capIdx]) || (turns[capIdx] && turns[capIdx].text) || "") : "";
 
   const MENU = [
     { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
@@ -3037,13 +3074,27 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
 
   return (
     <div ref={wrapRef} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
-      <video ref={videoRef} src={src + "#t=" + (coverAt || 8)} preload="metadata" playsInline onClick={toggle}
+      <video ref={videoRef} src={src + "#t=" + (coverAt || 8)} preload="metadata" playsInline
+        onClick={() => { if (autoplayClick && !collapsed) toggle(); }}
         onLoadedMetadata={setD} onDurationChange={setD} onTimeUpdate={onTime}
-        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} className="aspect-video w-full bg-black" />
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} className={"aspect-video w-full bg-black" + (collapsed ? " hidden" : "")} />
       {/* Fade-to-black overlay for seamless trailer scene transitions. */}
-      <div className="pointer-events-none absolute inset-0 z-20 bg-black transition-opacity duration-300" style={{ opacity: fading ? 1 : 0 }} />
+      {!collapsed && <div className="pointer-events-none absolute inset-0 z-20 bg-black transition-opacity duration-300" style={{ opacity: fading ? 1 : 0 }} />}
+      {/* Collapse the video to just its control bar (toggle is in the bar when collapsed). */}
+      {!collapsed && (
+        <button onClick={() => setCollapsed(true)} title="Collapse video"
+          className="absolute right-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg bg-white/90 text-violet-700 shadow transition hover:bg-white">
+          <ChevronsDownUp size={18} />
+        </button>
+      )}
+      {/* Subtitles overlay (off by default; language chosen via the CC menu). */}
+      {!collapsed && cc && (capText || subBusy) && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-6">
+          <span className="max-w-[82%] rounded-lg bg-black/75 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white">{subBusy && !subCache[subLang] ? "Translating subtitles…" : capText}</span>
+        </div>
+      )}
       {/* Hover menu: smart playback modes (only when paused so it doesn't block viewing). */}
-      {hovering && !playing && (
+      {!collapsed && hovering && !playing && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2.5 bg-black/30">
           {MENU.map((mi) => (
             <button key={mi.k} onClick={() => startMode(mi.k)}
@@ -3053,8 +3104,37 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
           ))}
         </div>
       )}
-      <div className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-10">
-        {hover && dur > 0 && !isTrailer && (
+      <div className={collapsed ? "relative z-30 bg-neutral-900 px-4 pb-3 pt-3" : "absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-10"}>
+        {/* Settings popover (metrics / highlights / autoplay + playback speed). */}
+        {showSettings && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)} />
+            <div className="absolute bottom-12 right-2 z-50 w-72 rounded-2xl bg-white p-4 text-slate-800 shadow-2xl">
+              {[
+                { label: "Show metrics on screen", v: showMetrics, set: setShowMetrics },
+                { label: "Show highlights on screen", v: showHighlights, set: setShowHighlights },
+                { label: "Auto-play video on click", v: autoplayClick, set: setAutoplayClick },
+              ].map((row) => (
+                <div key={row.label} className="flex items-center justify-between py-2">
+                  <span className="text-[14px] font-medium">{row.label}</span>
+                  <button onClick={() => row.set((x) => !x)} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (row.v ? "bg-emerald-500" : "bg-slate-300")}>
+                    <span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (row.v ? "left-[22px]" : "left-0.5")} />
+                  </button>
+                </div>
+              ))}
+              <div className="mt-2 text-[14px] font-medium">Playback speed</div>
+              <div className="relative mx-1 mt-3 flex items-center justify-between">
+                <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-slate-200" />
+                {RATES.map((r) => (
+                  <button key={r} onClick={() => setRateTo(r)} title={r + "x"}
+                    className={"relative h-3 w-3 rounded-full transition " + (rate === r ? "bg-violet-600 ring-4 ring-violet-200" : "bg-slate-300 hover:bg-slate-400")} />
+                ))}
+              </div>
+              <div className="mt-2 flex justify-between text-[11px] text-slate-400"><span>.5x</span><span>Normal</span><span>1.5x</span><span>2x</span></div>
+            </div>
+          </>
+        )}
+        {showMetrics && hover && dur > 0 && !isTrailer && (
           <div className="pointer-events-none absolute bottom-12 z-10 max-w-[260px] -translate-x-1/2 rounded-lg bg-slate-900/95 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg" style={{ left: `${(hover.at / dur) * 100}%` }}>
             <span className="font-semibold" style={{ color: MARKER_STYLE[hover.type].color }}>{MARKER_STYLE[hover.type].label}</span>
             <span className="text-white/85"> · {hover.label}</span>
@@ -3069,7 +3149,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
         ) : (
           /* Recording / Highlights: chapter-segmented track with colored dots ABOVE it. */
           <div ref={barRef} onClick={onBar} className="relative h-4 cursor-pointer">
-            {dur > 0 && markers.map((mk, i) => (
+            {showHighlights && dur > 0 && markers.map((mk, i) => (
               <button key={i} onMouseEnter={() => setHover(mk)} onMouseLeave={() => setHover(null)}
                 onClick={(e) => { e.stopPropagation(); clearMode(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
                 className="absolute top-0 h-2 w-2 -translate-x-1/2 rounded-full border border-white/70 transition hover:scale-150"
@@ -3088,13 +3168,44 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
         <div className="mt-1.5 flex items-center gap-3 text-white">
           <button onClick={toggle} className="hover:text-violet-300">{playing ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}</button>
           <span className="whitespace-nowrap font-mono text-[12px] text-white/90">{tLeft} / {tRight}</span>
-          {!isTrailer && curChapter && <span className="truncate text-[12px] text-white/70">• {curChapter}</span>}
+          {showMetrics && !isTrailer && curChapter && <span className="truncate text-[12px] text-white/70">• {curChapter}</span>}
           {mode && mode !== "full" && <span className="shrink-0 rounded bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
           <div className="flex-1" />
-          <button onClick={toggleMute} title="Mute" className="hover:text-violet-300">{muted ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
-          <button onClick={cycleRate} title="Playback speed" className="flex items-center gap-0.5 hover:text-violet-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
-          <button onClick={pip} title="Picture in picture" className="hover:text-violet-300"><PictureInPicture2 size={16} /></button>
+          {/* Volume: speaker icon + vertical slider on hover (icon on top, level below). */}
+          <div className="relative" onMouseEnter={() => setVolOpen(true)} onMouseLeave={() => setVolOpen(false)}>
+            {volOpen && (
+              <div className="absolute bottom-9 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl bg-neutral-900/95 px-2.5 py-3 shadow-xl">
+                <span className="text-white">{muted || volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}</span>
+                <div ref={volRef} onMouseDown={startVolDrag} className="relative h-24 w-1.5 cursor-pointer rounded-full bg-white/25">
+                  <div className="absolute bottom-0 left-0 w-full rounded-full bg-violet-500" style={{ height: (muted ? 0 : volume) * 100 + "%" }} />
+                  <div className="absolute left-1/2 h-3 w-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
+                </div>
+              </div>
+            )}
+            <button onClick={toggleMute} title="Mute" className="hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
+          </div>
+          {/* Subtitles language menu (off by default). */}
+          <div className="relative">
+            {subMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setSubMenu(false)} />
+                <div className="absolute bottom-9 right-0 z-50 w-64 rounded-2xl bg-neutral-900/97 p-2 text-white shadow-2xl">
+                  <div className="px-3 py-2 text-center text-[14px] font-bold">Subtitles</div>
+                  {["off", ...SUB_LANGS].map((k) => (
+                    <button key={k} onClick={() => chooseLang(k)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
+                      <span className={"flex h-4 w-4 items-center justify-center rounded-full border " + (subLang === k ? "border-violet-400" : "border-white/40")}>{subLang === k && <span className="h-2 w-2 rounded-full bg-violet-400" />}</span>
+                      {k === "off" ? "Off" : k}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            <button onClick={() => setSubMenu((s) => !s)} title="Subtitles" className={"flex h-5 items-center rounded px-1 text-[11px] font-bold transition hover:text-violet-300 " + (cc ? "bg-white text-neutral-900" : "")}>CC</button>
+          </div>
+          <button onClick={() => setShowSettings((s) => !s)} title="Settings" className="flex items-center gap-0.5 hover:text-violet-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
+          <button onClick={pip} title="Picture in picture (click the screen or this button to go back)" className="hover:text-violet-300"><PictureInPicture2 size={16} /></button>
           <button onClick={fs} title="Fullscreen" className="hover:text-violet-300"><Maximize2 size={16} /></button>
+          {collapsed && <button onClick={() => setCollapsed(false)} title="Expand Video" className="hover:text-violet-300"><ChevronsUpDown size={16} /></button>}
         </div>
       </div>
     </div>
