@@ -10,7 +10,8 @@ const esc = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<"
 let _t;
 function transport() {
   if (_t !== undefined) return _t;
-  const user = process.env.GMAIL_NOREPLY_USER, pass = process.env.GMAIL_NOREPLY_PASS;
+  const user = process.env.GMAIL_NOREPLY_USER;
+  const pass = (process.env.GMAIL_NOREPLY_PASS || "").replace(/\s+/g, ""); // Gmail app passwords are shown with spaces; SMTP needs them stripped
   _t = (user && pass) ? nodemailer.createTransport({ host: "smtp.gmail.com", port: 465, secure: true, auth: { user, pass } }) : null;
   return _t;
 }

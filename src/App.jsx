@@ -3395,8 +3395,9 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       try {
         const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg, role: shareRole, shareToken: shared ? shareTok : undefined }) });
         const d = await r.json();
-        if (r.ok) toast(`Report emailed to ${d.sent} ${d.sent > 1 ? "people" : "person"} ✓`);
+        if (r.ok && d.sent) toast(`Report emailed to ${d.sent} ${d.sent > 1 ? "people" : "person"} ✓`);
         else if (d.error === "email_not_configured") toast("Falta configurar el correo de envíos en Vercel (env vars)");
+        else if (d.error === "bad_credentials") toast("El App Password fue rechazado por Gmail - revisá la casilla/clave");
         else toast("No se pudo enviar el email: " + (d.detail || d.error || ""));
       } catch (e) { toast("No se pudo enviar el email"); }
     } else {

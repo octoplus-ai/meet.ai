@@ -50,7 +50,7 @@ export default async function handler(req, res) {
       return APP + "?share=" + e.token;
     };
 
-    let sent = 0;
+    let sent = 0, lastErr = "";
     for (const email of to) {
       const viewUrl = linkFor(email);
       const { subject, html, text } = reportEmail({
@@ -58,10 +58,16 @@ export default async function handler(req, res) {
         viewUrl, sharerName: a.sharer, kind: "share", message: body.message || "",
       });
       const r = await sendMail({ to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI` });
-      if (r.ok) sent++; else if (r.error === "email_not_configured") return res.status(503).json({ error: "email_not_configured", detail: "Set GMAIL_NOREPLY_USER/PASS in Vercel." });
+      if (r.ok) sent++;
+      else { lastErr = r.error || "send failed"; if (r.error === "email_not_configured") return res.status(503).json({ error: "email_not_configured", detail: "Set GMAIL_NOREPLY_USER/PASS in Vercel." }); }
     }
     try { await sb(`meetings?id=eq.${encodeURIComponent(body.meetingId)}`, { method: "PATCH", body: { shares } }); } catch (e) {}
-    console.log("send-share sent " + sent + "/" + to.length);
+    console.log("send-share sent " + sent + "/" + to.length + (lastErr ? " err=" + lastErr : ""));
+    // If nothing went out, surface the real SMTP error instead of a misleading "sent 0".
+    if (!sent) {
+      const bad = /badcredentials|username and password not accepted|5\.7\.8/i.test(lastErr);
+      return res.status(502).json({ error: bad ? "bad_credentials" : "send_failed", detail: lastErr.slice(0, 300) });
+    }
     res.status(200).json({ ok: true, sent });
   } catch (e) {
     console.error("send-share unhandled:", e && (e.stack || e.message || e));
