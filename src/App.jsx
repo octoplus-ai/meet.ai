@@ -483,7 +483,8 @@ const fmtDateShort = (iso) => {
   catch { return iso; }
 };
 const initialsOf = (name) => (name || "?").split(" ").filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-const scoreColor = (n) => (n >= 80 ? "#10B981" : n >= 70 ? "#F59E0B" : "#F43F5E");
+// Score color tiers: 0-20 red, 20-40 orange, 40-70 yellow, 70-80 green-apple (lime), 80-100 green.
+const scoreColor = (n) => (n >= 80 ? "#16A34A" : n >= 70 ? "#84CC16" : n >= 40 ? "#EAB308" : n >= 20 ? "#F97316" : "#EF4444");
 const OWNER_COLORS = { NB: "#F472B6", AS: "#FB923C", SL: "#34D399" };
 const ownerColor = (o) => OWNER_COLORS[o] || "#94A3B8";
 
@@ -553,7 +554,7 @@ function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge 
 
 function ScoreChip({ value }) {
   const has = Number.isFinite(value) && value > 0;
-  const col = !has ? "#94A3B8" : value >= 80 ? "#16A34A" : value >= 60 ? "#D97706" : "#E11D48";
+  const col = !has ? "#94A3B8" : scoreColor(value);
   return (
     <span className="group relative inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-1.5 py-0.5">
       <OctoLogo size={15} />
