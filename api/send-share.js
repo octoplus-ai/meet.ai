@@ -4,10 +4,16 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies, randomToken } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
-import { sendMail, reportEmail } from "./lib/email.js";
+import { reportEmail, sendViaGmail } from "./lib/email.js";
+import { getValidToken } from "./lib/google.js";
 
 const APP = "https://meet-ai-three-beige.vercel.app/";
 const arr = (x) => (Array.isArray(x) ? x : []);
+
+async function ownerInfo(ownerId) {
+  const su = await sb(`app_users?id=eq.${ownerId}&select=name,email`);
+  return { name: (su[0] && su[0].name) || "", email: (su[0] && su[0].email) || "" };
+}
 
 async function authMeeting(req, meetingId, shareToken) {
   const t = parseCookies(req).om_session;
@@ -15,12 +21,12 @@ async function authMeeting(req, meetingId, shareToken) {
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (s.length) {
       const m = await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${s[0].user_id}&select=*,reports(*)`);
-      if (m.length) { const su = await sb(`app_users?id=eq.${s[0].user_id}&select=name,email`); return { meeting: m[0], sharer: (su[0] && (su[0].name || su[0].email)) || "Someone" }; }
+      if (m.length) { const o = await ownerInfo(s[0].user_id); return { meeting: m[0], ownerId: s[0].user_id, ownerEmail: o.email, sharer: o.name || o.email || "Someone" }; }
     }
   }
   if (shareToken) {
     const r = await resolveShareToken(shareToken);
-    if (r && r.role === "Editor" && r.meeting.id === meetingId) return { meeting: r.meeting, sharer: r.email || "A teammate" };
+    if (r && r.role === "Editor" && r.meeting.id === meetingId) { const o = await ownerInfo(r.meeting.user_id); return { meeting: r.meeting, ownerId: r.meeting.user_id, ownerEmail: o.email, sharer: r.email || o.name || "A teammate" }; }
   }
   return null;
 }
@@ -33,6 +39,10 @@ export default async function handler(req, res) {
     if (!to.length) return res.status(400).json({ error: "no email recipients" });
     const a = await authMeeting(req, body.meetingId, body.shareToken);
     if (!a) return res.status(401).json({ error: "not authorized" });
+
+    // Send from the report OWNER's own Gmail (their OAuth token). No app password needed.
+    const gToken = await getValidToken(a.ownerId);
+    if (!gToken || !a.ownerEmail) return res.status(403).json({ error: "needScope", detail: "Owner must reconnect Google (email permission)." });
 
     const m = a.meeting;
     const rep = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
@@ -57,17 +67,13 @@ export default async function handler(req, res) {
         title, whenText, summary: rep.summary || "", chapters: rep.chapters || [], actionItems: rep.action_items || [],
         viewUrl, sharerName: a.sharer, kind: "share", message: body.message || "",
       });
-      const r = await sendMail({ to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI` });
+      const r = await sendViaGmail(gToken, { to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI`, fromAddress: a.ownerEmail });
       if (r.ok) sent++;
-      else { lastErr = r.error || "send failed"; if (r.error === "email_not_configured") return res.status(503).json({ error: "email_not_configured", detail: "Set GMAIL_NOREPLY_USER/PASS in Vercel." }); }
+      else { lastErr = r.error || "send failed"; if (r.error === "needScope") return res.status(403).json({ error: "needScope", detail: "Reconnect Google (email permission)." }); }
     }
     try { await sb(`meetings?id=eq.${encodeURIComponent(body.meetingId)}`, { method: "PATCH", body: { shares } }); } catch (e) {}
     console.log("send-share sent " + sent + "/" + to.length + (lastErr ? " err=" + lastErr : ""));
-    // If nothing went out, surface the real SMTP error instead of a misleading "sent 0".
-    if (!sent) {
-      const bad = /badcredentials|username and password not accepted|5\.7\.8/i.test(lastErr);
-      return res.status(502).json({ error: bad ? "bad_credentials" : "send_failed", detail: lastErr.slice(0, 300) });
-    }
+    if (!sent) return res.status(502).json({ error: "send_failed", detail: lastErr.slice(0, 300) });
     res.status(200).json({ ok: true, sent });
   } catch (e) {
     console.error("send-share unhandled:", e && (e.stack || e.message || e));

@@ -16,6 +16,33 @@ function transport() {
   return _t;
 }
 
+// Send via the user's OWN Gmail (Gmail API messages.send + their OAuth access token).
+// From = the user's address with a friendly display name. No app password needed.
+export async function sendViaGmail(token, { to, subject, html, text, fromName, fromAddress }) {
+  if (!token) return { ok: false, error: "no_token", needScope: true };
+  const list = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (!list.length) return { ok: false, error: "no recipients" };
+  const b64 = (s) => (Buffer.from(s || "", "utf8").toString("base64").match(/.{1,76}/g) || []).join("\r\n");
+  const nm = fromName ? `=?UTF-8?B?${Buffer.from(fromName, "utf8").toString("base64")}?= ` : "";
+  const B = "==OctoMeet_b8==";
+  const raw = [
+    `To: ${list.join(", ")}`,
+    `From: ${nm}<${fromAddress}>`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${B}"`, "",
+    `--${B}`, 'Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: base64", "", b64(text),
+    `--${B}`, 'Content-Type: text/html; charset="UTF-8"', "Content-Transfer-Encoding: base64", "", b64(html),
+    `--${B}--`, "",
+  ].join("\r\n");
+  const encoded = Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  try {
+    const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ raw: encoded }) });
+    if (!r.ok) { const t = await r.text().catch(() => ""); console.error("[gmail] send failed", r.status, t.slice(0, 300)); return { ok: false, error: (r.status === 403 || r.status === 401) ? "needScope" : "send_failed", detail: t.slice(0, 200) }; }
+    return { ok: true };
+  } catch (e) { console.error("[gmail] send error", e && e.message); return { ok: false, error: String(e.message || e) }; }
+}
+
 export async function sendMail({ to, subject, html, text, fromName, replyTo }) {
   const t = transport();
   const user = process.env.GMAIL_NOREPLY_USER;
