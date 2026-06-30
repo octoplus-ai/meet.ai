@@ -3015,6 +3015,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
   const [shareRole, setShareRole] = useState("Viewer");
   const [roleOpen, setRoleOpen] = useState(false);
   const [notify, setNotify] = useState(true);
+  const addPerson = (v) => { const x = (v || "").trim().replace(/,$/, ""); if (!x) return; setAddPeople((p) => (p.includes(x) ? p : [...p, x])); setShareQuery(""); };
   const closeShare = () => { setShareOpen(false); setShareStep(1); setShareQuery(""); setShareMsg(""); setAccessOpen(false); setRoleOpen(false); };
   const doShare = () => {
     const emails = addPeople.filter((p) => /@/.test(p));
@@ -3211,14 +3212,28 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
             {shareStep === 1 ? (
               <>
                 <div className="relative mb-3">
-                  <input value={shareQuery} onChange={(e) => setShareQuery(e.target.value)} placeholder="Add people by name or email…" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400" />
-                  {shareMatches.length > 0 && (
-                    <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
-                      {shareMatches.map((n) => <button key={n} onClick={() => { setAddPeople((p) => [...p, n]); setShareQuery(""); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700">{initialsOf(n)}</span>{n}</button>)}
+                  {/* combined input: selected chips + free text — add ANY email/name */}
+                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-300 px-2 py-2">
+                    {addPeople.map((n) => <span key={n} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[12px] font-medium text-slate-700">{n}<button onClick={() => setAddPeople((p) => p.filter((x) => x !== n))}><X size={12} /></button></span>)}
+                    <input value={shareQuery} onChange={(e) => setShareQuery(e.target.value)}
+                      onKeyDown={(e) => { if ((e.key === "Enter" || e.key === ",") && shareQuery.trim()) { e.preventDefault(); addPerson(shareQuery); } else if (e.key === "Backspace" && !shareQuery && addPeople.length) { setAddPeople((p) => p.slice(0, -1)); } }}
+                      placeholder={addPeople.length ? "Add more…" : "Add people by name or email…"} className="min-w-[160px] flex-1 bg-transparent py-0.5 text-sm outline-none" autoFocus />
+                  </div>
+                  {shareQuery.trim() && (
+                    <div className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
+                      {!addPeople.includes(shareQuery.trim()) && (
+                        <button onClick={() => addPerson(shareQuery)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Plus size={14} className="text-indigo-500" /> Share with: <span className="font-medium">{shareQuery.trim()}</span></button>
+                      )}
+                      {shareMatches.map((n) => <button key={n} onClick={() => addPerson(n)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700">{initialsOf(n)}</span>{n}</button>)}
                     </div>
                   )}
                 </div>
-                {addPeople.length > 0 && (
+                {!shareQuery.trim() && shareCandidates.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {shareCandidates.slice(0, 6).map((n) => <button key={n} onClick={() => addPerson(n)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[9px] font-bold text-slate-500">{initialsOf(n)}</span><span className="max-w-[120px] truncate">{n}</span><Plus size={13} className="text-slate-400" /></button>)}
+                  </div>
+                )}
+                {false && (
                   <div className="mb-3 flex flex-wrap gap-1.5">
                     {addPeople.map((n) => <span key={n} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[12px] font-medium text-indigo-700">{n}<button onClick={() => setAddPeople((p) => p.filter((x) => x !== n))}><X size={12} /></button></span>)}
                   </div>
