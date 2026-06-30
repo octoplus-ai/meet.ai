@@ -5,6 +5,7 @@ import { getBot, getTranscript, durationMin } from "./recall.js";
 import { annotateEvent, getValidToken } from "./google.js";
 import { randomToken } from "./session.js";
 import { sendViaGmail, reportEmail } from "./email.js";
+import { deliverReport } from "./deliver.js";
 
 const APP_URL = "https://meet-ai-three-beige.vercel.app/";
 const arr = (x) => (Array.isArray(x) ? x : []);
@@ -16,42 +17,41 @@ async function notifyParticipants(meeting, ai, rep) {
   try {
     if (meeting.notified_at) return;
     const ownerId = meeting.user_id;
-    const u = (await sb(`app_users?id=eq.${ownerId}&select=name,email,sharing_prefs`))[0] || {};
+    const u = (await sb(`app_users?id=eq.${ownerId}&select=name,email,sharing_prefs,integrations`))[0] || {};
     const prefs = (u.sharing_prefs && typeof u.sharing_prefs === "object") ? u.sharing_prefs : {};
-    if (prefs.autoRecap === false) return; // default ON
+    const ints = (u.integrations && typeof u.integrations === "object") ? u.integrations : {};
     const token = await getValidToken(ownerId);
-    if (!token || !u.email) return;
-
-    // Recipients: calendar attendees (real emails) + the owner. Dedup, exclude the bot.
-    const recips = new Set();
-    if (u.email) recips.add(u.email.toLowerCase());
-    if (meeting.calendar_event_id) {
-      try {
-        const ev = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(meeting.calendar_event_id)}`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
-        for (const at of arr(ev && ev.attendees)) { if (at && at.email && !at.resource && at.responseStatus !== "declined") recips.add(String(at.email).toLowerCase()); }
-      } catch (e) { /* ignore */ }
-    }
-    const to = [...recips].filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e));
-    if (!to.length) return;
-
     const title = meeting.title || "Meeting report";
     let whenText = "";
     if (meeting.start_time) { try { whenText = new Date(meeting.start_time).toLocaleString("en-US", { month: "long", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) {} }
     const sharer = u.name || u.email || "OctoMeet";
-
-    // Give each recipient a Viewer per-person token so their link works (no login).
     let shares = arr(meeting.shares);
     const linkFor = (email) => { let e = shares.find((s) => (s.email || "").toLowerCase() === email); if (!e) { e = { email, role: "Viewer", name: "", token: randomToken() }; shares.push(e); } return APP_URL + "?share=" + e.token; };
 
+    // 1) Auto-push the report to connected integrations flagged autoPush (independent of email pref).
+    const pushData = { title, summary: ai.summary || "", score: (rep.scores && rep.scores.overall) || 0, actionItems: ai.actionItems || rep.action_items || [], nextSteps: ai.nextSteps || rep.next_steps || [], date: meeting.start_time, link: APP_URL };
+    for (const target of Object.keys(ints)) { const cfg = ints[target]; if (cfg && cfg.autoPush && (cfg.url || cfg.token)) { try { const r = await deliverReport(target, cfg, pushData); console.log("auto-push " + target + ": " + (r.ok ? "ok" : r.error)); } catch (e) {} } }
+
+    // 2) Auto-recap email to attendees + owner (only if the pref is on and Gmail is connected).
     let sent = 0;
-    for (const email of to) {
-      const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || ai.action_items || rep.action_items || [], viewUrl: linkFor(email), sharerName: sharer, kind: "auto" });
-      const r = await sendViaGmail(token, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: u.email });
-      if (r.ok) sent++;
+    if (prefs.autoRecap !== false && token && u.email) {
+      const recips = new Set([u.email.toLowerCase()]);
+      if (meeting.calendar_event_id) {
+        try {
+          const ev = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(meeting.calendar_event_id)}`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+          for (const at of arr(ev && ev.attendees)) { if (at && at.email && !at.resource && at.responseStatus !== "declined") recips.add(String(at.email).toLowerCase()); }
+        } catch (e) { /* ignore */ }
+      }
+      const to = [...recips].filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e));
+      for (const email of to) {
+        const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: linkFor(email), sharerName: sharer, kind: "auto" });
+        const r = await sendViaGmail(token, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: u.email });
+        if (r.ok) sent++;
+      }
     }
     await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { shares, notified_at: new Date().toISOString() } });
-    console.log("auto-recap sent " + sent + "/" + to.length + " for " + meeting.id);
-  } catch (e) { console.error("auto-recap error:", e && (e.message || e)); }
+    console.log("post-report actions: " + sent + " recap emails for " + meeting.id);
+  } catch (e) { console.error("post-report actions error:", e && (e.message || e)); }
 }
 
 // Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
