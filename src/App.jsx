@@ -625,6 +625,54 @@ const NAV = [
 ];
 const BUCKET_TKEY = { TODAY: "today", "THIS WEEK": "thisWeek", "THIS MONTH": "thisMonth", EARLIER: "earlier" };
 
+// PUBLIC read-only report view (opened via ?share=token). No login, no sidebar - shows
+// ONLY the one shared report. This is what invited people see.
+function SharedReportView({ token }) {
+  const [meeting, setMeeting] = useState(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/shared-report?token=" + encodeURIComponent(token))
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((d) => {
+        if (!alive) return;
+        const m = adaptReal(d.meeting);
+        if (m.video) m.video += (m.video.includes("?") ? "&" : "?") + "share=" + encodeURIComponent(token);
+        setMeeting(m);
+      })
+      .catch(() => alive && setErr(true));
+    return () => { alive = false; };
+  }, [token]);
+
+  if (err) return (
+    <div className="rai-body flex h-screen flex-col items-center justify-center gap-3 bg-[#F4F5FA] text-center text-slate-500">
+      <StyleInject /><OctoLogo size={40} />
+      <div className="text-lg font-semibold text-slate-700">This shared report link is no longer available</div>
+      <div className="text-sm">The link may be invalid or was revoked by the owner.</div>
+    </div>
+  );
+  if (!meeting) return (
+    <div className="rai-body flex h-screen items-center justify-center bg-[#F4F5FA] text-slate-400">
+      <StyleInject /><Loader2 className="mr-2 animate-spin" size={18} /> Loading shared report…
+    </div>
+  );
+  return (
+    <div className="rai-body flex h-screen w-full flex-col overflow-hidden bg-[#F4F5FA] text-slate-800">
+      <StyleInject />
+      <Toaster />
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-5 py-2.5">
+        <OctoLogo size={26} />
+        <span className="text-[15px] font-bold text-slate-900">OctoMeet</span>
+        <span className="ml-3 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">Shared report · view only</span>
+        <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noreferrer" className="ml-auto rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">Get OctoMeet</a>
+      </div>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <MeetingDetail meeting={meeting} meetings={[meeting]} shared onBack={null} onUpdate={() => {}} />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [meetings, setMeetings] = useState(null);
   const [view, setView] = useState("reports");
@@ -752,6 +800,11 @@ export default function App() {
   const handleUploadSave = useCallback(async (m) => {
     await persist([m, ...meetings]); setUploadOpen(false); setActiveId(m.id); setView("meeting");
   }, [meetings]);
+
+  // Public shared-report link (?share=token): a login-free, read-only view of ONE report.
+  // Bypasses the auth gate entirely so invited people never hit Google sign-in.
+  const shareToken = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("share") : null;
+  if (shareToken) return <SharedReportView token={shareToken} />;
 
   if (authed === null || !meetings) {
     return (
@@ -3121,7 +3174,7 @@ function AskPanel({ meeting }) {
   );
 }
 
-function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
+function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shared }) {
   const [tab, setTab] = useState("notes");
   const [q, setQ] = useState("");
   const [showDesc, setShowDesc] = useState(true);
@@ -3297,15 +3350,21 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
     { key: "slack", name: "Slack", brand: "slack", kind: "slack" },
     { key: "webhooks", name: "Webhooks", brand: "zapier", kind: "webhook" },
   ];
-  const shareReport = async () => { try { await navigator.clipboard.writeText(window.location.href); } catch (e) {} toast("Report link copied"); };
+  const shareReport = async () => {
+    let url = window.location.href;
+    try { const r = await fetch("/api/share-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id }) }); const d = await r.json(); if (r.ok && d.url) url = d.url; } catch (e) {}
+    try { await navigator.clipboard.writeText(url); toast("Public report link copied"); } catch (e) { toast("Couldn't copy the link"); }
+  };
 
   return (
     <div className="flex flex-1 overflow-hidden">
       <div className="flex-1 overflow-y-auto">
       <div className="border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between">
-          <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>
-          <div className="flex items-center gap-2">
+          {shared
+            ? <span className="text-sm font-semibold text-slate-700">{meeting.title}</span>
+            : <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>}
+          <div className={"flex items-center gap-2" + (shared ? " hidden" : "")}>
             {/* Download dropdown */}
             <div className="relative">
               <button onClick={() => setMenu(menu === "download" ? null : "download")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download <ChevronDown size={13} /></button>
@@ -3539,7 +3598,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
         {tab === "notes" && (
           <div className="space-y-5">
             <Card title="Summary" icon={Sparkles}
-              copyText={meeting.summary} editText={meeting.summary} onSaveEdit={(v) => editField("summary", v)}
+              copyText={meeting.summary} editText={meeting.summary} onSaveEdit={shared ? undefined : (v) => editField("summary", v)}
               right={meeting.summary ? (
                 <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]">
                   {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-violet-700 shadow-sm" : "text-slate-500")}>{m}</button>)}
@@ -3548,7 +3607,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
             </Card>
             <Card title="Action Items" icon={ListChecks}
               copyText={meeting.actionItems.map((a) => `- ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`).join("\n")}
-              editText={meeting.actionItems.map((a) => a.task).join("\n")} onSaveEdit={(v) => editField("action_items", v)}>
+              editText={meeting.actionItems.map((a) => a.task).join("\n")} onSaveEdit={shared ? undefined : (v) => editField("action_items", v)}>
               <div className="space-y-2">
                 {meeting.actionItems.map((it, i) => (
                   <div key={i} className={"flex items-center gap-3 rounded-xl border p-3 " + (it.done ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white")}>
@@ -3568,7 +3627,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
               </div>
             </Card>
             <Card title="Next Steps" icon={Target}
-              copyText={(meeting.nextSteps || []).join("\n")} editText={(meeting.nextSteps || []).join("\n")} onSaveEdit={(v) => editField("next_steps", v)}>
+              copyText={(meeting.nextSteps || []).join("\n")} editText={(meeting.nextSteps || []).join("\n")} onSaveEdit={shared ? undefined : (v) => editField("next_steps", v)}>
               <ul className="space-y-2">
                 {(meeting.nextSteps || []).map((s, i) => (
                   <li key={i} className="flex gap-2 text-sm text-slate-600"><ChevronRight size={16} className="mt-0.5 shrink-0 text-violet-400" />{s}</li>
@@ -3577,7 +3636,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
               </ul>
             </Card>
             <Card title="Key Questions" icon={Quote}
-              copyText={meeting.keyQuestions.join("\n")} editText={meeting.keyQuestions.join("\n")} onSaveEdit={(v) => editField("key_questions", v)}>
+              copyText={meeting.keyQuestions.join("\n")} editText={meeting.keyQuestions.join("\n")} onSaveEdit={shared ? undefined : (v) => editField("key_questions", v)}>
               <ul className="space-y-3">
                 {(meeting.keyQA && meeting.keyQA.length ? meeting.keyQA : meeting.keyQuestions.map((q) => ({ q, a: "" }))).map((qq, i) => (
                   <li key={i} className="flex gap-2.5 text-sm">
@@ -3775,7 +3834,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
         )}
       </div>
       </div>
-      <AskPanel meeting={meeting} />
+      {!shared && <AskPanel meeting={meeting} />}
     </div>
   );
 }

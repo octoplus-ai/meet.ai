@@ -3,6 +3,7 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { getValidToken } from "./lib/google.js";
+import { ensureShareToken } from "./lib/share.js";
 
 const APP = "https://meet-ai-three-beige.vercel.app/";
 const escHtml = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -50,6 +51,9 @@ export default async function handler(req, res) {
     const excerpt = summary ? (summary.length > 320 ? escHtml(summary.slice(0, 320)) + "…" : escHtml(summary)) : "";
     const subject = `${title} | ${sharer} shared a meeting report with you`;
     const LOGO = APP + "email-logo.png";
+    // Public, login-free link to THIS report only (anyone with the link can view it).
+    let shareUrl = APP;
+    if (body.meetingId) { try { const stk = await ensureShareToken(body.meetingId, id); if (stk) shareUrl = APP + "?share=" + stk; } catch (e) { /* ignore */ } }
 
     const html = `<div style="background:#f4f5fa;padding:28px 12px;font-family:Arial,Helvetica,sans-serif">
   <table align="center" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:16px;border:1px solid #ece9f6">
@@ -60,13 +64,13 @@ export default async function handler(req, res) {
     <tr><td style="padding:10px 32px 0;color:#1e1b2e;font-size:15px;line-height:1.55">
       <p>Hi there,</p>
       ${msg ? `<p style="color:#334155">${escHtml(msg)}</p>` : ""}
-      <p><b>${escHtml(sharer)}</b> gave you ${escHtml(role)} access to a meeting report:<br><a href="${APP}" style="color:#6d28d9;font-weight:600;text-decoration:none">${escHtml(title)}</a>${when ? ` (${escHtml(when.split(" at ")[0])})` : ""}.</p>
+      <p><b>${escHtml(sharer)}</b> gave you ${escHtml(role)} access to a meeting report:<br><a href="${shareUrl}" style="color:#6d28d9;font-weight:600;text-decoration:none">${escHtml(title)}</a>${when ? ` (${escHtml(when.split(" at ")[0])})` : ""}.</p>
       <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #ece9f6;border-radius:12px;margin:16px 0"><tr><td style="padding:16px 18px">
         <div style="font-size:16px;font-weight:700;color:#1e1b2e">${escHtml(title)}</div>
         ${when ? `<div style="font-size:13px;color:#94a3b8;margin:3px 0 8px">${escHtml(when)}</div>` : ""}
         ${excerpt ? `<div style="font-size:14px;color:#475569;line-height:1.5">${excerpt}</div>` : ""}
       </td></tr></table>
-      <div style="text-align:center;margin:6px 0 22px"><a href="${APP}" style="display:inline-block;background:#6d28d9;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px">View Meeting Report</a></div>
+      <div style="text-align:center;margin:6px 0 22px"><a href="${shareUrl}" style="display:inline-block;background:#6d28d9;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px">View Meeting Report</a></div>
     </td></tr>
     <tr><td style="padding:14px 32px 24px;text-align:center;border-top:1px solid #f1f5f9;color:#94a3b8;font-size:12px;line-height:1.6">
       You are receiving this email because someone shared a report with you.<br>
@@ -82,7 +86,7 @@ export default async function handler(req, res) {
       `${sharer} gave you ${role} access to a meeting report on OctoMeet:`,
       `${title}${when ? " (" + when + ")" : ""}`,
       summary ? "\n" + summary.slice(0, 600) : "",
-      "\nView the report: " + APP,
+      "\nView the report: " + shareUrl,
       "\nShared via OctoMeet",
     ].filter((x) => x !== "").join("\n");
 
