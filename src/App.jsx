@@ -630,6 +630,7 @@ const BUCKET_TKEY = { TODAY: "today", "THIS WEEK": "thisWeek", "THIS MONTH": "th
 // ONLY the one shared report. This is what invited people see.
 function SharedReportView({ token }) {
   const [meeting, setMeeting] = useState(null);
+  const [role, setRole] = useState("Viewer");
   const [err, setErr] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -639,6 +640,7 @@ function SharedReportView({ token }) {
         if (!alive) return;
         const m = adaptReal(d.meeting);
         if (m.video) m.video += (m.video.includes("?") ? "&" : "?") + "share=" + encodeURIComponent(token);
+        setRole(d.role === "Editor" ? "Editor" : "Viewer");
         setMeeting(m);
       })
       .catch(() => alive && setErr(true));
@@ -664,11 +666,11 @@ function SharedReportView({ token }) {
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-5 py-2.5">
         <OctoLogo size={26} />
         <span className="text-[15px] font-bold text-slate-900">OctoMeet</span>
-        <span className="ml-3 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">Shared report · view only</span>
+        <span className="ml-3 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">Shared report · {role === "Editor" ? "Editor" : "view only"}</span>
         <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noreferrer" className="ml-auto rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">Get OctoMeet</a>
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
-        <MeetingDetail meeting={meeting} meetings={[meeting]} shared onBack={null} onUpdate={() => {}} />
+        <MeetingDetail meeting={meeting} meetings={[meeting]} shared role={role} shareTok={token} onBack={null} onUpdate={() => {}} />
       </div>
     </div>
   );
@@ -2945,7 +2947,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const [subCache, setSubCache] = useState({}); // { lang: [translated text per turn] }
   const [subBusy, setSubBusy] = useState(false);
   const cc = subLang !== "off";
-  const barRef = useRef(null), wrapRef = useRef(null), volRef = useRef(null);
+  const barRef = useRef(null), wrapRef = useRef(null), volRef = useRef(null), volDragRef = useRef(false), startedRef = useRef(false);
   const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null), transRef = useRef(false);
 
   const uniqAts = [...new Set((markers || []).map((m) => m.at).filter((a) => a != null && a >= 0).map((s) => Math.round(s)))].sort((a, b) => a - b);
@@ -3017,7 +3019,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
     }
   };
 
-  const toggle = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play().catch(() => {}); else v.pause(); };
+  const toggle = () => { const v = videoRef.current; if (!v) return; if (v.paused) { if (!startedRef.current && (!mode || mode === "full")) { v.currentTime = 0; } startedRef.current = true; v.play().catch(() => {}); } else v.pause(); };
   const onBar = (e) => { const b = barRef.current, v = videoRef.current; if (!b || !v || !dur) return; const r = b.getBoundingClientRect(); clearMode(); v.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
   const fs = () => { const w = wrapRef.current; if (!w) return; try { document.fullscreenElement ? document.exitFullscreen() : w.requestFullscreen(); } catch (e) {} };
   const setD = (e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDur(d); };
@@ -3027,7 +3029,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const setRateTo = (r) => { const v = videoRef.current; if (v) v.playbackRate = r; setRate(r); };
   const applyVol = (val) => { const x = Math.min(1, Math.max(0, val)); setVolume(x); const v = videoRef.current; if (v) { v.volume = x; v.muted = x === 0; } setMuted(x === 0); };
   const volFromEvent = (e) => { const t = volRef.current; if (!t) return; const r = t.getBoundingClientRect(); applyVol(1 - (e.clientY - r.top) / r.height); };
-  const startVolDrag = (e) => { e.preventDefault(); volFromEvent(e); const mv = (ev) => volFromEvent(ev); const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }; window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); };
+  const startVolDrag = (e) => { e.preventDefault(); volDragRef.current = true; volFromEvent(e); const mv = (ev) => volFromEvent(ev); const up = () => { volDragRef.current = false; window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }; window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); };
   const SUB_LANGS = ["English", "Español (Latinoamérica)", "Português (Brasil)", "Português (Portugal)", "Français", "Deutsch", "Italiano"];
   const chooseLang = async (k) => {
     setSubLang(k); setSubMenu(false);
@@ -3171,22 +3173,19 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
           {showMetrics && !isTrailer && curChapter && <span className="truncate text-[12px] text-white/70">• {curChapter}</span>}
           {mode && mode !== "full" && <span className="shrink-0 rounded bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
           <div className="flex-1" />
-          {/* Volume: click OR hover the speaker -> vertical slider that STAYS OPEN (closes only
-              on outside click) so you can drag it. Speaker icon on top, level below. */}
-          <div className="relative" onMouseEnter={() => setVolOpen(true)}>
+          {/* Volume (Prime Video style): hover the speaker -> vertical slider appears; it stays
+              while the cursor is over the button OR the slider (they overlap a few px so there is
+              NO gap) and while dragging; it disappears as soon as you move away. No clicking. */}
+          <div className="relative" onMouseEnter={() => setVolOpen(true)} onMouseLeave={() => { if (!volDragRef.current) setVolOpen(false); }}>
             {volOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setVolOpen(false)} />
-                <div className="absolute bottom-full left-1/2 z-50 mb-2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl bg-neutral-900/95 px-2.5 py-3 shadow-xl">
-                  <button onClick={toggleMute} className="text-white transition hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
-                  <div ref={volRef} onMouseDown={startVolDrag} className="relative h-24 w-1.5 cursor-pointer rounded-full bg-white/25">
-                    <div className="absolute bottom-0 left-0 w-full rounded-full bg-violet-500" style={{ height: (muted ? 0 : volume) * 100 + "%" }} />
-                    <div className="absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
-                  </div>
+              <div className="absolute left-1/2 z-50 flex -translate-x-1/2 flex-col items-center rounded-2xl bg-neutral-900/95 px-2.5 pb-4 pt-4 shadow-xl" style={{ bottom: "calc(100% - 8px)" }}>
+                <div ref={volRef} onMouseDown={startVolDrag} className="relative h-24 w-1.5 cursor-pointer rounded-full bg-white/25">
+                  <div className="absolute bottom-0 left-0 w-full rounded-full bg-violet-500" style={{ height: (muted ? 0 : volume) * 100 + "%" }} />
+                  <div className="absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
                 </div>
-              </>
+              </div>
             )}
-            <button onClick={() => setVolOpen((o) => !o)} title="Volume" className="hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
+            <button onClick={toggleMute} title="Mute / volume" className="hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
           </div>
           {/* Subtitles language menu (off by default). */}
           <div className="relative">
@@ -3325,7 +3324,12 @@ function RoleDropdown({ role, onChange, onRemove }) {
   );
 }
 
-function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shared, onRename, onDelete }) {
+function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shared, onRename, onDelete, role, shareTok }) {
+  // Capability matrix (Read.ai parity): Owner (not shared) = all; Editor token = edit+share+manage; Viewer = read-only.
+  const canEdit = !shared || role === "Editor";
+  const canShare = !shared || role === "Editor";
+  const canManage = !shared || role === "Editor";
+  const canDelete = !shared; // delete-for-everyone is owner-only
   const [tab, setTab] = useState("notes");
   const [q, setQ] = useState("");
   const [showDesc, setShowDesc] = useState(true);
@@ -3349,9 +3353,9 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   // Opened via the list "⋯ → Share": jump straight into the share modal.
   useEffect(() => { if (initialShare) setShareOpen(true); }, [initialShare, meeting.id]);
   // Load the persisted per-person access list when the share modal opens.
-  useEffect(() => { if (shareOpen && !shared) { fetch("/api/report-access?meetingId=" + encodeURIComponent(meeting.id)).then((r) => (r.ok ? r.json() : { shares: [] })).then((d) => setAccess(d.shares || [])).catch(() => {}); } }, [shareOpen, shared, meeting.id]);
-  const setAccessRole = (email, role) => { setAccess((a) => a.map((s) => (s.email === email ? { ...s, role } : s))); fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email, role }) }).catch(() => {}); };
-  const removeAccess = (email) => { setAccess((a) => a.filter((s) => s.email !== email)); fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email, remove: true }) }).catch(() => {}); };
+  useEffect(() => { if (shareOpen && canManage) { fetch("/api/report-access?meetingId=" + encodeURIComponent(meeting.id) + (shared ? "&shareToken=" + encodeURIComponent(shareTok || "") : "")).then((r) => (r.ok ? r.json() : { shares: [] })).then((d) => setAccess(d.shares || [])).catch(() => {}); } }, [shareOpen, canManage, shared, meeting.id]);
+  const setAccessRole = (email, role) => { setAccess((a) => a.map((s) => (s.email === email ? { ...s, role } : s))); fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email, role, shareToken: shared ? shareTok : undefined }) }).catch(() => {}); };
+  const removeAccess = (email) => { setAccess((a) => a.filter((s) => s.email !== email)); fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email, remove: true, shareToken: shared ? shareTok : undefined }) }).catch(() => {}); };
   const [addPeople, setAddPeople] = useState([]); // people invited via the Share modal
   const [shareQuery, setShareQuery] = useState("");
   const [linkAccess, setLinkAccess] = useState("restricted"); // "restricted" | "public"
@@ -3367,7 +3371,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     const emails = addPeople.filter((p) => /.+@.+\..+/.test(p));
     const n = addPeople.length, msg = shareMsg;
     // Persist each added email into the per-person access list with the chosen role.
-    emails.forEach((em) => { fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email: em, role: shareRole || "Viewer" }) }).catch(() => {}); });
+    emails.forEach((em) => { fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email: em, role: shareRole || "Viewer", shareToken: shared ? shareTok : undefined }) }).catch(() => {}); });
     closeShare();
     if (notify && emails.length) {
       toast("Sending email…");
@@ -3422,7 +3426,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     else if (field === "action_items") { value = lines.map((task, i) => ({ owner: (meeting.actionItems[i] || {}).owner || "", task, due: (meeting.actionItems[i] || {}).due || "", t: (meeting.actionItems[i] || {}).t || "" })); local = { actionItems: value.map((a) => ({ ...a, at: tsToSeconds(a.t), done: false })) }; }
     else if (field === "key_questions") { value = lines.map((qq, i) => ({ q: qq, a: (meeting.keyQA[i] || {}).a || "", t: (meeting.keyQA[i] || {}).t || "" })); local = { keyQA: value.map((k) => ({ ...k, at: tsToSeconds(k.t) })), keyQuestions: value.map((k) => k.q) }; }
     else return;
-    try { await fetch("/api/report-field", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, field, value }) }); } catch (e) {}
+    try { await fetch("/api/report-field", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, field, value, shareToken: shared ? shareTok : undefined }) }); } catch (e) {}
     if (onUpdate) onUpdate(meetings.map((m) => (m.id === meeting.id ? { ...m, ...local } : m)));
     toast("Saved");
   };
@@ -3524,8 +3528,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           {shared
             ? <span className="text-sm font-semibold text-slate-700">{meeting.title}</span>
             : <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>}
-          <div className={"flex items-center gap-2" + (shared ? " hidden" : "")}>
-            {/* Download dropdown */}
+          <div className="flex items-center gap-2">
+            {/* Download dropdown - everyone with access (incl. Viewer) can download */}
             <div className="relative">
               <button onClick={() => setMenu(menu === "download" ? null : "download")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download <ChevronDown size={13} /></button>
               {menu === "download" && (<>
@@ -3534,8 +3538,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                   {DOWNLOAD_OPTS.map((o) => <button key={o.k} onClick={() => doDownload(o.k)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Download size={13} className="text-violet-400" /> {o.label}</button>)}
                 </div></>)}
             </div>
-            {/* Push to dropdown */}
-            <div className="relative">
+            {/* Push to dropdown - Owner only */}
+            {!shared && <div className="relative">
               <button onClick={() => setMenu(menu === "push" ? null : "push")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Send size={14} /> Push to… <ChevronDown size={13} /></button>
               {menu === "push" && (<>
                 <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
@@ -3550,18 +3554,18 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                     </div>
                   ))}
                 </div></>)}
-            </div>
-            <button onClick={() => { setShareOpen(true); setShareStep(1); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Share2 size={14} /> Share</button>
-            {/* 3-dots: Rename / Remove Report */}
-            <div className="relative">
+            </div>}
+            {canShare && <button onClick={() => { setShareOpen(true); setShareStep(1); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Share2 size={14} /> Share</button>}
+            {/* 3-dots: Rename / Remove Report - Owner only */}
+            {!shared && <div className="relative">
               <button onClick={() => setMenu(menu === "more" ? null : "more")} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><MoreVertical size={18} /></button>
               {menu === "more" && (<>
                 <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
                 <div className="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl">
                   <button onClick={() => { setMenu(null); setRenameVal(meeting.title); setRenaming(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Pencil size={15} className="text-slate-400" /> Rename Report</button>
-                  <button onClick={() => { setMenu(null); if (window.confirm("Delete this report? This cannot be undone.")) onDelete && onDelete(meeting); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-rose-600 hover:bg-rose-50"><Trash2 size={15} /> Remove Report</button>
+                  {canDelete && <button onClick={() => { setMenu(null); if (window.confirm("Delete this report? This cannot be undone.")) onDelete && onDelete(meeting); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-rose-600 hover:bg-rose-50"><Trash2 size={15} /> Remove Report</button>}
                 </div></>)}
-            </div>
+            </div>}
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-400">
@@ -3620,8 +3624,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                     // Individuals = meeting participants (default Viewer) merged with the
                     // explicitly-shared people (persisted roles override). Each gets a role dropdown.
                     const map = {};
-                    (meeting.participants || []).forEach((p) => { if (!p.isHost && p.name) map[p.name] = { key: p.name, name: p.name, sub: "Participant", role: "Viewer" }; });
-                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, sub: s.name ? s.email : "", role: s.role || "Viewer" }; });
+                    (meeting.participants || []).forEach((p) => { if (p.name) map[p.name] = { key: p.name, name: p.name, sub: "Participant", role: "Viewer", token: null }; });
+                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, sub: s.name ? s.email : "", role: s.role || "Viewer", token: s.token }; });
                     const list = Object.values(map);
                     if (!list.length) return null;
                     return (
@@ -3631,6 +3635,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                           <div key={s.key} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">{initialsOf(s.name)}</span>
                             <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium text-slate-700">{s.name}</div>{s.sub && <div className="truncate text-[11px] text-slate-400">{s.sub}</div>}</div>
+                            {s.token && <button onClick={() => { try { navigator.clipboard.writeText(window.location.origin + "/?share=" + s.token); toast(s.role + " link copied"); } catch (e) {} }} title={"Copy this person's " + s.role + " link"} className="shrink-0 text-slate-400 transition hover:text-violet-600"><Link2 size={15} /></button>}
                             <RoleDropdown role={s.role} onChange={(r) => setAccessRole(s.key, r)} onRemove={() => removeAccess(s.key)} />
                           </div>
                         ))}
@@ -3794,7 +3799,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
         {tab === "notes" && (
           <div className="space-y-5">
             <Card title="Summary" icon={Sparkles}
-              copyText={meeting.summary} editText={meeting.summary} onSaveEdit={shared ? undefined : (v) => editField("summary", v)}
+              copyText={meeting.summary} editText={meeting.summary} onSaveEdit={canEdit ? (v) => editField("summary", v) : undefined}
               right={meeting.summary ? (
                 <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]">
                   {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-violet-700 shadow-sm" : "text-slate-500")}>{m}</button>)}
@@ -3803,7 +3808,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             </Card>
             <Card title="Action Items" icon={ListChecks}
               copyText={meeting.actionItems.map((a) => `- ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`).join("\n")}
-              editText={meeting.actionItems.map((a) => a.task).join("\n")} onSaveEdit={shared ? undefined : (v) => editField("action_items", v)}>
+              editText={meeting.actionItems.map((a) => a.task).join("\n")} onSaveEdit={canEdit ? (v) => editField("action_items", v) : undefined}>
               <div className="space-y-2">
                 {meeting.actionItems.map((it, i) => (
                   <div key={i} className={"flex items-center gap-3 rounded-xl border p-3 " + (it.done ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white")}>
@@ -3823,7 +3828,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
               </div>
             </Card>
             <Card title="Next Steps" icon={Target}
-              copyText={(meeting.nextSteps || []).join("\n")} editText={(meeting.nextSteps || []).join("\n")} onSaveEdit={shared ? undefined : (v) => editField("next_steps", v)}>
+              copyText={(meeting.nextSteps || []).join("\n")} editText={(meeting.nextSteps || []).join("\n")} onSaveEdit={canEdit ? (v) => editField("next_steps", v) : undefined}>
               <ul className="space-y-2">
                 {(meeting.nextSteps || []).map((s, i) => (
                   <li key={i} className="flex gap-2 text-sm text-slate-600"><ChevronRight size={16} className="mt-0.5 shrink-0 text-violet-400" />{s}</li>
@@ -3832,7 +3837,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
               </ul>
             </Card>
             <Card title="Key Questions" icon={Quote}
-              copyText={meeting.keyQuestions.join("\n")} editText={meeting.keyQuestions.join("\n")} onSaveEdit={shared ? undefined : (v) => editField("key_questions", v)}>
+              copyText={meeting.keyQuestions.join("\n")} editText={meeting.keyQuestions.join("\n")} onSaveEdit={canEdit ? (v) => editField("key_questions", v) : undefined}>
               <ul className="space-y-3">
                 {(meeting.keyQA && meeting.keyQA.length ? meeting.keyQA : meeting.keyQuestions.map((q) => ({ q, a: "" }))).map((qq, i) => (
                   <li key={i} className="flex gap-2.5 text-sm">
