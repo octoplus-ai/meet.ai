@@ -48,18 +48,20 @@ export default async function handler(req, res) {
     });
     const user = users[0];
 
-    // Store/refresh the OAuth tokens.
+    // Store/refresh the OAuth tokens. Only write refresh_token when Google actually returns
+    // one - a re-consent that omits it must NOT null out the previously stored refresh_token.
+    const tokenRow = {
+      user_id: user.id,
+      provider: "google",
+      access_token: tok.access_token,
+      scope: tok.scope,
+      expiry: new Date(Date.now() + (tok.expires_in || 3600) * 1000).toISOString(),
+    };
+    if (tok.refresh_token) tokenRow.refresh_token = tok.refresh_token;
     await sb("oauth_tokens?on_conflict=user_id,provider", {
       method: "POST",
       prefer: "resolution=merge-duplicates",
-      body: {
-        user_id: user.id,
-        provider: "google",
-        access_token: tok.access_token,
-        refresh_token: tok.refresh_token || null,
-        scope: tok.scope,
-        expiry: new Date(Date.now() + (tok.expires_in || 3600) * 1000).toISOString(),
-      },
+      body: tokenRow,
     });
 
     // Create a session.

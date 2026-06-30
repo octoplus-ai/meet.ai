@@ -3153,9 +3153,10 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare }) {
         const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg, role: shareRole }) });
         const d = await r.json();
         if (r.ok) toast(`Report emailed to ${d.sent} ${d.sent > 1 ? "people" : "person"} ✓`);
-        else if (d.needScope) toast("Re-connect Google (email permission) - log out & in, then try again");
-        else toast("Couldn't send the email: " + (d.detail || d.error || ""));
-      } catch (e) { toast("Couldn't send the email"); }
+        else if (d.error === "gmail_api_disabled") toast("Gmail API no habilitada en Google Cloud - hay que activarla, despues reintenta");
+        else if (d.needScope || d.error === "missing_scope") toast("Falta el permiso de email: Log out e inicia sesion de nuevo (acepta 'enviar correo')");
+        else toast("No se pudo enviar el email: " + (d.detail || d.error || ""));
+      } catch (e) { toast("No se pudo enviar el email"); }
     } else {
       toast(n ? `Report shared with ${n} ${n > 1 ? "people" : "person"}` : "Report shared");
     }

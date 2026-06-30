@@ -15,11 +15,21 @@ export default async function handler(req, res) {
     if (!s.length) return res.status(401).json({ error: "not authenticated" });
     const id = s[0].user_id;
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const to = (body.to || []).filter((e) => /.+@.+\..+/.test(e));
+    const to = [...new Set((body.to || []).map((e) => String(e).trim()).filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e)))];
     if (!to.length) return res.status(400).json({ error: "no email recipients" });
 
     const token = await getValidToken(id);
     if (!token) return res.status(400).json({ error: "no_google_token", needScope: true });
+
+    // Pre-flight: the stored scope reflects the last full consent. If gmail.send was never
+    // granted, fail fast with a clear "reconnect" message instead of a confusing Gmail 403.
+    try {
+      const tkRow = (await sb(`oauth_tokens?user_id=eq.${id}&provider=eq.google&select=scope`))[0];
+      if (tkRow && tkRow.scope && !String(tkRow.scope).includes("gmail.send")) {
+        console.error("send-share missing gmail.send scope; granted=", tkRow.scope);
+        return res.status(403).json({ error: "missing_scope", needScope: true, detail: "Gmail send permission was never granted - reconnect Google." });
+      }
+    } catch (e) { /* ignore - fall through to the live send */ }
 
     const su = await sb(`app_users?id=eq.${id}&select=name,email`);
     const sharer = (su[0] && (su[0].name || su[0].email)) || "Someone";
@@ -65,14 +75,39 @@ export default async function handler(req, res) {
   </table>
 </div>`;
 
-    // RFC 2822 message with an RFC 2047-encoded subject (handles accents) + HTML body.
+    // Plain-text alternative (real multipart/alternative) - improves deliverability and
+    // keeps the message out of spam vs an HTML-only, image-heavy email.
+    const text = [
+      msg ? msg + "\n" : "",
+      `${sharer} gave you ${role} access to a meeting report on OctoMeet:`,
+      `${title}${when ? " (" + when + ")" : ""}`,
+      summary ? "\n" + summary.slice(0, 600) : "",
+      "\nView the report: " + APP,
+      "\nShared via OctoMeet",
+    ].filter((x) => x !== "").join("\n");
+
+    // RFC 2822 multipart message with an RFC 2047-encoded subject (handles accents). Each
+    // body part is base64 so accents never corrupt the transfer.
+    const b64body = (s) => (Buffer.from(s, "utf8").toString("base64").match(/.{1,76}/g) || []).join("\r\n");
+    const BOUNDARY = "==OctoMeet_7c3aed_boundary==";
     const raw = [
       `To: ${to.join(", ")}`,
-      `Subject: =?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`,
+      `Subject: =?UTF-8?B?${Buffer.from(subject.slice(0, 200), "utf8").toString("base64")}?=`,
       "MIME-Version: 1.0",
-      'Content-Type: text/html; charset="UTF-8"',
+      `Content-Type: multipart/alternative; boundary="${BOUNDARY}"`,
       "",
-      html,
+      `--${BOUNDARY}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      b64body(text),
+      `--${BOUNDARY}`,
+      'Content-Type: text/html; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      b64body(html),
+      `--${BOUNDARY}--`,
+      "",
     ].join("\r\n");
     const encoded = Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -82,12 +117,29 @@ export default async function handler(req, res) {
       body: JSON.stringify({ raw: encoded }),
     });
     if (!r.ok) {
-      const d = await r.json().catch(() => ({}));
-      const needScope = r.status === 401 || r.status === 403;
-      return res.status(needScope ? 403 : 502).json({ error: "send_failed", needScope, detail: (d.error && d.error.message) || String(r.status) });
+      const bodyText = await r.text().catch(() => "");
+      let detail = bodyText;
+      try { const j = JSON.parse(bodyText); detail = (j.error && j.error.message) || bodyText; } catch (e) {}
+      const low = (bodyText || "").toLowerCase();
+      // A Gmail 403 has two very different meanings - distinguish them so we tell the user
+      // the RIGHT fix instead of always saying "re-connect Google".
+      let reason = "send_failed";
+      if (low.includes("accessnotconfigured") || low.includes("has not been used") || low.includes("it is disabled") || low.includes("api has not been enabled")) reason = "gmail_api_disabled";
+      else if (low.includes("insufficient") || low.includes("scope")) reason = "missing_scope";
+      // Definitive scope check via tokeninfo (also logged for diagnosis).
+      let grantedScopes = "";
+      try {
+        const ti = await fetch("https://oauth2.googleapis.com/tokeninfo?access_token=" + encodeURIComponent(token)).then((x) => x.json());
+        grantedScopes = (ti && ti.scope) || "";
+        if (reason === "send_failed" && grantedScopes && !grantedScopes.includes("gmail.send")) reason = "missing_scope";
+      } catch (e) { /* ignore */ }
+      console.error("send-share gmail error:", r.status, "reason=" + reason, "| hasGmailScope=" + grantedScopes.includes("gmail.send"), "| scopes=" + grantedScopes, "| body=" + bodyText.slice(0, 600));
+      return res.status(r.status === 401 ? 401 : 403).json({ error: reason, needScope: reason === "missing_scope" || r.status === 401, detail });
     }
+    console.log("send-share OK -> " + to.join(", "));
     res.status(200).json({ ok: true, sent: to.length });
   } catch (e) {
+    console.error("send-share unhandled:", e && (e.stack || e.message || e));
     res.status(500).json({ error: String(e.message || e) });
   }
 }

@@ -5,7 +5,9 @@ export async function getValidToken(userId) {
   const r = await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google&select=*`);
   let tk = r[0];
   if (!tk) return null;
-  if (tk.expiry && new Date(tk.expiry) <= new Date() && tk.refresh_token) {
+  // Treat a missing expiry as expired (never trust a stale token), and refresh when we can.
+  const expired = !tk.expiry || new Date(tk.expiry) <= new Date();
+  if (expired && tk.refresh_token) {
     const nt = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -22,6 +24,8 @@ export async function getValidToken(userId) {
         method: "PATCH",
         body: { access_token: nt.access_token, expiry: new Date(Date.now() + (nt.expires_in || 3600) * 1000).toISOString() },
       });
+    } else {
+      console.error("[google] token refresh failed:", JSON.stringify(nt));
     }
   }
   return tk.access_token || null;
