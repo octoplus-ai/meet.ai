@@ -3072,6 +3072,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [everPlayed, setEverPlayed] = useState(false); // until the user hits play, show 0:00 (poster sits at the cover frame)
   const [hover, setHover] = useState(null);
   const [hovering, setHovering] = useState(false);
   const [mode, setMode] = useState(null);
@@ -3317,7 +3318,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const chapAts = dur ? [...new Set((markers || []).filter((m) => m.type === "chapter" && m.at != null && m.at < dur).map((m) => Math.round(m.at)))].sort((a, b) => a - b) : [];
   const bounds = [0, ...chapAts, dur];
   const segs2 = []; for (let i = 0; i < bounds.length - 1; i++) if (bounds[i + 1] > bounds[i]) segs2.push({ start: bounds[i], end: bounds[i + 1] });
-  let curChapter = ""; { const cm = (markers || []).filter((m) => m.type === "chapter" && m.at != null).sort((a, b) => a.at - b.at); for (const c of cm) { if (c.at <= cur) curChapter = c.label; else break; } }
+  let curChapter = ""; if (everPlayed) { const cm = (markers || []).filter((m) => m.type === "chapter" && m.at != null).sort((a, b) => a.at - b.at); for (const c of cm) { if (c.at <= cur) curChapter = c.label; else break; } }
   // Current subtitle line (the latest transcript turn whose timestamp has passed), in the
   // chosen language (translated cache when available, else the original text).
   // Netflix-style subtitle: the active phrase for the chosen language (same logic the dub uses).
@@ -3337,6 +3338,9 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
 
   // Trailer plays as ONE continuous clip: hide the dots and show montage progress/time.
   const isTrailer = mode === "trailer";
+  // Until the user actually starts playback, the timeline reads 0:00 with an empty bar even
+  // though the poster frame sits at the cover moment - so opening a report always shows 0:00.
+  const shownCur = everPlayed ? cur : 0;
   let barPct, tLeft, tRight;
   if (isTrailer && segsRef.current.length) {
     const segs = segsRef.current, i = Math.min(segIdxRef.current, segs.length - 1);
@@ -3344,14 +3348,14 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     const done = segs.slice(0, i).reduce((a, s) => a + (s.end - s.start), 0);
     const within = Math.min(Math.max(cur - segs[i].start, 0), segs[i].end - segs[i].start);
     barPct = ((done + within) / tot) * 100; tLeft = fmtClock(done + within); tRight = fmtClock(tot);
-  } else { barPct = dur ? (cur / dur) * 100 : 0; tLeft = fmtClock(cur); tRight = fmtClock(dur); }
+  } else { barPct = dur ? (shownCur / dur) * 100 : 0; tLeft = fmtClock(shownCur); tRight = fmtClock(dur); }
 
   return (
     <div ref={wrapRef} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
       <video ref={videoRef} src={src + "#t=" + (coverAt || 8)} preload="auto" playsInline
         onClick={() => { if (autoplayClick && !collapsed) toggle(); }}
         onLoadedMetadata={setD} onDurationChange={setD} onTimeUpdate={onTime}
-        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} className={"aspect-video w-full bg-black" + (collapsed ? " hidden" : "")} />
+        onPlay={() => { setPlaying(true); setEverPlayed(true); }} onPause={() => setPlaying(false)} className={"aspect-video w-full bg-black" + (collapsed ? " hidden" : "")} />
       {/* Fade-to-black overlay for seamless trailer scene transitions. */}
       {!collapsed && <div className="pointer-events-none absolute inset-0 z-20 bg-black transition-opacity duration-300" style={{ opacity: fading ? 1 : 0 }} />}
       {/* Collapse the video to just its control bar (toggle is in the bar when collapsed). */}
@@ -3468,7 +3472,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
                 style={{ left: `${(mk.at / dur) * 100}%`, background: MARKER_STYLE[mk.type].color }} aria-label={mk.label} />
             ))}
             {(dur > 0 ? (segs2.length ? segs2 : [{ start: 0, end: dur }]) : []).map((sg, i) => {
-              const f = Math.min(1, Math.max(0, (cur - sg.start) / Math.max(0.5, sg.end - sg.start)));
+              const f = Math.min(1, Math.max(0, (shownCur - sg.start) / Math.max(0.5, sg.end - sg.start)));
               return (
                 <div key={i} className="absolute bottom-0.5 h-1 overflow-hidden rounded-full bg-white/30" style={{ left: `calc(${(sg.start / dur) * 100}% + 1.5px)`, width: `calc(${((sg.end - sg.start) / dur) * 100}% - 3px)` }}>
                   <div className="h-full rounded-full bg-violet-500" style={{ width: f * 100 + "%" }} />
