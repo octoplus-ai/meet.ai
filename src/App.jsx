@@ -3237,6 +3237,9 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]);
   // ===== Audio dub: speak the translated line in the chosen language as the video plays =====
+  // HD_VOICE off = use the browser's FREE built-in voice (no OpenAI cost). Flip to true (and set
+  // OPENAI_API_KEY in Vercel) to use OpenAI tts-1-hd via /api/tts for studio-quality dubbing.
+  const HD_VOICE = false;
   const BCP47 = { English: "en-US", "Español (Latinoamérica)": "es-419", "Português (Brasil)": "pt-BR", Français: "fr-FR", Deutsch: "de-DE", Italiano: "it-IT", "한국어": "ko-KR", "日本語": "ja-JP" };
   // The active phrase (and a stable key) for a given language at a given time - shared by the
   // on-screen subtitle and the spoken dub so they stay in lock-step.
@@ -3269,7 +3272,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   };
   const ttsFetch = (text) => fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: audioLang }) });
   const prefetchAhead = (time) => {
-    if (ttsModeRef.current === "local") return;
+    if (!HD_VOICE || ttsModeRef.current === "local") return;
     const { text } = phraseAt(audioLang, time + 3);
     if (!text) return; const ck = audioLang + "|" + text;
     if (dubCacheRef.current[ck]) return;
@@ -3277,7 +3280,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   };
   const speakDub = async (text, time) => {
     stopDub();
-    if (ttsModeRef.current === "local") { speakLocal(text); return; }
+    if (!HD_VOICE || ttsModeRef.current === "local") { speakLocal(text); return; }
     // HD voice (best quality) via /api/tts, cached in memory per phrase; prefetch the next one.
     const ck = audioLang + "|" + text;
     try {
