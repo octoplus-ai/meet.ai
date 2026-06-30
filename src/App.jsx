@@ -9,8 +9,10 @@ import {
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type, Copy, Pencil,
   HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, KeyRound,
   ChevronsDownUp, ChevronsUpDown, Eye, ChevronUp, MinusCircle, MoreVertical,
-  Captions, AudioLines,
+  Captions, AudioLines, ImagePlus, Paperclip,
 } from "lucide-react";
+import { THEME_LIST, getTheme, coerceDeck, deckHTML } from "./slides/deck.js";
+import { exportPptx } from "./slides/pptx.js";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
@@ -3622,12 +3624,45 @@ function TimeChip({ t, onClick, className = "" }) {
 }
 
 // Side chat - answers questions about THIS meeting from its transcript + report.
-function AskPanel({ meeting }) {
+function AskPanel({ meeting, shared, shareTok }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const endRef = useRef(null);
+  // Presentation composer
+  const [showComposer, setShowComposer] = useState(false);
+  const [slideCount, setSlideCount] = useState(8);
+  const [themeId, setThemeId] = useState("sleek-dark");
+  const [atts, setAtts] = useState([]); // [{kind:'image'|'file', name, mediaType, data, text}]
+  const [genBusy, setGenBusy] = useState(false);
+  const [deckState, setDeckState] = useState(null); // {deck, theme, imgUrls, meta}
+  const canPresent = !!(meeting.summary || (meeting.actionItems && meeting.actionItems.length) || (meeting.transcript && meeting.transcript.length));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+
+  const onFiles = async (fileList) => {
+    const out = [];
+    for (const f of Array.from(fileList || []).slice(0, 6)) {
+      if (f.type.startsWith("image/")) { try { out.push(await downscaleImage(f)); } catch (e) {} }
+      else if (/\.(txt|md|csv)$/i.test(f.name) || f.type.startsWith("text/")) out.push({ kind: "file", name: f.name, text: await f.text() });
+      else toast("Unsupported file: " + f.name);
+    }
+    setAtts((a) => [...a, ...out].slice(0, 6));
+  };
+  const generate = async () => {
+    if (genBusy) return;
+    setGenBusy(true); setShowComposer(false);
+    const images = atts.filter((a) => a.kind === "image").map((a) => ({ mediaType: a.mediaType, data: a.data }));
+    const files = atts.filter((a) => a.kind === "file").map((a) => ({ name: a.name, text: a.text }));
+    try {
+      const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined, slideCount, themeId, images, files }) });
+      const d = await r.json();
+      if (!r.ok || !d.deck) { toast("Couldn't generate the deck - try again"); return; }
+      const deck = coerceDeck(d.deck, { wantN: slideCount, imageCount: images.length });
+      const imgUrls = images.map((im) => `data:${im.mediaType};base64,${im.data}`);
+      setDeckState({ deck, theme: getTheme(themeId), imgUrls, meta: d.meta });
+      setAtts([]);
+    } catch (e) { toast("Network error"); } finally { setGenBusy(false); }
+  };
 
   const suggested = (meeting.keyQA || []).map((q) => q.q).filter(Boolean).slice(0, 4);
   const sug = suggested.length ? suggested : ["Summarize the key decisions", "What are the action items and who owns them?", "What are the next steps?", "What questions were left open?"];
@@ -3673,12 +3708,49 @@ function AskPanel({ meeting }) {
           ))}
         </div>
       )}
-      <div className="border-t border-slate-200 p-3">
+      <div className="relative border-t border-slate-200 p-3">
+        {showComposer && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowComposer(false)} />
+            <div className="absolute bottom-16 left-3 right-3 z-20 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl">
+              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-slate-800"><Presentation size={14} className="text-violet-600" /> Presentation</div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Slides</div>
+              <div className="mb-3 flex gap-1.5">
+                {[5, 8, 10, 12].map((n) => (
+                  <button key={n} onClick={() => setSlideCount(n)} className={"flex-1 rounded-lg border py-1.5 text-[13px] font-semibold " + (slideCount === n ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>{n}</button>
+                ))}
+              </div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Theme</div>
+              <div className="mb-3 grid grid-cols-2 gap-1.5">
+                {THEME_LIST.map((t) => (
+                  <button key={t.id} onClick={() => setThemeId(t.id)} className={"flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left " + (themeId === t.id ? "border-violet-500" : "border-slate-200")}>
+                    <span className="flex h-5 w-5 overflow-hidden rounded-full ring-1 ring-black/10"><span className="h-full w-1/2" style={{ background: t.bg }} /><span className="h-full w-1/2" style={{ background: t.accent }} /></span>
+                    <span className="text-[12px] font-medium text-slate-700">{t.name}</span>
+                  </button>
+                ))}
+              </div>
+              {atts.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {atts.map((a, i) => (<span key={i} className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-600">{a.kind === "image" ? <ImagePlus size={11} /> : <Paperclip size={11} />}{(a.name || "image").slice(0, 18)}<button onClick={() => setAtts((x) => x.filter((_, j) => j !== i))}><X size={11} /></button></span>))}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-slate-50">
+                  <Paperclip size={13} /> Attach
+                  <input type="file" multiple accept="image/*,.txt,.md,.csv,text/*" className="hidden" onChange={(e) => onFiles(e.target.files)} />
+                </label>
+                <button onClick={generate} disabled={genBusy} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{genBusy ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate</>}</button>
+              </div>
+            </div>
+          </>
+        )}
         <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 focus-within:border-violet-400">
+          <button onClick={() => canPresent ? setShowComposer((v) => !v) : toast("Available once the report is ready")} disabled={genBusy} title="Generate a presentation from this meeting" className="text-violet-600 transition hover:text-violet-700 disabled:text-slate-300">{genBusy ? <Loader2 size={16} className="animate-spin" /> : <Presentation size={16} />}</button>
           <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} placeholder="Ask Octo anything…" className="flex-1 bg-transparent text-sm outline-none" />
           <button onClick={() => ask()} disabled={busy} className="text-violet-600 transition disabled:text-slate-300"><Send size={16} /></button>
         </div>
       </div>
+      {deckState && <SlidesModal deck={deckState.deck} theme={deckState.theme} imgUrls={deckState.imgUrls} meta={deckState.meta} onClose={() => setDeckState(null)} />}
     </aside>
   );
 }
@@ -3785,6 +3857,61 @@ function DocModal({ loading, doc, meta, onClose }) {
         ) : (
           <iframe title="document" srcDoc={full} className="w-full flex-1 bg-white" />
         )}
+      </div>
+    </div>
+  );
+}
+
+// Downscale + re-encode an image to JPEG before sending (keeps the request small/fast).
+async function downscaleImage(file, max = 1280, quality = 0.82) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(bmp.width * scale); cv.height = Math.round(bmp.height * scale);
+  cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+  const dataUrl = cv.toDataURL("image/jpeg", quality);
+  return { kind: "image", name: file.name, mediaType: "image/jpeg", data: dataUrl.split(",")[1] };
+}
+
+// Full-screen Gamma-style deck preview (thumbnail rail + slide viewer) + PDF / PPTX export.
+function SlidesModal({ deck, theme, imgUrls, meta, onClose }) {
+  const [idx, setIdx] = useState(0);
+  const full = useMemo(() => deckHTML(deck, theme, imgUrls), [deck, theme, imgUrls]);
+  const one = useMemo(() => deckHTML({ ...deck, slides: [deck.slides[idx]] }, theme, imgUrls), [deck, theme, imgUrls, idx]);
+  useEffect(() => {
+    const k = (e) => { if (e.key === "ArrowRight") setIdx((i) => Math.min(i + 1, deck.slides.length - 1)); if (e.key === "ArrowLeft") setIdx((i) => Math.max(i - 1, 0)); if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck.slides.length]);
+  const dlPDF = () => { const w = window.open("", "_blank"); if (w) { w.document.write(full); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 400); } toast("Opening printable deck - choose 'Save as PDF' (landscape)"); };
+  const dlPPTX = async () => { try { await exportPptx(deck, theme, imgUrls); toast("PowerPoint downloaded"); } catch (e) { toast("Couldn't export PPTX"); } };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-3 sm:p-6" onClick={onClose}>
+      <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+          <div className="flex items-center gap-2 truncate text-sm font-bold text-slate-800"><Presentation size={16} className="text-violet-600" /> {deck.title}</div>
+          <div className="flex items-center gap-2">
+            <button onClick={dlPDF} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-semibold text-slate-600 hover:bg-slate-50"><Download size={14} /> PDF</button>
+            <button onClick={dlPPTX} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Download size={14} /> PowerPoint</button>
+            <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+          </div>
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="w-44 shrink-0 space-y-2 overflow-y-auto border-r border-slate-200 bg-slate-50 p-3">
+            {deck.slides.map((s, i) => (
+              <button key={i} onClick={() => setIdx(i)} className={"block w-full overflow-hidden rounded-lg border text-left " + (i === idx ? "border-violet-500 ring-2 ring-violet-200" : "border-slate-200")}>
+                <div className="aspect-video w-full" style={{ background: theme.bg }}>
+                  <div className="p-2 text-[8px] font-bold leading-tight" style={{ color: theme.heading, fontFamily: theme.fontHead }}>{i + 1}. {(s.title || s.headline || "").slice(0, 60)}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="relative flex flex-1 items-center justify-center overflow-auto bg-slate-100 p-6">
+            <iframe title="slide" srcDoc={one} className="aspect-video w-full max-w-3xl rounded-lg bg-white shadow-lg" style={{ border: "none" }} />
+            <button onClick={() => setIdx((i) => Math.max(i - 1, 0))} className="absolute left-3 rounded-full bg-white/90 p-2 shadow disabled:opacity-30" disabled={idx === 0}><ChevronLeft size={18} /></button>
+            <button onClick={() => setIdx((i) => Math.min(i + 1, deck.slides.length - 1))} className="absolute right-3 rounded-full bg-white/90 p-2 shadow disabled:opacity-30" disabled={idx === deck.slides.length - 1}><ChevronRight size={18} /></button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -4517,7 +4644,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
         )}
       </div>
       </div>
-      {!shared && <AskPanel meeting={meeting} />}
+      {!shared && <AskPanel meeting={meeting} shared={shared} shareTok={shareTok} />}
       {docData && <DocModal loading={docData.loading} doc={docData.doc} meta={docData.meta} onClose={() => setDocData(null)} />}
     </div>
   );
