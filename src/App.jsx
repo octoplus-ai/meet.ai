@@ -456,6 +456,7 @@ function adaptReal(m) {
     nextSteps: r.next_steps || [],
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
+    subtitles: (r.subtitles && typeof r.subtitles === "object") ? r.subtitles : {},
     video: (done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null,
     real: true, status: m.status, error: m.error || null, calendarEventId: m.calendar_event_id || null,
   };
@@ -2925,7 +2926,7 @@ const MARKER_STYLE = {
 //  - Trailer: a clean 5-6 scene teaser of the most important moments, with fade
 //    transitions and a single continuous progress line (no dots) - looks like one video.
 // Scenes snap to transcript turn boundaries so messages are never cut mid-sentence.
-function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
+function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -2944,7 +2945,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const [volOpen, setVolOpen] = useState(false);
   const [subLang, setSubLang] = useState("off"); // subtitles language - OFF by default
   const [subMenu, setSubMenu] = useState(false);
-  const [subCache, setSubCache] = useState({}); // { lang: [translated text per turn] }
+  const [subCache, setSubCache] = useState(() => (subtitles && typeof subtitles === "object") ? subtitles : {}); // { lang: [translated text per turn] }, pre-loaded from the report
   const [subBusy, setSubBusy] = useState(false);
   const cc = subLang !== "off";
   const barRef = useRef(null), wrapRef = useRef(null), volRef = useRef(null), volDragRef = useRef(false), startedRef = useRef(false);
@@ -3030,21 +3031,34 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
   const applyVol = (val) => { const x = Math.min(1, Math.max(0, val)); setVolume(x); const v = videoRef.current; if (v) { v.volume = x; v.muted = x === 0; } setMuted(x === 0); };
   const volFromEvent = (e) => { const t = volRef.current; if (!t) return; const r = t.getBoundingClientRect(); applyVol(1 - (e.clientY - r.top) / r.height); };
   const startVolDrag = (e) => { e.preventDefault(); volDragRef.current = true; volFromEvent(e); const mv = (ev) => volFromEvent(ev); const up = () => { volDragRef.current = false; window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }; window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); };
-  const SUB_LANGS = ["English", "Español (Latinoamérica)", "Português (Brasil)", "Português (Portugal)", "Français", "Deutsch", "Italiano"];
+  const SUB_LANGS = ["English", "Español (Latinoamérica)", "Português", "Français", "Deutsch", "Italiano"];
+  // Translate (once) via the server, which caches into reports.subtitles so it is instant next time.
+  const fetchLang = async (k) => {
+    const texts = (turns || []).map((t) => t.text || "");
+    if (!texts.length || !meetingId) return null;
+    try {
+      const r = await fetch("/api/pretranslate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId, lang: k, texts, shareToken: shareTok || undefined }) });
+      const d = await r.json();
+      if (r.ok && Array.isArray(d.lines)) { setSubCache((c) => ({ ...c, [k]: d.lines })); return d.lines; }
+    } catch (e) {}
+    return null;
+  };
   const chooseLang = async (k) => {
     setSubLang(k); setSubMenu(false);
     if (k === "off" || subCache[k]) return;
-    const texts = (turns || []).map((t) => t.text || "");
-    if (!texts.length) return;
     setSubBusy(true);
-    try {
-      const sys = `You are a subtitle translator. Translate each item to ${k}. Return ONLY a JSON array of strings, same length and order as the input, no commentary.`;
-      const out = await callClaude([{ role: "user", content: JSON.stringify(texts).slice(0, 60000) }], sys);
-      const arr = JSON.parse(out.slice(out.indexOf("["), out.lastIndexOf("]") + 1));
-      if (Array.isArray(arr) && arr.length) setSubCache((c) => ({ ...c, [k]: arr }));
-    } catch (e) { /* fall back to original text */ }
+    await fetchLang(k);
     setSubBusy(false);
   };
+  // Pre-warm: as soon as the player mounts, translate all menu languages in the background
+  // (skips any already cached in the report) so subtitles are ready before they're turned on.
+  useEffect(() => {
+    if (!meetingId || !(turns || []).length) return;
+    let alive = true;
+    (async () => { for (const k of SUB_LANGS) { if (!alive) break; if (!subCache[k]) await fetchLang(k); } })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingId]);
   const pip = async () => { const v = videoRef.current; if (!v) return; try { document.pictureInPictureElement ? await document.exitPictureInPicture() : await v.requestPictureInPicture(); } catch (e) {} };
 
   // Chapter-segmented progress track + current chapter name (Read.ai-style).
@@ -3754,7 +3768,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
