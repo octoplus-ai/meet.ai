@@ -19,15 +19,8 @@ export default async function handler(req, res) {
     const r = await resolveShareToken(token);
     if (!r || !r.email) return res.status(404).json({ error: "invalid link" });
     const email = String(r.email).toLowerCase();
-
-    // Magic-link: the email's "View report" button carries a secret that proves the visitor
-    // got the email. Verify it and set the cookie - 1 click, no typing. The bare ?share link
-    // (without this secret) still requires the OTP code, so a leaked link alone can't enter.
-    if (action === "magic") {
-      if (!r.magic || String(body.v || "") !== String(r.magic)) return res.status(401).json({ error: "bad_magic" });
-      res.setHeader("Set-Cookie", `om_v_${token}=1; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
-      return res.status(200).json({ ok: true });
-    }
+    // Restricted access is STRICT: only the email owner gets in, via the OTP code below.
+    // (No magic-link auto-grant - a leaked/forwarded link must still pass the email code.)
 
     if (action === "request") {
       const code = String(Math.floor(100000 + Math.random() * 900000));

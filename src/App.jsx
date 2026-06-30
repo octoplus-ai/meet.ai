@@ -677,14 +677,7 @@ function SharedReportView({ token }) {
       })
       .catch(() => setErr(true));
   };
-  useEffect(() => {
-    // Magic link from the email ("View report"): auto-verify (1 click), then load. A bare
-    // ?share link without this secret falls through to the email-code gate.
-    const v = new URLSearchParams(window.location.search).get("v");
-    if (v) fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "magic", v }) }).then(() => loadReport()).catch(() => loadReport());
-    else loadReport();
-    /* eslint-disable-next-line */
-  }, [token]);
+  useEffect(() => { loadReport(); /* eslint-disable-next-line */ }, [token]);
 
   if (otp) return <ShareOtpGate token={token} emailHint={otp.emailHint} onVerified={() => { setMeeting(null); loadReport(); }} />;
   if (err) return (
@@ -3205,9 +3198,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const capClean = capRaw.replace(/[—–]/g, "-").replace(/\s+/g, " ").trim();
   const capText = capClean.length > 150 ? "…" + capClean.slice(capClean.length - 148) : capClean;
 
-  // If the recording is already underway, the primary button RESUMES (Play, "Xm left");
-  // otherwise it starts the full Recording from 0.
-  const started = dur > 0 && cur > 2;
+  // "started" = the user actually pressed play (NOT just the poster frame seeked to coverAt).
+  // So a freshly opened report shows "Recording" and plays from 0; only after real playback
+  // does it offer "Play (Xm left)" to resume.
+  const started = startedRef.current && dur > 0 && cur > 2;
   const MENU = [
     started
       ? { k: "full", label: "Play", sub: mins(Math.max(0, dur - cur)) + " left", primary: true, resume: true }

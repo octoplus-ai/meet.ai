@@ -46,7 +46,7 @@ async function notifyParticipants(meeting, ai, rep) {
       for (const email of to) {
         const e = entryFor(email);
         const coverUrl = meeting.bot_id ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + e.token : "";
-        const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: APP_URL + "?share=" + e.token + "&v=" + e.magic, coverUrl, sharerName: sharer, kind: "auto" });
+        const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: APP_URL + "?share=" + e.token, coverUrl, sharerName: sharer, kind: "auto" });
         const r = await sendViaGmail(token, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: u.email });
         if (r.ok) sent++;
       }

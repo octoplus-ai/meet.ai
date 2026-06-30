@@ -64,7 +64,7 @@ export default async function handler(req, res) {
     let sent = 0, lastErr = "";
     for (const email of to) {
       const e = entryFor(email);
-      const viewUrl = APP + "?share=" + e.token + "&v=" + e.magic;
+      const viewUrl = APP + "?share=" + e.token;
       const coverUrl = m.bot_id ? APP + "api/recall/thumb?botId=" + encodeURIComponent(m.bot_id) + "&share=" + e.token : "";
       const { subject, html, text } = reportEmail({
         title, whenText, summary: rep.summary || "", chapters: rep.chapters || [], actionItems: rep.action_items || [],
