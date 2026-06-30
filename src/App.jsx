@@ -1863,7 +1863,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
       <SectionTop title="Calendar" onAsk={onAsk} right={<button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Scheduling link copied"); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-violet-500"><Link2 size={15} /> Scheduling Link</button>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="mb-5 flex items-center gap-5 border-b border-slate-200">
-          {[{ k: "upcoming", l: "Upcoming" }, { k: "scheduling", l: "Scheduling" }].map((tb) => (
+          {[{ k: "upcoming", l: "Upcoming" }, { k: "schedule", l: "Schedule" }, { k: "scheduling", l: "Scheduling" }].map((tb) => (
             <button key={tb.k} onClick={() => setTab(tb.k)} className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-violet-600 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{tb.l}</button>
           ))}
         </div>
@@ -1920,6 +1920,8 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
             })}
             {!display.length && <div className="py-16 text-center text-sm text-slate-400">No upcoming meetings on your calendar.</div>}
           </>
+        ) : tab === "schedule" ? (
+          <ScheduleMeeting onCreated={loadEvents} />
         ) : (
           <div className="space-y-6">
             <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm">
@@ -1945,6 +1947,98 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
         )}
       </div>
     </>
+  );
+}
+// Smart Scheduler (internal): find free slots in Google Calendar, pick one, create the event
+// with a Meet link + invites, and auto-arm the OctoMeet bot for it.
+function ScheduleMeeting({ onCreated }) {
+  const [title, setTitle] = useState("");
+  const [attendees, setAttendees] = useState("");
+  const [durationMin, setDuration] = useState(30);
+  const [slots, setSlots] = useState(null);
+  const [picked, setPicked] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const findSlots = async () => {
+    setLoading(true); setSlots(null); setPicked(null);
+    try {
+      const r = await fetch("/api/calendar/free-slots", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationMin, days: 7, timeZone: tz }) });
+      const d = await r.json();
+      if (!r.ok) { toast(d.error === "google_disconnected" ? "Reconnect Google to schedule" : "Couldn't load free times"); setSlots([]); }
+      else setSlots(d.slots || []);
+    } catch (e) { toast("Network error"); setSlots([]); } finally { setLoading(false); }
+  };
+  const create = async () => {
+    if (!picked) return toast("Pick a time slot first");
+    if (!title.trim()) return toast("Add a meeting title");
+    setCreating(true);
+    try {
+      const emails = attendees.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+      const r = await fetch("/api/calendar/create-meeting", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: title.trim(), start: picked.start, durationMin, attendees: emails, timeZone: tz }) });
+      const d = await r.json();
+      if (!r.ok) { toast(d.error === "google_disconnected" ? "Reconnect Google to schedule" : "Error: " + (d.error || "failed")); return; }
+      toast(d.armed && d.armed.ok ? "Meeting created - OctoMeet will join & record 🗓️" : (d.armed && d.armed.skippedAutoJoinOff) ? "Meeting created (auto-join is off)" : "Meeting created ✓");
+      setTitle(""); setAttendees(""); setPicked(null); setSlots(null);
+      onCreated && onCreated();
+    } catch (e) { toast("Network error"); } finally { setCreating(false); }
+  };
+
+  const dayKey = (iso) => new Date(iso).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  const hhmm = (iso) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const groups = {};
+  (slots || []).forEach((s) => { const k = dayKey(s.start); (groups[k] = groups[k] || []).push(s); });
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-5">
+      <div className="flex items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3">
+        <OctoLogo size={22} />
+        <div className="text-[13px] text-slate-600">Pick a free time from your Google Calendar. OctoMeet creates the event with a Meet link, invites everyone, and joins to record automatically.</div>
+      </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <label className="text-[12px] font-semibold text-slate-500">Meeting title</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Product sync with Acme" className="mt-1 mb-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
+        <label className="text-[12px] font-semibold text-slate-500">Invite (emails, comma or space separated)</label>
+        <input value={attendees} onChange={(e) => setAttendees(e.target.value)} placeholder="alex@acme.com, maria@acme.com" className="mt-1 mb-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
+        <label className="text-[12px] font-semibold text-slate-500">Duration</label>
+        <div className="mt-1.5 flex gap-2">
+          {[15, 30, 45, 60].map((m) => (
+            <button key={m} onClick={() => { setDuration(m); setSlots(null); setPicked(null); }} className={"rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition " + (durationMin === m ? "bg-violet-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50")}>{m} min</button>
+          ))}
+          <div className="flex-1" />
+          <button onClick={findSlots} disabled={loading} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{loading ? <Loader2 size={15} className="animate-spin" /> : <Calendar size={15} />} Find free times</button>
+        </div>
+      </div>
+
+      {slots !== null && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          {slots.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-400">No free slots in the next 7 days for a {durationMin}-min meeting. Try a shorter duration.</div>
+          ) : (
+            <>
+              <div className="mb-3 text-[13px] font-semibold text-slate-700">Free times (next 7 days)</div>
+              <div className="space-y-4">
+                {Object.entries(groups).map(([day, items]) => (
+                  <div key={day}>
+                    <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">{day}</div>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((s) => (
+                        <button key={s.start} onClick={() => setPicked(s)} className={"rounded-lg px-3 py-1.5 text-[13px] font-medium transition " + (picked && picked.start === s.start ? "bg-violet-600 text-white" : "border border-slate-200 text-slate-700 hover:border-violet-300 hover:bg-violet-50")}>{hhmm(s.start)}</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                <div className="text-[12px] text-slate-500">{picked ? <>Selected: <b className="text-slate-700">{dayKey(picked.start)} · {hhmm(picked.start)}</b></> : "Pick a time above"}</div>
+                <button onClick={create} disabled={creating || !picked || !title.trim()} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-50">{creating ? <Loader2 size={15} className="animate-spin" /> : <Video size={15} />} Create meeting + Meet link</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 function CalToggle({ on, onChange }) {
