@@ -3290,15 +3290,23 @@ function AskPanel({ meeting }) {
 }
 
 // Per-person access role chooser (Viewer / Editor / Remove Access) - matches Read.ai.
+// Menu is FIXED-positioned so the share modal's scroll/overflow never clips it.
 function RoleDropdown({ role, onChange, onRemove }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const openMenu = () => {
+    const r = btnRef.current && btnRef.current.getBoundingClientRect();
+    if (r) { const W = 288, below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8)), top: below > 250 ? r.bottom + 6 : null, bottom: below > 250 ? null : window.innerHeight - r.top + 6 }); }
+    setOpen(true);
+  };
   return (
     <div className="relative" onClick={(e) => e.stopPropagation()}>
-      <button onClick={() => setOpen((o) => !o)} className={"flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 " + (open ? "border-violet-400" : "border-slate-200")}>{role} {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>
-      {open && (
+      <button ref={btnRef} onClick={() => (open ? setOpen(false) : openMenu())} className={"flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 " + (open ? "border-violet-400" : "border-slate-200")}>{role} {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>
+      {open && pos && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl">
+          <div className="fixed inset-0 z-[70]" onClick={() => setOpen(false)} />
+          <div className="fixed z-[71] w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
             {[{ k: "Viewer", icon: <Eye size={16} />, d: "Can view and download the detailed meeting report and metrics" }, { k: "Editor", icon: <Pencil size={16} />, d: "Can view the full report, edit the notes and transcript, download, and share" }].map((o) => (
               <button key={o.k} onClick={() => { onChange(o.k); setOpen(false); }} className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50">
                 <span className="mt-0.5 text-slate-500">{o.icon}</span>
