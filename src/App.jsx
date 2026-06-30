@@ -3812,7 +3812,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
 
   const [summaryMode, setSummaryMode] = useState("standard");
   const [menu, setMenu] = useState(null); // header dropdown: "download" | "push" | "more" | null
-  const [docData, setDocData] = useState(null); // { loading } | { doc, meta } when the AI document modal is open
+  const [docBusy, setDocBusy] = useState(false); // generating in the background (button spinner)
+  const [docData, setDocData] = useState(null); // { doc, meta } -> opens the modal when ready
   const [renaming, setRenaming] = useState(false);
   const [renameVal, setRenameVal] = useState("");
   const [access, setAccess] = useState([]); // per-person shares [{email,role,name}]
@@ -3960,14 +3961,14 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   // AI Smart Document: Claude builds a polished, well-structured doc (PDF + Word) from the meeting.
   const genDoc = async () => {
     setMenu(null);
-    if (docData && docData.loading) return;
-    setDocData({ loading: true }); // open the modal immediately with a "generating" state
+    if (docBusy) return;
+    setDocBusy(true); // generate in the background - the button shows "Generating…", you can keep working
     try {
       const r = await fetch("/api/document", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined }) });
       const d = await r.json();
-      if (!r.ok || !d.doc) { setDocData(null); toast("Couldn't generate the document - try again"); return; }
-      setDocData({ doc: d.doc, meta: d.meta || { title: meeting.title, date: meeting.date } });
-    } catch (e) { setDocData(null); toast("Network error"); }
+      if (!r.ok || !d.doc) { toast("Couldn't generate the document - try again"); return; }
+      setDocData({ doc: d.doc, meta: d.meta || { title: meeting.title, date: meeting.date } }); // opens the modal now that it's ready
+    } catch (e) { toast("Network error"); } finally { setDocBusy(false); }
   };
   const doDownload = (kind) => {
     setMenu(null);
@@ -4008,7 +4009,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             : <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>}
           <div className="flex items-center gap-2">
             {/* AI Document - Claude builds a polished, well-structured doc (PDF + Word) */}
-            <button onClick={genDoc} disabled={docData && docData.loading} title="Generate an AI-written, well-structured document of this meeting" className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{docData && docData.loading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Doc</button>
+            <button onClick={genDoc} disabled={docBusy} title="Generate an AI-written, well-structured document of this meeting" className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{docBusy ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <><Sparkles size={14} /> AI Doc</>}</button>
             {/* Download dropdown - everyone with access (incl. Viewer) can download */}
             <div className="relative">
               <button onClick={() => setMenu(menu === "download" ? null : "download")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download <ChevronDown size={13} /></button>
