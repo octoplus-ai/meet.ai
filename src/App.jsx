@@ -3266,12 +3266,8 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [subMenu, setSubMenu] = useState(false);
   const [subCache, setSubCache] = useState(() => (subtitles && typeof subtitles === "object") ? subtitles : {}); // { lang: [translated text per turn] }, pre-loaded from the report
   const [subBusy, setSubBusy] = useState(false);
-  const [audioLang, setAudioLang] = useState("original"); // dub language; "original" = the real audio
-  const [settingsView, setSettingsView] = useState("root"); // root | subs | audio | playback
-  const [audioBusy, setAudioBusy] = useState(false);
   const cc = subLang !== "off";
   const barRef = useRef(null), wrapRef = useRef(null), volRef = useRef(null), volDragRef = useRef(false), startedRef = useRef(false);
-  const dubKeyRef = useRef(""), dubAudioRef = useRef(null), dubCacheRef = useRef({}), ttsModeRef = useRef(null); // ttsMode: "hd"|"local"|null
   const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null), transRef = useRef(false);
 
   // Capture a real video frame (owner only, once) and store it as the report cover, so
@@ -3413,82 +3409,22 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]);
-  // ===== Audio dub: speak the translated line in the chosen language as the video plays =====
-  // HD_VOICE on = OpenAI voices via /api/tts (cheaper tts-1 model, a consistent voice PER SPEAKER
-  // so the dub feels like a real multi-voice dub). Falls back to the free browser voice if the
-  // endpoint is unavailable (no OPENAI_API_KEY).
-  const HD_VOICE = true;
-  const BCP47 = { English: "en-US", "Español (Latinoamérica)": "es-419", "Português (Brasil)": "pt-BR", Français: "fr-FR", Deutsch: "de-DE", Italiano: "it-IT", "한국어": "ko-KR", "日本語": "ja-JP" };
-  // The active phrase (and a stable key) for a given language at a given time - shared by the
-  // on-screen subtitle and the spoken dub so they stay in lock-step.
+  // The active subtitle phrase (and a stable key) for a language at a given time: split the turn
+  // into phrases and advance through them across the turn's duration (Netflix-style).
   const phraseAt = (lang, time) => {
     const tns = turns || [];
     let idx = -1;
     for (let i = 0; i < tns.length; i++) { const tn = tns[i]; if (tn && tn.at != null && tn.at <= time + 0.3) idx = i; else if (tn && tn.at != null) break; }
-    if (idx < 0) return { text: "", key: "", speaker: "" };
+    if (idx < 0) return { text: "" };
     const raw = (subCache[lang] && subCache[lang][idx]) || (tns[idx] && tns[idx].text) || "";
     const phrases = splitPhrases(raw);
-    if (!phrases.length) return { text: "", key: "", speaker: "" };
+    if (!phrases.length) return { text: "" };
     const at = tns[idx].at || 0;
     const nextAt = (tns[idx + 1] && tns[idx + 1].at != null) ? tns[idx + 1].at : at + Math.max(2.5, phrases.length * 2.5);
     const span = Math.max(0.6, nextAt - at);
     const pi = Math.min(phrases.length - 1, Math.floor(Math.min(0.999, Math.max(0, (time - at) / span)) * phrases.length));
-    return { text: phrases[pi], key: idx + ":" + pi, speaker: tns[idx].speaker || "" };
+    return { text: phrases[pi] };
   };
-  const stopDub = () => { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) {} try { if (dubAudioRef.current) dubAudioRef.current.pause(); } catch (e) {} };
-  const speakLocal = (text) => {
-    try {
-      const synth = window.speechSynthesis; if (!synth) return;
-      synth.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = BCP47[audioLang] || "en-US"; u.rate = Math.min(2, Math.max(0.6, rate));
-      const base = (u.lang.split("-")[0] || "").toLowerCase();
-      const vs = (synth.getVoices() || []).filter((v) => v.lang && v.lang.toLowerCase().startsWith(base));
-      if (vs.length) u.voice = vs.find((v) => /natural|neural|premium/i.test(v.name)) || vs[0];
-      synth.speak(u);
-    } catch (e) {}
-  };
-  const ttsFetch = (text, speaker) => fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: audioLang, speaker: speaker || "" }) });
-  const prefetchAhead = (time) => {
-    if (!HD_VOICE || ttsModeRef.current === "local") return;
-    const { text, speaker } = phraseAt(audioLang, time + 3);
-    if (!text) return; const ck = audioLang + "|" + (speaker || "") + "|" + text;
-    if (dubCacheRef.current[ck]) return;
-    ttsFetch(text, speaker).then((r) => (r.ok ? r.blob() : null)).then((b) => { if (b) dubCacheRef.current[ck] = URL.createObjectURL(b); }).catch(() => {});
-  };
-  const speakDub = async (text, time, speaker) => {
-    stopDub();
-    if (!HD_VOICE || ttsModeRef.current === "local") { speakLocal(text); return; }
-    // OpenAI voice via /api/tts (a consistent voice per speaker), cached in memory per phrase;
-    // prefetch the next phrase so playback doesn't lag.
-    const ck = audioLang + "|" + (speaker || "") + "|" + text;
-    try {
-      let url = dubCacheRef.current[ck];
-      if (!url) {
-        const r = await ttsFetch(text, speaker);
-        if (!r.ok) { ttsModeRef.current = "local"; speakLocal(text); return; }
-        url = URL.createObjectURL(await r.blob()); dubCacheRef.current[ck] = url; ttsModeRef.current = "hd";
-      }
-      const a = dubAudioRef.current || (dubAudioRef.current = new Audio());
-      a.src = url; a.playbackRate = Math.min(2, Math.max(0.5, rate)); a.play().catch(() => {});
-      prefetchAhead(time);
-    } catch (e) { ttsModeRef.current = "local"; speakLocal(text); }
-  };
-  const chooseAudio = async (k) => {
-    setAudioLang(k); setSettingsView("root"); stopDub(); dubKeyRef.current = "";
-    if (k !== "original" && !subCache[k]) { setAudioBusy(true); await fetchLang(k); setAudioBusy(false); }
-  };
-  // Mute the real audio whenever a dub language is active (without touching the user's mute pref).
-  useEffect(() => { const v = videoRef.current; if (v) v.muted = muted || audioLang !== "original"; }, [audioLang, muted]);
-  // Drive the dub: when a phrase becomes active (and we're playing), speak it once.
-  useEffect(() => {
-    if (audioLang === "original" || !playing) { stopDub(); dubKeyRef.current = ""; return; }
-    const { text, key, speaker } = phraseAt(audioLang, cur);
-    if (text && key && key !== dubKeyRef.current) { dubKeyRef.current = key; speakDub(text, cur, speaker); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cur, audioLang, playing, subCache, rate]);
-  // Cleanup on unmount.
-  useEffect(() => () => { stopDub(); Object.values(dubCacheRef.current).forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} }); }, []);
 
   const pip = async () => { const v = videoRef.current; if (!v) return; try { document.pictureInPictureElement ? await document.exitPictureInPicture() : await v.requestPictureInPicture(); } catch (e) {} };
 
@@ -3564,67 +3500,30 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
         {/* Settings popover (metrics / highlights / autoplay + playback speed). */}
         {showSettings && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => { setShowSettings(false); setSettingsView("root"); }} />
-            <div className="absolute bottom-12 right-2 z-50 w-72 overflow-hidden rounded-2xl border border-white/10 bg-neutral-900/95 text-white shadow-2xl backdrop-blur-md">
-              {settingsView === "root" && (
-                <div className="p-2">
-                  <div className="px-2 py-2 text-center text-[14px] font-bold tracking-wide">Settings</div>
-                  <button onClick={() => setSettingsView("subs")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/10">
-                    <Captions size={18} className="text-white/80" />
-                    <span className="text-[14px] font-medium">Subtitles</span>
-                    <span className="ml-auto flex items-center gap-1 text-[13px] text-white/60">{subLang === "off" ? "Off" : subLang}<ChevronRight size={15} /></span>
+            <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)} />
+            <div className="absolute bottom-12 right-2 z-50 w-72 rounded-2xl border border-white/10 bg-neutral-900/95 p-2 text-white shadow-2xl backdrop-blur-md">
+              <div className="px-2 py-2 text-center text-[14px] font-bold tracking-wide">Settings</div>
+              {[
+                { label: "Show metrics on screen", v: showMetrics, set: setShowMetrics },
+                { label: "Show highlights on screen", v: showHighlights, set: setShowHighlights },
+                { label: "Auto-play video on click", v: autoplayClick, set: setAutoplayClick },
+              ].map((row) => (
+                <div key={row.label} className="flex items-center justify-between px-3 py-2">
+                  <span className="text-[13px] text-white/90">{row.label}</span>
+                  <button onClick={() => row.set((x) => !x)} className={"relative h-5 w-9 shrink-0 rounded-full transition " + (row.v ? "bg-violet-500" : "bg-white/25")}>
+                    <span className={"absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all " + (row.v ? "left-[18px]" : "left-0.5")} />
                   </button>
-                  <button onClick={() => setSettingsView("audio")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/10">
-                    <AudioLines size={18} className="text-white/80" />
-                    <span className="text-[14px] font-medium">Audio</span>
-                    <span className="ml-auto flex items-center gap-1 text-[13px] text-white/60">{audioLang === "original" ? "Original" : audioLang}<ChevronRight size={15} /></span>
-                  </button>
-                  <div className="my-2 h-px bg-white/10" />
-                  {[
-                    { label: "Show metrics on screen", v: showMetrics, set: setShowMetrics },
-                    { label: "Show highlights on screen", v: showHighlights, set: setShowHighlights },
-                    { label: "Auto-play video on click", v: autoplayClick, set: setAutoplayClick },
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between px-3 py-2">
-                      <span className="text-[13px] text-white/90">{row.label}</span>
-                      <button onClick={() => row.set((x) => !x)} className={"relative h-5 w-9 shrink-0 rounded-full transition " + (row.v ? "bg-violet-500" : "bg-white/25")}>
-                        <span className={"absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all " + (row.v ? "left-[18px]" : "left-0.5")} />
-                      </button>
-                    </div>
-                  ))}
-                  <div className="mt-1 px-3 text-[13px] text-white/90">Playback speed</div>
-                  <div className="relative mx-4 mb-1 mt-3 flex items-center justify-between">
-                    <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/20" />
-                    {RATES.map((r) => (
-                      <button key={r} onClick={() => setRateTo(r)} title={r + "x"}
-                        className={"relative h-3 w-3 rounded-full transition " + (rate === r ? "bg-violet-400 ring-4 ring-violet-400/30" : "bg-white/40 hover:bg-white/70")} />
-                    ))}
-                  </div>
-                  <div className="mx-3 mb-1 flex justify-between text-[10px] text-white/40"><span>.5x</span><span>Normal</span><span>2x</span></div>
                 </div>
-              )}
-              {(settingsView === "subs" || settingsView === "audio") && (() => {
-                const isAudio = settingsView === "audio";
-                const curK = isAudio ? audioLang : subLang;
-                const offKey = isAudio ? "original" : "off";
-                const offLabel = isAudio ? "Original" : "Off";
-                const pick = isAudio ? chooseAudio : chooseLang;
-                return (
-                  <div className="max-h-[19rem] overflow-y-auto p-2">
-                    <div className="flex items-center gap-2 px-1 py-1.5">
-                      <button onClick={() => setSettingsView("root")} className="rounded-lg p-1 hover:bg-white/10"><ChevronLeft size={18} /></button>
-                      <span className="text-[14px] font-bold">{isAudio ? "Audio" : "Subtitles"}</span>
-                      {(isAudio ? audioBusy : subBusy) && <Loader2 size={14} className="ml-1 animate-spin text-white/60" />}
-                    </div>
-                    {[offKey, ...SUB_LANGS].map((k) => (
-                      <button key={k} onClick={() => pick(k)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
-                        <span className="w-4">{curK === k && <Check size={15} className="text-violet-300" />}</span>
-                        <span className={curK === k ? "font-semibold" : "text-white/85"}>{k === offKey ? offLabel : k}</span>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
+              ))}
+              <div className="mt-1 px-3 text-[13px] text-white/90">Playback speed</div>
+              <div className="relative mx-4 mb-1 mt-3 flex items-center justify-between">
+                <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/20" />
+                {RATES.map((r) => (
+                  <button key={r} onClick={() => setRateTo(r)} title={r + "x"}
+                    className={"relative h-3 w-3 rounded-full transition " + (rate === r ? "bg-violet-400 ring-4 ring-violet-400/30" : "bg-white/40 hover:bg-white/70")} />
+                ))}
+              </div>
+              <div className="mx-3 mb-1 flex justify-between text-[10px] text-white/40"><span>.5x</span><span>Normal</span><span>2x</span></div>
             </div>
           </>
         )}
@@ -3681,15 +3580,26 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
             )}
             <button onClick={toggleMute} title="Mute / volume" className="hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
           </div>
-          {/* Quick subtitles on/off; the full language pickers (Subtitles + Audio) live in Settings. */}
-          <button onClick={() => chooseLang(cc ? "off" : "English")} title="Subtitles on / off"
-            className={"flex h-5 items-center rounded px-1 text-[11px] font-bold transition hover:text-violet-300 " + (cc ? "bg-white text-neutral-900" : "")}>CC</button>
-          <button onClick={() => setShowSettings((s) => { const n = !s; if (n) setSettingsView("root"); return n; })} title="Settings (subtitles, audio, speed)"
-            className="relative flex items-center gap-0.5 hover:text-violet-300">
-            <Settings size={16} />
-            {rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}
-            {audioLang !== "original" && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-black/40" />}
-          </button>
+          {/* Subtitles: own button + language menu (off by default). */}
+          <div className="relative">
+            {subMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setSubMenu(false)} />
+                <div className="absolute bottom-9 right-0 z-50 max-h-[19rem] w-64 overflow-y-auto rounded-2xl border border-white/10 bg-neutral-950/95 p-2 text-white shadow-2xl backdrop-blur-md">
+                  <div className="flex items-center justify-center gap-2 px-3 py-2 text-[14px] font-bold">Subtitles {subBusy && <Loader2 size={13} className="animate-spin text-white/60" />}</div>
+                  {["off", ...SUB_LANGS].map((k) => (
+                    <button key={k} onClick={() => chooseLang(k)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
+                      <span className="w-4">{subLang === k && <Check size={15} className="text-violet-300" />}</span>
+                      <span className={subLang === k ? "font-semibold" : "text-white/85"}>{k === "off" ? "Off" : k}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            <button onClick={() => setSubMenu((s) => !s)} title="Subtitles"
+              className={"flex h-5 items-center rounded px-1 text-[11px] font-bold transition hover:text-violet-300 " + (cc ? "bg-white text-neutral-900" : "")}>CC</button>
+          </div>
+          <button onClick={() => setShowSettings((s) => !s)} title="Settings (playback speed & overlays)" className="flex items-center gap-0.5 hover:text-violet-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
           <button onClick={pip} title="Picture in picture (click the screen or this button to go back)" className="hover:text-violet-300"><PictureInPicture2 size={16} /></button>
           <button onClick={fs} title="Fullscreen" className="hover:text-violet-300"><Maximize2 size={16} /></button>
           {collapsed && <button onClick={() => setCollapsed(false)} title="Expand Video" className="hover:text-violet-300"><ChevronsUpDown size={16} /></button>}
