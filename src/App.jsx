@@ -3116,6 +3116,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     const p = v.play(); if (p && p.catch) p.catch(() => {});
   };
   const clearMode = () => { modeRef.current = null; segsRef.current = []; transRef.current = false; setFading(false); setMode(null); };
+  const resumePlay = () => { const v = videoRef.current; if (!v) return; clearMode(); startedRef.current = true; v.play().catch(() => {}); };
 
   // Advance to the next scene. Trailer fades out/in; Highlights jumps instantly.
   const advance = (v) => {
@@ -3189,10 +3190,18 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   // Current subtitle line (the latest transcript turn whose timestamp has passed), in the
   // chosen language (translated cache when available, else the original text).
   let capIdx = -1; if (cc) { for (let i = 0; i < (turns || []).length; i++) { const tn = turns[i]; if (tn && tn.at != null && tn.at <= cur + 0.3) capIdx = i; else if (tn && tn.at != null) break; } }
-  const capText = capIdx >= 0 ? ((subCache[subLang] && subCache[subLang][capIdx]) || (turns[capIdx] && turns[capIdx].text) || "") : "";
+  const capRaw = capIdx >= 0 ? ((subCache[subLang] && subCache[subLang][capIdx]) || (turns[capIdx] && turns[capIdx].text) || "") : "";
+  // Movie-subtitle style: no long dashes, keep it short (~2 lines = ~150 chars, show the tail).
+  const capClean = capRaw.replace(/[—–]/g, "-").replace(/\s+/g, " ").trim();
+  const capText = capClean.length > 150 ? "…" + capClean.slice(capClean.length - 148) : capClean;
 
+  // If the recording is already underway, the primary button RESUMES (Play, "Xm left");
+  // otherwise it starts the full Recording from 0.
+  const started = dur > 0 && cur > 2;
   const MENU = [
-    { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
+    started
+      ? { k: "full", label: "Play", sub: mins(Math.max(0, dur - cur)) + " left", primary: true, resume: true }
+      : { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
     { k: "trailer", label: "Trailer", sub: dur ? mins(segTotal(buildSegments("trailer", dur))) : "<1m" },
     { k: "highlights", label: "Highlights", sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "-" },
   ];
@@ -3226,14 +3235,14 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       {/* Subtitles overlay (off by default; language chosen via the CC menu). */}
       {!collapsed && cc && (capText || subBusy) && (
         <div className="pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-6">
-          <span className="max-w-[82%] rounded-lg bg-black/75 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white">{subBusy && !subCache[subLang] ? "Translating subtitles…" : capText}</span>
+          <span className="line-clamp-2 max-w-[70%] rounded-lg bg-black/75 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white">{subBusy && !subCache[subLang] ? "Translating subtitles…" : capText}</span>
         </div>
       )}
       {/* Hover menu: smart playback modes (only when paused so it doesn't block viewing). */}
-      {!collapsed && hovering && !playing && (
+      {!collapsed && !playing && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2.5 bg-black/30">
           {MENU.map((mi) => (
-            <button key={mi.k} onClick={() => startMode(mi.k)}
+            <button key={mi.k} onClick={(e) => { e.stopPropagation(); mi.resume ? resumePlay() : startMode(mi.k); }}
               className={"flex w-60 items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-semibold backdrop-blur-sm transition " + (mi.primary ? "bg-violet-600 text-white shadow-lg hover:bg-violet-500" : "bg-white/15 text-white hover:bg-white/25")}>
               {mi.label} <span className="font-normal text-white/75">{mi.sub}</span>
             </button>

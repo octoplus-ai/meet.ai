@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     const subs = (rep[0] && rep[0].subtitles && typeof rep[0].subtitles === "object") ? rep[0].subtitles : {};
     if (Array.isArray(subs[lang]) && subs[lang].length === texts.length) return res.status(200).json({ lang, lines: subs[lang], cached: true });
 
-    const sys = `You are a professional subtitle translator. Translate each string in the input JSON array into ${lang}. Keep the SAME number of items and the SAME order. Natural, concise, spoken-style. Return ONLY a JSON array of strings, no commentary.`;
+    const sys = `You are a professional subtitle (closed-caption) translator. Translate each string in the input JSON array into ${lang}. Keep the SAME number of items and the SAME order. Make it sound NATURAL, like movie subtitles a person reads - concise, spoken-style, well punctuated. NEVER use em dashes or en dashes (— –); use commas or periods instead. Keep each line short. Return ONLY a JSON array of strings, no commentary.`;
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     if (!Array.isArray(lines) || !lines.length) return res.status(502).json({ error: "bad_translation" });
     // Pad/trim to match the input length so indices stay aligned.
     while (lines.length < texts.length) lines.push("");
-    lines = lines.slice(0, texts.length).map((x) => String(x == null ? "" : x));
+    lines = lines.slice(0, texts.length).map((x) => String(x == null ? "" : x).replace(/[—–]/g, "-"));
     await sb(`reports?meeting_id=eq.${enc(meetingId)}`, { method: "PATCH", body: { subtitles: { ...subs, [lang]: lines } } });
     res.status(200).json({ lang, lines });
   } catch (e) {
