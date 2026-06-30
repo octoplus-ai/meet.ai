@@ -45,7 +45,7 @@ export default async function handler(req, res) {
       const existing = a.shares.find((s) => (s.email || "").toLowerCase() === e);
       let shares = a.shares.filter((s) => (s.email || "").toLowerCase() !== e);
       if (!body.remove) {
-        shares.push({ email: e, role: body.role === "Editor" ? "Editor" : "Viewer", name: body.name || (existing && existing.name) || "", token: (existing && existing.token) || randomToken(), magic: (existing && existing.magic) || randomToken() });
+        shares.push({ email: e, role: body.role === "Editor" ? "Editor" : "Viewer", name: body.name || (existing && existing.name) || "", picture: (existing && existing.picture) || "", token: (existing && existing.token) || randomToken(), magic: (existing && existing.magic) || randomToken() });
       }
       await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}`, { method: "PATCH", body: { shares } });
       return res.status(200).json({ ok: true, shares });

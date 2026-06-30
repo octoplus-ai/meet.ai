@@ -484,7 +484,20 @@ const fmtDateShort = (iso) => {
   try { return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
   catch { return iso; }
 };
-const initialsOf = (name) => (name || "?").split(" ").filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+const initialsOf = (name) => {
+  const s = String(name || "?").trim();
+  if (!s) return "?";
+  if (s.includes("@")) {
+    // Email: try first.last style, else the first two letters of the local part (so it's never lonely).
+    const local = s.split("@")[0];
+    const parts = local.split(/[.\-_+]+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return local.slice(0, 2).toUpperCase();
+  }
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+  return words[0].slice(0, 2).toUpperCase();
+};
 // Score color tiers: 0-20 red, 20-40 orange, 40-70 yellow, 70-80 green-apple (lime), 80-100 green.
 const scoreColor = (n) => (n >= 80 ? "#16A34A" : n >= 70 ? "#84CC16" : n >= 40 ? "#EAB308" : n >= 20 ? "#F97316" : "#EF4444");
 const OWNER_COLORS = { NB: "#F472B6", AS: "#FB923C", SL: "#34D399" };
@@ -646,24 +659,80 @@ const NAV = [
 const BUCKET_TKEY = { TODAY: "today", "THIS WEEK": "thisWeek", "THIS MONTH": "thisMonth", EARLIER: "earlier" };
 
 // Email-OTP gate: the invited person verifies the code we email them before the report loads.
-function ShareOtpGate({ token, emailHint, onVerified }) {
+// Restricted-report access gate (Read.ai style): primary path is "Continue with Google" via
+// Google Identity Services (id_token only, no scopes - works for any external Google user) with
+// One Tap auto-detect when the visitor is already signed into Google. Email-code is the fallback.
+function ShareSignInGate({ token, emailHint, onVerified }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [hint, setHint] = useState(emailHint || "");
+  const [mode, setMode] = useState("google"); // "google" | "code"
+  const [denied, setDenied] = useState(null);  // { account, invited }
+  const btnRef = useRef(null);
+
+  const onGoogle = useCallback(async (credential) => {
+    if (!credential) return;
+    setBusy(true); setMsg(""); setDenied(null);
+    try {
+      const r = await fetch("/api/share-auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, credential }) });
+      if (r.ok) { onVerified(); return; }
+      const d = await r.json().catch(() => ({}));
+      if (d.error === "no_access") setDenied({ account: d.account, invited: d.invited });
+      else setMsg("Couldn't verify that account - try the email code instead.");
+    } catch (e) { setMsg("Couldn't verify - try the email code instead."); }
+    setBusy(false);
+  }, [token, onVerified]);
+
+  // Load Google Identity Services, render the button + try One Tap (silent auto-detect).
+  useEffect(() => {
+    let cancelled = false;
+    const init = (clientId) => {
+      if (cancelled || !window.google || !window.google.accounts || !clientId) return;
+      try {
+        window.google.accounts.id.initialize({ client_id: clientId, callback: (resp) => onGoogle(resp.credential), auto_select: true, cancel_on_tap_outside: false });
+        if (btnRef.current) window.google.accounts.id.renderButton(btnRef.current, { type: "standard", theme: "outline", size: "large", text: "continue_with", shape: "pill", logo_alignment: "center", width: 280 });
+        window.google.accounts.id.prompt(); // One Tap: signs the visitor in automatically if already in their Google account
+      } catch (e) {}
+    };
+    (async () => {
+      let clientId = "";
+      try { const r = await fetch("/api/share-auth"); const d = await r.json(); clientId = d.clientId; } catch (e) {}
+      if (window.google && window.google.accounts) return init(clientId);
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client"; s.async = true; s.defer = true;
+      s.onload = () => init(clientId);
+      document.head.appendChild(s);
+    })();
+    return () => { cancelled = true; };
+  }, [onGoogle]);
+
   const request = async () => { setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "request" }) }); const d = await r.json(); if (r.ok) { if (d.emailHint) setHint(d.emailHint); setMsg("We sent a 6-digit code to " + (d.emailHint || hint)); } else setMsg("Couldn't send the code - try again"); } catch (e) { setMsg("Couldn't send the code"); } setBusy(false); };
   const verify = async () => { if (!/^\d{6}$/.test(code)) { setMsg("Enter the 6-digit code"); return; } setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "verify", code }) }); if (r.ok) { onVerified(); return; } const d = await r.json().catch(() => ({})); setMsg(d.error === "expired" ? "Code expired - tap Resend" : "Incorrect code"); } catch (e) { setMsg("Something went wrong"); } setBusy(false); };
-  useEffect(() => { request(); /* auto-send on open */ /* eslint-disable-next-line */ }, []);
+
   return (
     <div className="rai-body flex h-screen items-center justify-center bg-[#F4F5FA] p-4">
       <StyleInject />
       <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-xl">
         <OctoLogo size={40} />
-        <h2 className="mt-3 text-lg font-bold text-slate-900">Verify it's you</h2>
-        <p className="mt-1 text-[13px] text-slate-500">Enter the 6-digit code we emailed to <b className="text-slate-700">{hint || "your email"}</b> to view this shared report.</p>
-        <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(e) => e.key === "Enter" && verify()} inputMode="numeric" placeholder="••••••" autoFocus className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-center text-xl font-bold tracking-[0.4em] outline-none focus:border-violet-400" />
-        <button onClick={verify} disabled={busy} className="mt-3 w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-60">View report</button>
-        <button onClick={request} disabled={busy} className="mt-2 text-[13px] font-medium text-violet-600 hover:text-violet-700">Resend code</button>
+        <h2 className="mt-3 text-lg font-bold text-slate-900">Sign in to view this report</h2>
+        <p className="mt-1 text-[13px] text-slate-500">This report is restricted. Continue with the account it was shared with{hint ? <> (<b className="text-slate-700">{hint}</b>)</> : ""}.</p>
+        {denied && <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-left text-[12px] text-amber-700"><b>{denied.account}</b> doesn't have access. This report was shared with {denied.invited}. Switch accounts or use the email code below.</div>}
+        {mode === "google" ? (
+          <>
+            <div ref={btnRef} className="mt-4 flex min-h-[44px] justify-center" />
+            {busy && <p className="mt-2 text-[12px] text-slate-400">Checking access…</p>}
+            <div className="my-4 flex items-center gap-3 text-[11px] text-slate-300"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div>
+            <button onClick={() => { setMode("code"); setMsg(""); setDenied(null); request(); }} disabled={busy} className="text-[13px] font-medium text-violet-600 hover:text-violet-700">Email me a code instead</button>
+          </>
+        ) : (
+          <>
+            <p className="mt-3 text-[13px] text-slate-500">Enter the 6-digit code we emailed to <b className="text-slate-700">{hint || "your email"}</b>.</p>
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(e) => e.key === "Enter" && verify()} inputMode="numeric" placeholder="••••••" autoFocus className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-center text-xl font-bold tracking-[0.4em] outline-none focus:border-violet-400" />
+            <button onClick={verify} disabled={busy} className="mt-3 w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-60">View report</button>
+            <div className="mt-2 flex justify-center gap-4 text-[13px]"><button onClick={request} disabled={busy} className="font-medium text-violet-600 hover:text-violet-700">Resend code</button><button onClick={() => { setMode("google"); setMsg(""); }} className="font-medium text-slate-500 hover:text-slate-700">Back to Google</button></div>
+          </>
+        )}
         {msg && <p className="mt-3 text-[12px] text-slate-500">{msg}</p>}
       </div>
     </div>
@@ -696,7 +765,7 @@ function SharedReportView({ token }) {
   };
   useEffect(() => { loadReport(); /* eslint-disable-next-line */ }, [token]);
 
-  if (otp) return <ShareOtpGate token={token} emailHint={otp.emailHint} onVerified={() => { setMeeting(null); loadReport(); }} />;
+  if (otp) return <ShareSignInGate token={token} emailHint={otp.emailHint} onVerified={() => { setMeeting(null); loadReport(); }} />;
   if (err) return (
     <div className="rai-body flex h-screen flex-col items-center justify-center gap-3 bg-[#F4F5FA] text-center text-slate-500">
       <StyleInject /><OctoLogo size={40} />
@@ -3944,7 +4013,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                     // is already shown above, so skip them here. Each gets a role dropdown.
                     const map = {};
                     (meeting.participants || []).forEach((p) => { if (p.name && p.name !== (user && user.name)) map[p.name] = { key: p.name, name: p.name, sub: "Participant", role: "Viewer", token: null }; });
-                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, email: s.email, sub: s.name ? s.email : "", role: s.role || "Viewer", token: s.token }; });
+                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, email: s.email, picture: s.picture || "", sub: s.name ? s.email : "", role: s.role || "Viewer", token: s.token }; });
                     const list = Object.values(map);
                     if (!list.length) return null;
                     return (
@@ -3952,7 +4021,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                         <div className="px-2 pt-1.5 text-[11px] font-semibold text-slate-400">Individuals</div>
                         {list.map((s) => (
                           <div key={s.key} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-                            <Avatar name={s.name} email={s.email || s.key} picture={(user && s.email && s.email === user.email) ? user.picture : undefined} size={28} />
+                            <Avatar name={s.name} email={s.email || s.key} picture={s.picture || ((user && s.email && s.email === user.email) ? user.picture : undefined)} size={28} />
                             <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium text-slate-700">{s.name}</div>{s.sub && <div className="truncate text-[11px] text-slate-400">{s.sub}</div>}</div>
                             {s.token && <button onClick={() => { try { navigator.clipboard.writeText(window.location.origin + "/?share=" + s.token); toast(s.role + " link copied"); } catch (e) {} }} title={"Copy this person's " + s.role + " link"} className="shrink-0 text-slate-400 transition hover:text-violet-600"><Link2 size={15} /></button>}
                             <RoleDropdown role={s.role} onChange={(r) => setAccessRole(s.key, r)} onRemove={() => removeAccess(s.key)} />
