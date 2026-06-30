@@ -4335,37 +4335,37 @@ function ChatView({ meetings, onOpen, seed }) {
     return copy;
   });
 
-  const buildContext = (question) => {
-    const kw = question.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
-    const scored = meetings.map((m) => {
-      const hay = (m.title + " " + (m.summary || "") + " " + (m.topics || []).join(" ") + " " + (m.transcript || []).map((t) => t.text).join(" ")).toLowerCase();
-      return { m, score: kw.reduce((a, w) => a + (hay.includes(w) ? 1 : 0), 0) };
-    });
-    // Include full transcripts for the top 5 most-relevant meetings (deeper, grounded answers).
-    const top = scored.sort((a, b) => b.score - a.score).slice(0, 5).map((s) => s.m.id);
-    return meetings.map((m) => {
-      const ai = (m.actionItems || []).map((i) => `- [${i.done ? "x" : " "}] ${i.task} (${i.owner})`).join("\n");
-      let block = `### ${m.title} - ${fmtDateShort(m.date)} (${m.source})\nSummary: ${m.summary || ""}\nRead Score: ${(m.scores && m.scores.overall) || 0}.\nAction items:\n${ai}`;
-      if (top.includes(m.id)) block += `\nTranscript:\n` + (m.transcript || []).map((t) => `${t.speaker}: ${t.text}`).join("\n").slice(0, 6000);
-      return block;
-    }).join("\n\n");
-  };
-
   const send = async (textArg) => {
     const question = (textArg ?? input).trim();
     if (!question || busy) return;
     setInput(""); addRecent(question);
     const history = [...msgs, { role: "user", text: question }];
-    setMsgs(history); setBusy(true);
+    // Show the user message + an empty assistant bubble we stream into.
+    setMsgs([...history, { role: "assistant", text: "", refs: [] }]);
+    setBusy(true);
     try {
-      const ctx = buildContext(question);
-      const sys = "You are Octomeet.ai, a meeting-intelligence assistant. Answer ONLY from the meeting data below. Be concise, specific and actionable. When you use a meeting, mention its name. If the answer isn't in the data, say so plainly.\n\n=== MEETING DATA ===\n" + ctx;
-      const apiMsgs = history.filter((m) => m.role === "user" || m.role === "assistant").slice(-6).map((m) => ({ role: m.role, content: m.text }));
-      const ans = await callClaude(apiMsgs, sys);
-      const refs = meetings.filter((m) => ans.toLowerCase().includes(m.title.toLowerCase())).map((m) => m.id);
-      setMsgs((p) => [...p, { role: "assistant", text: ans, refs }]);
+      const apiMsgs = history.filter((m) => m.role === "user" || m.role === "assistant").slice(-8).map((m) => ({ role: m.role, content: m.text }));
+      const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, messages: apiMsgs }) });
+      if (!res.ok || !res.body) {
+        let msg = "I couldn't reach the analysis engine. Make sure you're signed in, then try again.";
+        try { const j = await res.json(); if (j && j.error === "not authenticated") msg = "Please sign in to ask across your meetings."; } catch (e) {}
+        setMsgs((p) => { const c = [...p]; c[c.length - 1] = { role: "assistant", text: msg, refs: [] }; return c; });
+        return;
+      }
+      // Stream the answer; a trailing <<<OCTO_REFS>>>[ids] line carries cited meeting ids.
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      const MARK = "<<<OCTO_REFS>>>"; let acc = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += dec.decode(value, { stream: true });
+        let text = acc, refs = [];
+        const i = acc.indexOf(MARK);
+        if (i >= 0) { text = acc.slice(0, i).replace(/\n+$/, ""); try { refs = JSON.parse(acc.slice(i + MARK.length)); } catch (e) {} }
+        setMsgs((p) => { const c = [...p]; c[c.length - 1] = { role: "assistant", text, refs: Array.isArray(refs) ? refs : [] }; return c; });
+      }
     } catch (e) {
-      setMsgs((p) => [...p, { role: "assistant", text: "I couldn't reach the analysis engine. Make sure ANTHROPIC_API_KEY is set, then try again.", refs: [] }]);
+      setMsgs((p) => { const c = [...p]; c[c.length - 1] = { role: "assistant", text: "I couldn't reach the analysis engine. Please try again.", refs: [] }; return c; });
     } finally { setBusy(false); }
   };
 
