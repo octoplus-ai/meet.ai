@@ -458,6 +458,7 @@ function adaptReal(m) {
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
     subtitles: (r.subtitles && typeof r.subtitles === "object") ? r.subtitles : {},
     video: (done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null,
+    cover_url: m.cover_url || null,
     real: true, status: m.status, error: m.error || null, calendarEventId: m.calendar_event_id || null,
   };
 }
@@ -3049,7 +3050,24 @@ const MARKER_STYLE = {
 //  - Trailer: a clean 5-6 scene teaser of the most important moments, with fade
 //    transitions and a single continuous progress line (no dots) - looks like one video.
 // Scenes snap to transcript turn boundaries so messages are never cut mid-sentence.
-function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok }) {
+// Split a transcript turn into short, readable, sentence-style phrases (Netflix-style captions):
+// break on sentence enders, wrap long sentences to <=84 chars, capitalize each phrase.
+function splitPhrases(text) {
+  const t = String(text || "").replace(/[—–]/g, "-").replace(/\s+/g, " ").trim();
+  if (!t) return [];
+  const sentences = t.match(/[^.!?…]+[.!?…]+|\S[^.!?…]*$/g) || [t];
+  const out = [];
+  for (let s of sentences) {
+    s = s.trim(); if (!s) continue;
+    if (s.length <= 84) { out.push(s); continue; }
+    let cur = "";
+    for (const w of s.split(" ")) { if ((cur + " " + w).trim().length > 84) { if (cur) out.push(cur.trim()); cur = w; } else cur = (cur + " " + w).trim(); }
+    if (cur) out.push(cur.trim());
+  }
+  return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
+}
+
+function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -3073,6 +3091,36 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const cc = subLang !== "off";
   const barRef = useRef(null), wrapRef = useRef(null), volRef = useRef(null), volDragRef = useRef(false), startedRef = useRef(false);
   const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null), transRef = useRef(false);
+
+  // Capture a real video frame (owner only, once) and store it as the report cover, so
+  // share/recap emails show the actual recording still. Uses the same-origin /frame proxy so
+  // the canvas isn't CORS-tainted; if it still taints, we silently keep the branded fallback.
+  useEffect(() => {
+    if (shareTok || coverDone) return;
+    const bid = ((src || "").match(/botId=([^&]+)/) || [])[1];
+    if (!bid) return;
+    let done = false;
+    const hv = document.createElement("video");
+    hv.crossOrigin = "anonymous"; hv.muted = true; hv.preload = "auto"; hv.playsInline = true;
+    hv.src = "/api/recall/frame?botId=" + bid;
+    const cleanup = () => { try { hv.removeAttribute("src"); hv.load(); } catch (e) {} };
+    hv.addEventListener("loadedmetadata", () => { try { hv.currentTime = Math.min(Math.max(1, coverAt || 1), (hv.duration || 2) - 0.1); } catch (e) {} });
+    hv.addEventListener("seeked", () => {
+      if (done) return; done = true;
+      try {
+        const c = document.createElement("canvas");
+        const vw = hv.videoWidth || 640, vh = hv.videoHeight || 360;
+        c.width = 640; c.height = Math.round((640 * vh) / vw);
+        c.getContext("2d").drawImage(hv, 0, 0, c.width, c.height);
+        const data = c.toDataURL("image/jpeg", 0.72); // throws if tainted -> caught below
+        fetch("/api/recall/cover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ botId: bid, image: data }) }).catch(() => {});
+      } catch (e) { /* tainted/decode fail: branded cover stays */ }
+      cleanup();
+    });
+    hv.addEventListener("error", cleanup);
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, shareTok, coverDone]);
 
   const uniqAts = [...new Set((markers || []).map((m) => m.at).filter((a) => a != null && a >= 0).map((s) => Math.round(s)))].sort((a, b) => a - b);
   const tns = (turns || []).filter((t) => t && t.at != null).sort((a, b) => a.at - b.at);
@@ -3193,10 +3241,20 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   // Current subtitle line (the latest transcript turn whose timestamp has passed), in the
   // chosen language (translated cache when available, else the original text).
   let capIdx = -1; if (cc) { for (let i = 0; i < (turns || []).length; i++) { const tn = turns[i]; if (tn && tn.at != null && tn.at <= cur + 0.3) capIdx = i; else if (tn && tn.at != null) break; } }
-  const capRaw = capIdx >= 0 ? ((subCache[subLang] && subCache[subLang][capIdx]) || (turns[capIdx] && turns[capIdx].text) || "") : "";
-  // Movie-subtitle style: no long dashes, keep it short (~2 lines = ~150 chars, show the tail).
-  const capClean = capRaw.replace(/[—–]/g, "-").replace(/\s+/g, " ").trim();
-  const capText = capClean.length > 150 ? "…" + capClean.slice(capClean.length - 148) : capClean;
+  // Netflix-style: split the current turn into phrases and advance through them across the
+  // turn's duration, so subtitles start/stop on natural phrases (capitalized, punctuated).
+  let capText = "";
+  if (cc && capIdx >= 0) {
+    const raw = (subCache[subLang] && subCache[subLang][capIdx]) || (turns[capIdx] && turns[capIdx].text) || "";
+    const phrases = splitPhrases(raw);
+    if (phrases.length) {
+      const at = turns[capIdx].at || 0;
+      const nextAt = (turns[capIdx + 1] && turns[capIdx + 1].at != null) ? turns[capIdx + 1].at : at + Math.max(2.5, phrases.length * 2.5);
+      const span = Math.max(0.6, nextAt - at);
+      const prog = Math.min(0.999, Math.max(0, (cur - at) / span));
+      capText = phrases[Math.min(phrases.length - 1, Math.floor(prog * phrases.length))];
+    }
+  }
 
   // "started" = the user actually pressed play (NOT just the poster frame seeked to coverAt).
   // So a freshly opened report shows "Recording" and plays from 0; only after real playback
@@ -3239,7 +3297,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       {/* Subtitles overlay (off by default; language chosen via the CC menu). */}
       {!collapsed && cc && (capText || subBusy) && (
         <div className="pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-6">
-          <span className="line-clamp-2 max-w-[70%] rounded-lg bg-black/75 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white">{subBusy && !subCache[subLang] ? "Translating subtitles…" : capText}</span>
+          <span className="line-clamp-2 max-w-[70%] rounded-lg bg-black/85 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white shadow-lg backdrop-blur-md" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}>{subBusy && !subCache[subLang] ? "Translating subtitles…" : capText}</span>
         </div>
       )}
       {/* Hover menu: smart playback modes (only when paused so it doesn't block viewing). */}
@@ -3341,7 +3399,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
             {subMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setSubMenu(false)} />
-                <div className="absolute bottom-9 right-0 z-50 w-64 rounded-2xl bg-neutral-900/97 p-2 text-white shadow-2xl">
+                <div className="absolute bottom-9 right-0 z-50 w-64 rounded-2xl border border-white/10 bg-neutral-950/95 p-2 text-white shadow-2xl backdrop-blur-md">
                   <div className="px-3 py-2 text-center text-[14px] font-bold">Subtitles</div>
                   {["off", ...SUB_LANGS].map((k) => (
                     <button key={k} onClick={() => chooseLang(k)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
@@ -3902,7 +3960,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
