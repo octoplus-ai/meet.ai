@@ -489,6 +489,21 @@ const initialsOf = (name) => (name || "?").split(" ").filter(Boolean).map((w) =>
 const scoreColor = (n) => (n >= 80 ? "#16A34A" : n >= 70 ? "#84CC16" : n >= 40 ? "#EAB308" : n >= 20 ? "#F97316" : "#EF4444");
 const OWNER_COLORS = { NB: "#F472B6", AS: "#FB923C", SL: "#34D399" };
 const ownerColor = (o) => OWNER_COLORS[o] || "#94A3B8";
+// Deterministic, well-spread avatar color from any string (email preferred, else name) so every
+// person gets their own stable color.
+const AVATAR_PALETTE = ["#7C3AED", "#EC4899", "#F97316", "#10B981", "#3B82F6", "#8B5CF6", "#EF4444", "#06B6D4", "#F59E0B", "#22C55E", "#D946EF", "#0EA5E9"];
+const avatarColor = (key) => { const s = String(key || "?"); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return AVATAR_PALETTE[h % AVATAR_PALETTE.length]; };
+// Avatar: profile photo when we have one (e.g. the connected Google user), else colored initials.
+function Avatar({ name, email, picture, size = 28, className = "" }) {
+  const px = size + "px";
+  if (picture) return <img src={picture} alt={name || ""} referrerPolicy="no-referrer" className={"shrink-0 rounded-full object-cover " + className} style={{ width: px, height: px }} />;
+  return (
+    <span className={"flex shrink-0 items-center justify-center rounded-full font-bold text-white " + className}
+      style={{ width: px, height: px, background: avatarColor(email || name), fontSize: Math.round(size * 0.38) + "px" }}>
+      {initialsOf(name || email)}
+    </span>
+  );
+}
 
 /* ------------------------------ toast ------------------------------ */
 function toast(msg) { try { window.dispatchEvent(new CustomEvent("octo-toast", { detail: msg })); } catch (e) { /* ignore */ } }
@@ -868,7 +883,7 @@ export default function App() {
           </div>
         )}
         {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} user={user} onRename={renameMeeting} onDelete={deleteMeeting} />}
-        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} onRename={renameMeeting} onDelete={(m) => { deleteMeeting(m); setView("reports"); }} />}
+        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} onRename={renameMeeting} onDelete={(m) => { deleteMeeting(m); setView("reports"); }} user={user} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
         {view === "plans" && <PlansView onBack={() => setView("plan-billing")} />}
@@ -876,7 +891,7 @@ export default function App() {
         {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} user={user} />}
         {view === "support" && <SupportView onBack={() => setView("reports")} />}
         {view === "logout" && <LogoutView onCancel={() => setView("reports")} onLogout={logout} />}
-        {view === "folders" && <FoldersView onAsk={goAsk} meetings={allMeetings} onOpenFolder={(name) => { setFolderFilter(name); setView("reports"); }} />}
+        {view === "folders" && <FoldersView onAsk={goAsk} meetings={allMeetings} onOpenFolder={(name) => { setFolderFilter(name); setView("reports"); }} user={user} />}
         {view === "calendar" && <CalendarView onAsk={goAsk} initialTab={calTab} meetings={allMeetings} onOpen={openMeeting} />}
         {view === "for-you" && <ForYouView meetings={allMeetings} onOpen={openMeeting} onAsk={goAsk} user={user} />}
         {view === "coaching" && <CoachingView onAsk={goAsk} />}
@@ -923,7 +938,7 @@ function MenuItem({ icon: Icon, label, onClick }) {
   );
 }
 function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
-  const uName = user?.name || "Nicolas Benech";
+  const uName = user?.name || user?.email || "You";
   const uEmail = user?.email || "nicolas@octomeet.ai";
   const uInit = initialsOf(uName);
   const [copied, setCopied] = useState(false);
@@ -1419,13 +1434,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                       </div>
                       <div>
                         {(() => {
-                          const ownerName = m.real ? (user?.name || user?.email || "You") : "Nicolas Benech";
-                          const pic = m.real ? user?.picture : null;
+                          // Owner = the connected Google user (responsible for the subscription).
+                          const ownerName = user?.name || user?.email || "You";
                           return (
                             <span className="group relative inline-flex">
-                              {pic
-                                ? <img src={pic} alt={ownerName} referrerPolicy="no-referrer" className="h-7 w-7 rounded-full object-cover" />
-                                : <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor(initialsOf(ownerName)) }}>{initialsOf(ownerName)}</span>}
+                              <Avatar name={ownerName} email={user?.email} picture={user?.picture} size={28} />
                               <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">{ownerName}</span>
                             </span>
                           );
@@ -1645,7 +1658,7 @@ const FOLDER_DESCS = {
   "Sales Call": "Conversations with prospects focused on pitching or selling.",
   "Meetings": "Your recorded meetings.",
 };
-function FoldersView({ onAsk, meetings, onOpenFolder }) {
+function FoldersView({ onAsk, meetings, onOpenFolder, user }) {
   const [q, setQ] = useState("");
   const [custom, setCustom] = useState([]);
   useEffect(() => { (async () => setCustom((await store.get(FOLDERS_KEY, [])) || []))(); }, []);
@@ -1690,7 +1703,7 @@ function FoldersView({ onAsk, meetings, onOpenFolder }) {
                 <div className="truncate text-[12px] text-slate-500">{f.desc}</div>
               </div>
             </div>
-            <div><span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: ownerColor("NB") }}>NB</span></div>
+            <div><Avatar name={user?.name || user?.email || "You"} email={user?.email} picture={user?.picture} size={28} /></div>
             <div className="text-sm text-slate-600">{f.reports}</div>
             <div className="text-[13px] text-slate-500">{f.date ? fmtDateFull(f.date) : "-"}</div>
           </button>
@@ -1875,7 +1888,7 @@ function CalToggle({ on, onChange }) {
 /* ============================ FOR YOU ============================= */
 function ForYouView({ meetings, onOpen, onAsk, user }) {
   const [aiFilter, setAiFilter] = useState("all");
-  const uName = ((user && user.name) || "Nicolas").split(" ")[0];
+  const uName = ((user && user.name) || (user && user.email) || "there").split(" ")[0];
   const meRe = new RegExp(uName.replace(/[^a-z0-9]/gi, ""), "i");
   const allActions = meetings.flatMap((m) => (m.actionItems || []).map((a) => ({ ...a, meeting: m.title, id: m.id, date: m.date })));
   const actions = (aiFilter === "me" ? allActions.filter((a) => meRe.test(a.owner || "")) : allActions).slice(0, 8);
@@ -3630,7 +3643,7 @@ function RoleDropdown({ role, onChange, onRemove }) {
   );
 }
 
-function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shared, onRename, onDelete, role, shareTok }) {
+function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shared, onRename, onDelete, role, shareTok, user }) {
   // Capability matrix (Read.ai parity): Owner (not shared) = all; Editor token = edit+share+manage; Viewer = read-only.
   const canEdit = !shared || role === "Editor";
   const canShare = !shared || role === "Editor";
@@ -3921,16 +3934,17 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who has access</div>
                 <div className="mb-4 max-h-40 space-y-1 overflow-y-auto">
                   <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-pink-400 text-[10px] font-bold text-white">NB</span>
-                    <div className="flex-1"><div className="text-[13px] font-medium text-slate-700">You</div><div className="text-[11px] text-slate-400">Owner</div></div>
+                    <Avatar name={user?.name || user?.email || "You"} email={user?.email} picture={user?.picture} size={28} />
+                    <div className="flex-1"><div className="text-[13px] font-medium text-slate-700">{user?.name || "You"}</div><div className="text-[11px] text-slate-400">Owner</div></div>
                     <span className="text-[12px] text-slate-400">Owner</span>
                   </div>
                   {(() => {
                     // Individuals = meeting participants (default Viewer) merged with the
-                    // explicitly-shared people (persisted roles override). Each gets a role dropdown.
+                    // explicitly-shared people (persisted roles override). The owner (connected user)
+                    // is already shown above, so skip them here. Each gets a role dropdown.
                     const map = {};
-                    (meeting.participants || []).forEach((p) => { if (p.name) map[p.name] = { key: p.name, name: p.name, sub: "Participant", role: "Viewer", token: null }; });
-                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, sub: s.name ? s.email : "", role: s.role || "Viewer", token: s.token }; });
+                    (meeting.participants || []).forEach((p) => { if (p.name && p.name !== (user && user.name)) map[p.name] = { key: p.name, name: p.name, sub: "Participant", role: "Viewer", token: null }; });
+                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, email: s.email, sub: s.name ? s.email : "", role: s.role || "Viewer", token: s.token }; });
                     const list = Object.values(map);
                     if (!list.length) return null;
                     return (
@@ -3938,7 +3952,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                         <div className="px-2 pt-1.5 text-[11px] font-semibold text-slate-400">Individuals</div>
                         {list.map((s) => (
                           <div key={s.key} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">{initialsOf(s.name)}</span>
+                            <Avatar name={s.name} email={s.email || s.key} picture={(user && s.email && s.email === user.email) ? user.picture : undefined} size={28} />
                             <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium text-slate-700">{s.name}</div>{s.sub && <div className="truncate text-[11px] text-slate-400">{s.sub}</div>}</div>
                             {s.token && <button onClick={() => { try { navigator.clipboard.writeText(window.location.origin + "/?share=" + s.token); toast(s.role + " link copied"); } catch (e) {} }} title={"Copy this person's " + s.role + " link"} className="shrink-0 text-slate-400 transition hover:text-violet-600"><Link2 size={15} /></button>}
                             <RoleDropdown role={s.role} onChange={(r) => setAccessRole(s.key, r)} onRemove={() => removeAccess(s.key)} />
