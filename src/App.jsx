@@ -3171,18 +3171,22 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns }) {
           {showMetrics && !isTrailer && curChapter && <span className="truncate text-[12px] text-white/70">• {curChapter}</span>}
           {mode && mode !== "full" && <span className="shrink-0 rounded bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
           <div className="flex-1" />
-          {/* Volume: speaker icon + vertical slider on hover (icon on top, level below). */}
-          <div className="relative" onMouseEnter={() => setVolOpen(true)} onMouseLeave={() => setVolOpen(false)}>
+          {/* Volume: click OR hover the speaker -> vertical slider that STAYS OPEN (closes only
+              on outside click) so you can drag it. Speaker icon on top, level below. */}
+          <div className="relative" onMouseEnter={() => setVolOpen(true)}>
             {volOpen && (
-              <div className="absolute bottom-9 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl bg-neutral-900/95 px-2.5 py-3 shadow-xl">
-                <span className="text-white">{muted || volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}</span>
-                <div ref={volRef} onMouseDown={startVolDrag} className="relative h-24 w-1.5 cursor-pointer rounded-full bg-white/25">
-                  <div className="absolute bottom-0 left-0 w-full rounded-full bg-violet-500" style={{ height: (muted ? 0 : volume) * 100 + "%" }} />
-                  <div className="absolute left-1/2 h-3 w-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setVolOpen(false)} />
+                <div className="absolute bottom-full left-1/2 z-50 mb-2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl bg-neutral-900/95 px-2.5 py-3 shadow-xl">
+                  <button onClick={toggleMute} className="text-white transition hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
+                  <div ref={volRef} onMouseDown={startVolDrag} className="relative h-24 w-1.5 cursor-pointer rounded-full bg-white/25">
+                    <div className="absolute bottom-0 left-0 w-full rounded-full bg-violet-500" style={{ height: (muted ? 0 : volume) * 100 + "%" }} />
+                    <div className="absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
+                  </div>
                 </div>
-              </div>
+              </>
             )}
-            <button onClick={toggleMute} title="Mute" className="hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
+            <button onClick={() => setVolOpen((o) => !o)} title="Volume" className="hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
           </div>
           {/* Subtitles language menu (off by default). */}
           <div className="relative">
@@ -3604,14 +3608,27 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                     <div className="flex-1"><div className="text-[13px] font-medium text-slate-700">You</div><div className="text-[11px] text-slate-400">Owner</div></div>
                     <span className="text-[12px] text-slate-400">Owner</span>
                   </div>
-                  {access.length > 0 && <div className="px-2 pt-1.5 text-[11px] font-semibold text-slate-400">Individuals</div>}
-                  {access.map((s) => (
-                    <div key={s.email} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">{initialsOf(s.name || s.email)}</span>
-                      <div className="min-w-0 flex-1">{s.name ? <><div className="truncate text-[13px] font-medium text-slate-700">{s.name}</div><div className="truncate text-[11px] text-slate-400">{s.email}</div></> : <div className="truncate text-[13px] font-medium text-slate-700">{s.email}</div>}</div>
-                      <RoleDropdown role={s.role || "Viewer"} onChange={(r) => setAccessRole(s.email, r)} onRemove={() => removeAccess(s.email)} />
-                    </div>
-                  ))}
+                  {(() => {
+                    // Individuals = meeting participants (default Viewer) merged with the
+                    // explicitly-shared people (persisted roles override). Each gets a role dropdown.
+                    const map = {};
+                    (meeting.participants || []).forEach((p) => { if (!p.isHost && p.name) map[p.name] = { key: p.name, name: p.name, sub: "Participant", role: "Viewer" }; });
+                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, sub: s.name ? s.email : "", role: s.role || "Viewer" }; });
+                    const list = Object.values(map);
+                    if (!list.length) return null;
+                    return (
+                      <>
+                        <div className="px-2 pt-1.5 text-[11px] font-semibold text-slate-400">Individuals</div>
+                        {list.map((s) => (
+                          <div key={s.key} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">{initialsOf(s.name)}</span>
+                            <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium text-slate-700">{s.name}</div>{s.sub && <div className="truncate text-[11px] text-slate-400">{s.sub}</div>}</div>
+                            <RoleDropdown role={s.role} onChange={(r) => setAccessRole(s.key, r)} onRemove={() => removeAccess(s.key)} />
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Link Access</div>
                 <div className="relative">
