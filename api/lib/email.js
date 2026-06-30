@@ -95,11 +95,11 @@ export function reportEmail(opts) {
     </td></tr>
     ${opts.message ? `<tr><td style="padding:14px 32px 0"><div style="background:#f5f3ff;border-radius:10px;padding:12px 16px;color:#4c1d95;font-size:14px;line-height:1.5">${esc(opts.message)}</div></td></tr>` : ""}
     <tr><td align="center" style="padding:18px 32px 0">
-      <table width="440" cellpadding="0" cellspacing="0" style="max-width:440px;width:100%;border-radius:14px;background-color:#6d28d9;background:linear-gradient(135deg,#A855F7,#6d28d9)"><tr><td align="center" style="padding:42px 20px">
-        <div style="width:56px;height:56px;line-height:56px;border-radius:50%;background:rgba(255,255,255,0.22);color:#ffffff;font-size:20px;text-align:center;margin:0 auto">&#9658;</div>
-        <div style="color:#ffffff;font-size:14px;font-weight:700;margin-top:12px">${esc(title)}</div>
-        <div style="color:#ede9fe;font-size:11px;margin-top:3px">OctoMeet AI &middot; Meeting recording</div>
-      </td></tr></table>
+      <a href="${viewUrl}" style="text-decoration:none;display:block;max-width:440px;margin:0 auto">
+      ${opts.coverUrl
+        ? `<table width="440" cellpadding="0" cellspacing="0" style="max-width:440px;width:100%;border-radius:14px;background-color:#6d28d9"><tr><td style="position:relative;padding:0"><img src="${opts.coverUrl}" alt="${esc(title)}" width="440" style="display:block;width:100%;border-radius:14px" /><div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:56px;height:56px;line-height:56px;border-radius:50%;background:rgba(0,0,0,0.45);color:#ffffff;font-size:20px;text-align:center">&#9658;</div></td></tr></table>`
+        : `<table width="440" cellpadding="0" cellspacing="0" style="max-width:440px;width:100%;border-radius:14px;background-color:#6d28d9;background:linear-gradient(135deg,#A855F7,#6d28d9)"><tr><td align="center" style="padding:42px 20px"><div style="width:56px;height:56px;line-height:56px;border-radius:50%;background:rgba(255,255,255,0.22);color:#ffffff;font-size:20px;text-align:center;margin:0 auto">&#9658;</div><div style="color:#ffffff;font-size:14px;font-weight:700;margin-top:12px">${esc(title)}</div><div style="color:#ede9fe;font-size:11px;margin-top:3px">OctoMeet AI &middot; Meeting recording</div></td></tr></table>`}
+      </a>
     </td></tr>
     ${summary ? `<tr><td style="padding:18px 32px 0;color:#334155;font-size:14.5px;line-height:1.6">${sumShort}${seeMore}</td></tr>` : ""}
     <tr><td align="center" style="padding:22px 32px 8px">

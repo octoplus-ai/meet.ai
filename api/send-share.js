@@ -54,18 +54,20 @@ export default async function handler(req, res) {
     // Ensure every recipient has a per-person share entry + token (idempotent), so the email
     // link carries their role. Persist once after building.
     let shares = arr(m.shares);
-    const linkFor = (email) => {
+    const entryFor = (email) => {
       let e = shares.find((s) => (s.email || "").toLowerCase() === email);
       if (!e) { e = { email, role, name: "", token: randomToken() }; shares.push(e); }
-      return APP + "?share=" + e.token;
+      return e;
     };
 
     let sent = 0, lastErr = "";
     for (const email of to) {
-      const viewUrl = linkFor(email);
+      const e = entryFor(email);
+      const viewUrl = APP + "?share=" + e.token;
+      const coverUrl = m.bot_id ? APP + "api/recall/thumb?botId=" + encodeURIComponent(m.bot_id) + "&share=" + e.token : "";
       const { subject, html, text } = reportEmail({
         title, whenText, summary: rep.summary || "", chapters: rep.chapters || [], actionItems: rep.action_items || [],
-        viewUrl, sharerName: a.sharer, kind: "share", message: body.message || "",
+        viewUrl, coverUrl, sharerName: a.sharer, kind: "share", message: body.message || "",
       });
       const r = await sendViaGmail(gToken, { to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI`, fromAddress: a.ownerEmail });
       if (r.ok) sent++;

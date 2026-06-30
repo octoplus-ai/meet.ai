@@ -1,16 +1,25 @@
 // PUBLIC read-only report by share token. No login required - the unguessable token IS
 // the access grant (anyone-with-the-link). Returns ONLY the one meeting it points to.
 import { sb } from "./lib/supa.js";
+import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
+
+const maskEmail = (e) => { const [u, d] = String(e || "").split("@"); return (u ? u[0] + "•••" : "•••") + "@" + (d || ""); };
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   try {
     const token = new URL(req.url, "http://x").searchParams.get("token");
     if (!token) return res.status(400).json({ error: "no token" });
-    // 1) Per-person token -> carries a role (Viewer/Editor).
+    // 1) Per-person token -> carries a role (Viewer/Editor). Restricted: require an email-OTP
+    //    (verified cookie) before returning the report, unless this browser already verified.
     const r = await resolveShareToken(token);
-    if (r) return res.status(200).json({ meeting: r.meeting, role: r.role, email: r.email });
+    if (r) {
+      if (r.email && parseCookies(req)["om_v_" + token] !== "1") {
+        return res.status(403).json({ needOtp: true, emailHint: maskEmail(r.email) });
+      }
+      return res.status(200).json({ meeting: r.meeting, role: r.role, email: r.email });
+    }
     // 2) Legacy "anyone with the link" token -> Viewer only.
     const rows = await sb(`meetings?share_token=eq.${encodeURIComponent(token)}&select=*,reports(*)`);
     if (rows.length) return res.status(200).json({ meeting: rows[0], role: "Viewer" });

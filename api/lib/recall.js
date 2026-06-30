@@ -40,6 +40,13 @@ export function videoUrl(bot) {
   return rec?.media_shortcuts?.video_mixed?.data?.download_url || null;
 }
 
+// A still thumbnail of the recording, if Recall exposes one (for email previews).
+export function thumbnailUrl(bot) {
+  const rec = firstRecording(bot);
+  const v = rec && rec.media_shortcuts && rec.media_shortcuts.video_mixed && rec.media_shortcuts.video_mixed.data;
+  return (v && (v.thumbnail_url || (v.thumbnail && v.thumbnail.url))) || null;
+}
+
 // Download + parse the diarized transcript artifact.
 // Returns { text, participants:[names], stats:[{name,isHost,words,talkSec}], turns:[{speaker,text,t}] }
 export async function getTranscript(bot) {

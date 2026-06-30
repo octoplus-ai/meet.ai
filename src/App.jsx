@@ -628,27 +628,58 @@ const NAV = [
 ];
 const BUCKET_TKEY = { TODAY: "today", "THIS WEEK": "thisWeek", "THIS MONTH": "thisMonth", EARLIER: "earlier" };
 
+// Email-OTP gate: the invited person verifies the code we email them before the report loads.
+function ShareOtpGate({ token, emailHint, onVerified }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [hint, setHint] = useState(emailHint || "");
+  const request = async () => { setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "request" }) }); const d = await r.json(); if (r.ok) { if (d.emailHint) setHint(d.emailHint); setMsg("We sent a 6-digit code to " + (d.emailHint || hint)); } else setMsg("Couldn't send the code - try again"); } catch (e) { setMsg("Couldn't send the code"); } setBusy(false); };
+  const verify = async () => { if (!/^\d{6}$/.test(code)) { setMsg("Enter the 6-digit code"); return; } setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "verify", code }) }); if (r.ok) { onVerified(); return; } const d = await r.json().catch(() => ({})); setMsg(d.error === "expired" ? "Code expired - tap Resend" : "Incorrect code"); } catch (e) { setMsg("Something went wrong"); } setBusy(false); };
+  useEffect(() => { request(); /* auto-send on open */ /* eslint-disable-next-line */ }, []);
+  return (
+    <div className="rai-body flex h-screen items-center justify-center bg-[#F4F5FA] p-4">
+      <StyleInject />
+      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-xl">
+        <OctoLogo size={40} />
+        <h2 className="mt-3 text-lg font-bold text-slate-900">Verify it's you</h2>
+        <p className="mt-1 text-[13px] text-slate-500">Enter the 6-digit code we emailed to <b className="text-slate-700">{hint || "your email"}</b> to view this shared report.</p>
+        <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(e) => e.key === "Enter" && verify()} inputMode="numeric" placeholder="••••••" autoFocus className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-center text-xl font-bold tracking-[0.4em] outline-none focus:border-violet-400" />
+        <button onClick={verify} disabled={busy} className="mt-3 w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-60">View report</button>
+        <button onClick={request} disabled={busy} className="mt-2 text-[13px] font-medium text-violet-600 hover:text-violet-700">Resend code</button>
+        {msg && <p className="mt-3 text-[12px] text-slate-500">{msg}</p>}
+      </div>
+    </div>
+  );
+}
+
 // PUBLIC read-only report view (opened via ?share=token). No login, no sidebar - shows
-// ONLY the one shared report. This is what invited people see.
+// ONLY the one shared report. Restricted (per-person) links require an email code first.
 function SharedReportView({ token }) {
   const [meeting, setMeeting] = useState(null);
   const [role, setRole] = useState("Viewer");
   const [err, setErr] = useState(false);
-  useEffect(() => {
-    let alive = true;
+  const [otp, setOtp] = useState(null); // { emailHint } when a code is required
+  const loadReport = () => {
+    setOtp(null);
     fetch("/api/shared-report?token=" + encodeURIComponent(token))
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((d) => {
-        if (!alive) return;
-        const m = adaptReal(d.meeting);
-        if (m.video) m.video += (m.video.includes("?") ? "&" : "?") + "share=" + encodeURIComponent(token);
-        setRole(d.role === "Editor" ? "Editor" : "Viewer");
-        setMeeting(m);
+      .then(async (r) => {
+        if (r.ok) {
+          const d = await r.json();
+          const m = adaptReal(d.meeting);
+          if (m.video) m.video += (m.video.includes("?") ? "&" : "?") + "share=" + encodeURIComponent(token);
+          setRole(d.role === "Editor" ? "Editor" : "Viewer");
+          setMeeting(m);
+          return;
+        }
+        if (r.status === 403) { const d = await r.json().catch(() => ({})); if (d.needOtp) { setOtp({ emailHint: d.emailHint || "" }); return; } }
+        setErr(true);
       })
-      .catch(() => alive && setErr(true));
-    return () => { alive = false; };
-  }, [token]);
+      .catch(() => setErr(true));
+  };
+  useEffect(() => { loadReport(); /* eslint-disable-next-line */ }, [token]);
 
+  if (otp) return <ShareOtpGate token={token} emailHint={otp.emailHint} onVerified={() => { setMeeting(null); loadReport(); }} />;
   if (err) return (
     <div className="rai-body flex h-screen flex-col items-center justify-center gap-3 bg-[#F4F5FA] text-center text-slate-500">
       <StyleInject /><OctoLogo size={40} />

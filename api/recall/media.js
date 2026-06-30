@@ -23,8 +23,14 @@ export default async function handler(req, res) {
       }
     }
     if (!ok && share) {
-      const m = await sb(`meetings?bot_id=eq.${encodeURIComponent(botId)}&share_token=eq.${encodeURIComponent(share)}&select=id`);
+      // anyone-with-link token (meeting-level)...
+      let m = await sb(`meetings?bot_id=eq.${encodeURIComponent(botId)}&share_token=eq.${encodeURIComponent(share)}&select=id`);
       if (m.length) ok = true;
+      else {
+        // ...or a per-person token inside the meeting's shares jsonb (the role links).
+        m = await sb(`meetings?bot_id=eq.${encodeURIComponent(botId)}&shares=cs.${encodeURIComponent(JSON.stringify([{ token: share }]))}&select=id`);
+        if (m.length) ok = true;
+      }
     }
     if (!ok) return res.status(401).json({ error: "not authenticated" });
 

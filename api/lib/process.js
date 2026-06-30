@@ -26,7 +26,7 @@ async function notifyParticipants(meeting, ai, rep) {
     if (meeting.start_time) { try { whenText = new Date(meeting.start_time).toLocaleString("en-US", { month: "long", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) {} }
     const sharer = u.name || u.email || "OctoMeet";
     let shares = arr(meeting.shares);
-    const linkFor = (email) => { let e = shares.find((s) => (s.email || "").toLowerCase() === email); if (!e) { e = { email, role: "Viewer", name: "", token: randomToken() }; shares.push(e); } return APP_URL + "?share=" + e.token; };
+    const entryFor = (email) => { let e = shares.find((s) => (s.email || "").toLowerCase() === email); if (!e) { e = { email, role: "Viewer", name: "", token: randomToken() }; shares.push(e); } return e; };
 
     // 1) Auto-push the report to connected integrations flagged autoPush (independent of email pref).
     const pushData = { title, summary: ai.summary || "", score: (rep.scores && rep.scores.overall) || 0, actionItems: ai.actionItems || rep.action_items || [], nextSteps: ai.nextSteps || rep.next_steps || [], date: meeting.start_time, link: APP_URL };
@@ -44,7 +44,9 @@ async function notifyParticipants(meeting, ai, rep) {
       }
       const to = [...recips].filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e));
       for (const email of to) {
-        const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: linkFor(email), sharerName: sharer, kind: "auto" });
+        const e = entryFor(email);
+        const coverUrl = meeting.bot_id ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + e.token : "";
+        const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: APP_URL + "?share=" + e.token, coverUrl, sharerName: sharer, kind: "auto" });
         const r = await sendViaGmail(token, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: u.email });
         if (r.ok) sent++;
       }
