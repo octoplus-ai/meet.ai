@@ -1788,7 +1788,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
                   <div>
                     {mtg && mtg.status === "done" ? (
                       <button onClick={() => onOpen(mtg.id)} className="flex items-center gap-2 text-left">
-                        <span className="flex h-7 items-center rounded-md bg-emerald-100 px-2 text-[12px] font-bold text-emerald-700">{mtg.scores.engagement || mtg.scores.overall}</span>
+                        <span className="flex h-7 items-center rounded-md px-2 text-[12px] font-bold text-white" style={{ background: scoreColor(mtg.scores.engagement || mtg.scores.overall) }}>{mtg.scores.engagement || mtg.scores.overall}</span>
                         <span className="text-[12px] font-semibold text-violet-600 hover:text-violet-800">View report ↗</span>
                       </button>
                     ) : mtg && mtg.status && mtg.status !== "scheduled" ? (
@@ -3193,10 +3193,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
               NO gap) and while dragging; it disappears as soon as you move away. No clicking. */}
           <div className="relative" onMouseEnter={() => setVolOpen(true)} onMouseLeave={() => { if (!volDragRef.current) setVolOpen(false); }}>
             {volOpen && (
-              <div className="absolute left-1/2 z-50 flex -translate-x-1/2 flex-col items-center rounded-2xl bg-neutral-900/95 px-2.5 pb-4 pt-4 shadow-xl" style={{ bottom: "calc(100% - 8px)" }}>
-                <div ref={volRef} onMouseDown={startVolDrag} className="relative h-24 w-1.5 cursor-pointer rounded-full bg-white/25">
+              <div className="absolute left-1/2 z-50 flex -translate-x-1/2 flex-col items-center rounded-full border border-white/10 bg-neutral-900/95 px-3 py-3.5 shadow-xl" style={{ bottom: "calc(100% - 6px)" }}>
+                <div ref={volRef} onMouseDown={startVolDrag} className="relative h-20 w-2 cursor-pointer rounded-full bg-white/20">
                   <div className="absolute bottom-0 left-0 w-full rounded-full bg-violet-500" style={{ height: (muted ? 0 : volume) * 100 + "%" }} />
-                  <div className="absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
+                  <div className="absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow-md ring-1 ring-black/10" style={{ bottom: (muted ? 0 : volume) * 100 + "%" }} />
                 </div>
               </div>
             )}
@@ -3391,11 +3391,10 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     if (notify && emails.length) {
       toast("Sending email…");
       try {
-        const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg, role: shareRole }) });
+        const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg, role: shareRole, shareToken: shared ? shareTok : undefined }) });
         const d = await r.json();
         if (r.ok) toast(`Report emailed to ${d.sent} ${d.sent > 1 ? "people" : "person"} ✓`);
-        else if (d.error === "gmail_api_disabled") toast("Gmail API no habilitada en Google Cloud - hay que activarla, despues reintenta");
-        else if (d.needScope || d.error === "missing_scope") toast("Falta el permiso de email: Log out e inicia sesion de nuevo (acepta 'enviar correo')");
+        else if (d.error === "email_not_configured") toast("Falta configurar el correo de envíos en Vercel (env vars)");
         else toast("No se pudo enviar el email: " + (d.detail || d.error || ""));
       } catch (e) { toast("No se pudo enviar el email"); }
     } else {
@@ -3784,14 +3783,14 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             { l: "Sentiment", v: meeting.scores.sentiment, series: (Array.isArray(meeting.sentimentTimeline) && meeting.sentimentTimeline.length) ? meeting.sentimentTimeline.map((x) => ((x + 1) / 2) * 100) : metricSeries(meeting.scores.sentiment, meeting.sentimentTimeline) },
           ].map((s) => {
             const has = Number.isFinite(s.v) && s.v > 0;
-            const lab = s.v >= 80 ? "GOOD" : s.v >= 60 ? "OKAY" : "LOW";
-            const col = s.v >= 80 ? "#16A34A" : s.v >= 60 ? "#D97706" : "#E11D48";
+            const lab = s.v >= 70 ? "GOOD" : s.v >= 40 ? "OKAY" : s.v >= 20 ? "FAIR" : "LOW";
+            const col = scoreColor(s.v);
             return (
             <div key={s.l} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.l}</div>
               <div className="mt-1 flex items-center gap-3">
                 <div className="flex shrink-0 items-end gap-1.5">
-                  <span className="text-2xl font-bold leading-none text-slate-900">{has ? s.v : "-"}</span>
+                  <span className="text-2xl font-bold leading-none" style={{ color: has ? col : "#0f172a" }}>{has ? s.v : "-"}</span>
                   {has && <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: col }}>{lab}</span>}
                 </div>
                 {has && <div className="min-w-0 flex-1"><Sparkline data={s.series} /></div>}
@@ -4056,10 +4055,12 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
 }
 
 function Metric({ label, value, ok }) {
+  const num = Number(value);
+  const col = (Number.isFinite(num) && num > 0) ? scoreColor(num) : (ok ? "#16A34A" : "#D97706");
   return (
     <div className="flex items-center justify-between border-b border-slate-100 py-2 last:border-0">
       <span className="text-sm text-slate-600">{label}</span>
-      <span className={"flex items-center gap-1.5 text-sm font-semibold " + (ok ? "text-emerald-600" : "text-amber-600")}>
+      <span className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: col }}>
         {value} {ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
       </span>
     </div>

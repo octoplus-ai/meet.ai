@@ -65,6 +65,7 @@ export function reportEmail(opts) {
       <div style="font-size:26px;font-weight:800;color:#1e1b2e">${esc(title)}</div>
       ${whenText ? `<div style="font-size:14px;color:#64748b;margin-top:8px">${esc(whenText)}</div>` : ""}
     </td></tr>
+    ${opts.message ? `<tr><td style="padding:14px 32px 0"><div style="background:#f5f3ff;border-radius:10px;padding:12px 16px;color:#4c1d95;font-size:14px;line-height:1.5">${esc(opts.message)}</div></td></tr>` : ""}
     <tr><td align="center" style="padding:18px 32px 0">
       <table width="440" cellpadding="0" cellspacing="0" style="max-width:440px;width:100%;border-radius:14px;background-color:#6d28d9;background:linear-gradient(135deg,#A855F7,#6d28d9)"><tr><td align="center" style="padding:42px 20px">
         <div style="width:56px;height:56px;line-height:56px;border-radius:50%;background:rgba(255,255,255,0.22);color:#ffffff;font-size:20px;text-align:center;margin:0 auto">&#9658;</div>
