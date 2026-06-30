@@ -110,7 +110,7 @@ async function callClaude(messages, system) {
   const res = await fetch("/api/anthropic", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system, messages }),
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 3000, system, messages }),
   });
   if (!res.ok) throw new Error("API request failed (" + res.status + ")");
   const data = await res.json();
@@ -2617,7 +2617,14 @@ function AccountSettings({ onBack, lang, setLang, user }) {
   });
   const [whichEvents, setWhichEvents] = useState("all");
   const [whoInvited, setWhoInvited] = useState("any");
-  const set1 = (k, v) => setTg((p) => ({ ...p, [k]: v }));
+  // Report Sharing toggles that persist server-side (Report Distribution + access).
+  const PREF_MAP = { mtgReports: "autoRecap", internalAccess: "internalAccess", externalAccess: "externalAccess", oneClick: "oneClick", updateCal: "updateCalendar" };
+  const set1 = (k, v) => {
+    setTg((p) => ({ ...p, [k]: v }));
+    if (PREF_MAP[k]) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sharing_prefs: { [PREF_MAP[k]]: v } }) }).then(() => toast("Saved")).catch(() => {}); }
+  };
+  // Load persisted sharing preferences on mount.
+  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar })); }).catch(() => {}); }, []);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -4148,14 +4155,15 @@ function ChatView({ meetings, onOpen, seed }) {
   const buildContext = (question) => {
     const kw = question.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
     const scored = meetings.map((m) => {
-      const hay = (m.title + " " + m.summary + " " + m.topics.join(" ") + " " + m.transcript.map((t) => t.text).join(" ")).toLowerCase();
+      const hay = (m.title + " " + (m.summary || "") + " " + (m.topics || []).join(" ") + " " + (m.transcript || []).map((t) => t.text).join(" ")).toLowerCase();
       return { m, score: kw.reduce((a, w) => a + (hay.includes(w) ? 1 : 0), 0) };
     });
-    const top = scored.sort((a, b) => b.score - a.score).slice(0, 2).map((s) => s.m.id);
+    // Include full transcripts for the top 5 most-relevant meetings (deeper, grounded answers).
+    const top = scored.sort((a, b) => b.score - a.score).slice(0, 5).map((s) => s.m.id);
     return meetings.map((m) => {
-      const ai = m.actionItems.map((i) => `- [${i.done ? "x" : " "}] ${i.task} (${i.owner})`).join("\n");
-      let block = `### ${m.title} - ${fmtDateShort(m.date)} (${m.source})\nSummary: ${m.summary}\nRead Score: ${m.scores.overall}.\nAction items:\n${ai}`;
-      if (top.includes(m.id)) block += `\nTranscript:\n` + m.transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n").slice(0, 2200);
+      const ai = (m.actionItems || []).map((i) => `- [${i.done ? "x" : " "}] ${i.task} (${i.owner})`).join("\n");
+      let block = `### ${m.title} - ${fmtDateShort(m.date)} (${m.source})\nSummary: ${m.summary || ""}\nRead Score: ${(m.scores && m.scores.overall) || 0}.\nAction items:\n${ai}`;
+      if (top.includes(m.id)) block += `\nTranscript:\n` + (m.transcript || []).map((t) => `${t.speaker}: ${t.text}`).join("\n").slice(0, 6000);
       return block;
     }).join("\n\n");
   };
