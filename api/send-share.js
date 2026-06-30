@@ -21,20 +21,49 @@ export default async function handler(req, res) {
     const token = await getValidToken(id);
     if (!token) return res.status(400).json({ error: "no_google_token", needScope: true });
 
-    let title = "a meeting report", summary = "";
+    const su = await sb(`app_users?id=eq.${id}&select=name,email`);
+    const sharer = (su[0] && (su[0].name || su[0].email)) || "Someone";
+
+    let title = "a meeting report", summary = "", when = "";
     if (body.meetingId) {
-      const rows = await sb(`meetings?id=eq.${encodeURIComponent(body.meetingId)}&user_id=eq.${id}&select=title,reports(summary)`);
+      const rows = await sb(`meetings?id=eq.${encodeURIComponent(body.meetingId)}&user_id=eq.${id}&select=title,start_time,reports(summary)`);
       const m = rows[0];
-      if (m) { title = m.title || title; const rep = Array.isArray(m.reports) ? m.reports[0] : m.reports; summary = (rep && rep.summary) || ""; }
+      if (m) {
+        title = m.title || title;
+        const rep = Array.isArray(m.reports) ? m.reports[0] : m.reports;
+        summary = (rep && rep.summary) || "";
+        if (m.start_time) { try { when = new Date(m.start_time).toLocaleString("en-US", { month: "long", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) {} }
+      }
     }
     const msg = (body.message || "").trim();
-    const subject = `Shared report: ${title}`;
-    const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1e1b2e;line-height:1.55;max-width:560px">`
-      + (msg ? `<p>${escHtml(msg)}</p>` : "")
-      + `<p>A meeting report was shared with you on <b>OctoMeet</b>: <b>${escHtml(title)}</b></p>`
-      + (summary ? `<p style="color:#475569">${escHtml(summary).slice(0, 600)}</p>` : "")
-      + `<p style="margin:18px 0"><a href="${APP}" style="display:inline-block;background:#6d28d9;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">View the report</a></p>`
-      + `<p style="color:#94a3b8;font-size:12px">Shared via OctoMeet</p></div>`;
+    const role = (body.role || "viewer").toLowerCase();
+    const excerpt = summary ? (summary.length > 320 ? escHtml(summary.slice(0, 320)) + "…" : escHtml(summary)) : "";
+    const subject = `${title} | ${sharer} shared a meeting report with you`;
+    const LOGO = APP + "email-logo.png";
+
+    const html = `<div style="background:#f4f5fa;padding:28px 12px;font-family:Arial,Helvetica,sans-serif">
+  <table align="center" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:16px;border:1px solid #ece9f6">
+    <tr><td style="padding:26px 32px 6px;text-align:center">
+      <img src="${LOGO}" alt="OctoMeet" width="34" height="34" style="vertical-align:middle;border-radius:8px" />
+      <span style="font-size:19px;font-weight:800;color:#1e1b2e;vertical-align:middle;margin-left:8px">OctoMeet</span>
+    </td></tr>
+    <tr><td style="padding:10px 32px 0;color:#1e1b2e;font-size:15px;line-height:1.55">
+      <p>Hi there,</p>
+      ${msg ? `<p style="color:#334155">${escHtml(msg)}</p>` : ""}
+      <p><b>${escHtml(sharer)}</b> gave you ${escHtml(role)} access to a meeting report:<br><a href="${APP}" style="color:#6d28d9;font-weight:600;text-decoration:none">${escHtml(title)}</a>${when ? ` (${escHtml(when.split(" at ")[0])})` : ""}.</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #ece9f6;border-radius:12px;margin:16px 0"><tr><td style="padding:16px 18px">
+        <div style="font-size:16px;font-weight:700;color:#1e1b2e">${escHtml(title)}</div>
+        ${when ? `<div style="font-size:13px;color:#94a3b8;margin:3px 0 8px">${escHtml(when)}</div>` : ""}
+        ${excerpt ? `<div style="font-size:14px;color:#475569;line-height:1.5">${excerpt}</div>` : ""}
+      </td></tr></table>
+      <div style="text-align:center;margin:6px 0 22px"><a href="${APP}" style="display:inline-block;background:#6d28d9;color:#ffffff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px">View Meeting Report</a></div>
+    </td></tr>
+    <tr><td style="padding:14px 32px 24px;text-align:center;border-top:1px solid #f1f5f9;color:#94a3b8;font-size:12px;line-height:1.6">
+      You are receiving this email because someone shared a report with you.<br>
+      OctoMeet AI · Meeting Intelligence
+    </td></tr>
+  </table>
+</div>`;
 
     // RFC 2822 message with an RFC 2047-encoded subject (handles accents) + HTML body.
     const raw = [

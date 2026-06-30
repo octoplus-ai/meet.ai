@@ -3024,7 +3024,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings }) {
     if (notify && emails.length) {
       toast("Sending email…");
       try {
-        const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg }) });
+        const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg, role: shareRole }) });
         const d = await r.json();
         if (r.ok) toast(`Report emailed to ${d.sent} ${d.sent > 1 ? "people" : "person"} ✓`);
         else if (d.needScope) toast("Re-connect Google (email permission) - log out & in, then try again");
