@@ -738,6 +738,7 @@ export default function App() {
   const allMeetings = useMemo(() => (user ? realMeetings : [...realMeetings, ...(meetings || [])]), [realMeetings, meetings, user]);
   const active = useMemo(() => allMeetings.find((m) => m.id === activeId), [allMeetings, activeId]);
   const [shareIntent, setShareIntent] = useState(false);
+  const [gmailNudge, setGmailNudge] = useState(true);
   const openMeeting = (id, opts) => { setActiveId(id); setShareIntent(!!(opts && opts.share)); setView("meeting"); };
   const renameMeeting = async (m, title) => {
     persist(allMeetings.map((x) => (x.id === m.id ? { ...x, title } : x)));
@@ -767,6 +768,14 @@ export default function App() {
       <Toaster />
       <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
       <main className="flex flex-1 flex-col overflow-hidden pl-[68px]">
+        {user && user.gmailReady === false && gmailNudge && (
+          <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-[13px] text-amber-900">
+            <Mail size={15} className="shrink-0 text-amber-600" />
+            <span className="flex-1">Activá el envío de reportes por email: reconectá tu cuenta de Google para conceder el permiso de Gmail (un solo click).</span>
+            <button onClick={() => { window.location.href = "/api/auth/google/start"; }} className="rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">Reconectar Google</button>
+            <button onClick={() => setGmailNudge(false)} className="text-amber-500 transition hover:text-amber-700"><X size={16} /></button>
+          </div>
+        )}
         {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} user={user} onRename={renameMeeting} onDelete={deleteMeeting} />}
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
