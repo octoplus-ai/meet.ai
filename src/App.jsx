@@ -2062,30 +2062,78 @@ function RecommendationsView({ onAsk }) {
 }
 
 /* ============================ INTEGRATIONS ======================= */
-const INTEGRATIONS_KEY = "octomeet:integrations:v1";
+// Reusable connect form for a webhook/Notion-token integration -> POST /api/integrations.
+function ConnectIntegrationModal({ item, onClose, onSaved }) {
+  const [a, setA] = useState(""); const [b, setB] = useState(""); const [auto, setAuto] = useState(true); const [busy, setBusy] = useState(false);
+  const kind = item.kind;
+  const save = async () => {
+    const config = kind === "notion" ? { token: a.trim(), parent: b.trim(), autoPush: auto } : { url: a.trim(), autoPush: auto };
+    if (!(config.url || config.token)) { toast("Pegá la URL / token primero"); return; }
+    setBusy(true);
+    try { const r = await fetch("/api/integrations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target: item.key, config }) }); if (!r.ok) throw 0; toast(item.name + " connected"); onSaved(item.key); onClose(); }
+    catch (e) { toast("No se pudo conectar"); }
+    setBusy(false);
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50">{item.icon}</span><h3 className="text-base font-bold text-slate-900">Connect {item.name}</h3><button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-700"><X size={18} /></button></div>
+        {kind === "notion" ? (
+          <>
+            <label className="text-[12px] font-medium text-slate-500">Notion integration token</label>
+            <input value={a} onChange={(e) => setA(e.target.value)} placeholder="secret_…" className="mb-3 mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
+            <label className="text-[12px] font-medium text-slate-500">Parent page ID</label>
+            <input value={b} onChange={(e) => setB(e.target.value)} placeholder="32-char page id" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">Free: create an integration at notion.so/my-integrations, share a page with it, paste the token + page ID.</p>
+          </>
+        ) : (
+          <>
+            <label className="text-[12px] font-medium text-slate-500">{kind === "slack" ? "Slack Incoming Webhook URL" : "Webhook URL"}</label>
+            <input value={a} onChange={(e) => setA(e.target.value)} placeholder="https://…" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" />
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{kind === "slack" ? "Free Slack Incoming Webhook (api.slack.com/messaging/webhooks)." : item.key === "webhooks" ? "Any endpoint that accepts a POST (Discord, your server)." : `Free Zapier/Make webhook that creates the ${item.name} record.`}</p>
+          </>
+        )}
+        <button onClick={() => setAuto((v) => !v)} className="mt-3 flex items-center gap-2 text-[13px] text-slate-600">
+          <span className={"flex h-4 w-4 items-center justify-center rounded border " + (auto ? "border-violet-600 bg-violet-600" : "border-slate-300")}>{auto && <Check size={11} className="text-white" />}</span> Auto-send new reports here when they're ready
+        </button>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button onClick={save} disabled={busy} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">Connect</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function IntegrationsView({ onAsk }) {
-  const [conn, setConn] = useState({ "Google Calendar": true, "Google Meet": true, "Octomeet Web Extension": true });
-  useEffect(() => { (async () => { const saved = await store.get(INTEGRATIONS_KEY, null); if (saved) setConn((c) => ({ ...c, ...saved })); })(); }, []);
-  const toggle = (name) => setConn((c) => { const next = { ...c, [name]: !c[name] }; store.set(INTEGRATIONS_KEY, next); toast(next[name] ? name + " connected" : name + " disconnected"); return next; });
+  const [conn, setConn] = useState({});   // backend connection state per key
+  const [cfg, setCfg] = useState(null);    // integration being configured
+  const load = () => fetch("/api/integrations").then((r) => (r.ok ? r.json() : {})).then((d) => setConn(d.connected || {})).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const disconnect = async (it) => { try { await fetch("/api/integrations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target: it.key, config: null }) }); } catch (e) {} setConn((c) => ({ ...c, [it.key]: false })); toast(it.name + " disconnected"); };
   const Group = ({ title, desc, items }) => (
     <div>
       <div className="text-sm font-bold text-slate-800">{title}</div>
       {desc && <p className="mb-2 text-[13px] text-slate-500">{desc}</p>}
       <div className="mt-2 rounded-xl border border-slate-200 bg-white">
-        {items.map((it) => (
-          <div key={it.name} className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 last:border-0">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-base">{it.icon}</div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">{it.name}</div>
-                {conn[it.name] ? <div className="text-[12px] text-emerald-600">nicolas@octomeet.ai is connected</div> : <div className="text-[12px] text-slate-400">{it.desc}</div>}
+        {items.map((it) => {
+          const isOn = it.oauth ? true : !!conn[it.key];
+          return (
+            <div key={it.name} className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 last:border-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-base">{it.icon}</div>
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">{it.name}{it.soon && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">SOON</span>}</div>
+                  {isOn ? <div className="text-[12px] font-medium text-emerald-600">Connected</div> : <div className="text-[12px] text-slate-400">{it.desc}</div>}
+                </div>
               </div>
+              {it.soon ? <span className="text-[12px] text-slate-300">Coming soon</span>
+                : it.oauth ? <span className="rounded-lg border border-slate-200 px-4 py-1.5 text-[13px] font-medium text-slate-400">Connected</span>
+                : isOn ? <button onClick={() => disconnect(it)} className="rounded-lg border border-violet-300 px-4 py-1.5 text-[13px] font-semibold text-violet-700 hover:bg-violet-50">Disconnect</button>
+                : <button onClick={() => setCfg(it)} className="rounded-lg bg-violet-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500">Connect</button>}
             </div>
-            {conn[it.name]
-              ? <button onClick={() => toggle(it.name)} className="rounded-lg border border-violet-300 px-4 py-1.5 text-[13px] font-semibold text-violet-700 hover:bg-violet-50">Manage</button>
-              : <button onClick={() => toggle(it.name)} className="rounded-lg bg-violet-600 px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500">Connect</button>}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -2094,33 +2142,34 @@ function IntegrationsView({ onAsk }) {
       <SectionTop title="Integrations" onAsk={onAsk} />
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
-          <SecHead icon={LayoutGrid} title="Integrations" desc="Manage and connect external tools and services to Octomeet." />
-          <Group title="Calendar & Meetings" desc="Allow Octomeet to join your meetings and automatically generate summaries." items={[
-            { name: "Google Calendar", icon: <BrandIcon name="googleCalendar" />, desc: "Connect your calendar" },
-            { name: "Google Meet", icon: <BrandIcon name="googleMeet" />, desc: "Auto-join Meet calls" },
-            { name: "Outlook Calendar", icon: <BrandIcon name="outlook" />, desc: "Connect your calendar" },
-            { name: "Zoom", icon: <BrandIcon name="zoom" />, desc: "Auto-join Zoom calls" },
+          <SecHead icon={LayoutGrid} title="Integrations" desc="Manage and connect external tools and services to OctoMeet." />
+          <Group title="Calendar & Meetings" desc="Allow OctoMeet to join your meetings and automatically generate summaries." items={[
+            { name: "Google Calendar", icon: <BrandIcon name="googleCalendar" />, oauth: true },
+            { name: "Google Meet", icon: <BrandIcon name="googleMeet" />, oauth: true },
+            { name: "Outlook Calendar", icon: <BrandIcon name="outlook" />, desc: "Connect your calendar", soon: true },
+            { name: "Zoom", icon: <BrandIcon name="zoom" />, desc: "Auto-join Zoom calls", soon: true },
           ]} />
-          <Group title="Apps" desc="Integrate Octomeet across your tools." items={[
-            { name: "Octomeet Web Extension", icon: <BrandIcon name="extension" />, desc: "Chrome extension" },
-            { name: "Slack", icon: <BrandIcon name="slack" />, desc: "Push notes to channels" },
-            { name: "Notion", icon: <BrandIcon name="notion" />, desc: "Send reports to Notion" },
-            { name: "Asana", icon: <BrandIcon name="asana" />, desc: "Create tasks from action items" },
-            { name: "Zapier", icon: <BrandIcon name="zapier" />, desc: "Automate workflows" },
-            { name: "Webhook", icon: <BrandIcon name="mcp" />, desc: "Send events to any URL" },
+          <Group title="Apps" desc="Push your reports + action items into the tools you use. Free via incoming webhooks / Notion token." items={[
+            { name: "Octomeet Web Extension", icon: <BrandIcon name="extension" />, oauth: true },
+            { name: "Slack", icon: <BrandIcon name="slack" />, key: "slack", kind: "slack", desc: "Push reports to a channel" },
+            { name: "Notion", icon: <BrandIcon name="notion" />, key: "notion", kind: "notion", desc: "Send reports to a Notion page" },
+            { name: "Webhooks", icon: <BrandIcon name="mcp" />, key: "webhooks", kind: "webhook", desc: "POST reports to any endpoint" },
+            { name: "Confluence", icon: <LayoutGrid size={16} className="text-sky-600" />, key: "confluence", kind: "webhook", desc: "Via a Zapier/Make webhook" },
+            { name: "Asana", icon: <BrandIcon name="asana" />, desc: "Create tasks from action items", soon: true },
           ]} />
-          <Group title="CRM" desc="Sync meeting context to your CRM." items={[
-            { name: "HubSpot", icon: <BrandIcon name="hubspot" />, desc: "Sync deals & contacts" },
-            { name: "Salesforce", icon: <BrandIcon name="salesforce" />, desc: "Sync opportunities" },
+          <Group title="CRM" desc="Sync meeting context to your CRM (via a free Zapier/Make webhook)." items={[
+            { name: "HubSpot", icon: <BrandIcon name="hubspot" />, key: "hubspot", kind: "webhook", desc: "Log meetings to HubSpot" },
+            { name: "Salesforce", icon: <BrandIcon name="salesforce" />, key: "salesforce", kind: "webhook", desc: "Log meetings to Salesforce" },
           ]} />
           <Group title="AI" desc="Programmatically access meeting context." items={[
-            { name: "Anthropic Claude", icon: <BrandIcon name="claude" />, desc: "Connect Claude" },
-            { name: "OpenAI ChatGPT", icon: <BrandIcon name="openai" />, desc: "Connect ChatGPT" },
-            { name: "MCP Server", icon: <BrandIcon name="mcp" />, desc: "Model Context Protocol" },
-            { name: "API", icon: <BrandIcon name="api" />, desc: "Build with the Octomeet API" },
+            { name: "Anthropic Claude", icon: <BrandIcon name="claude" />, desc: "Powering your reports", oauth: true },
+            { name: "OpenAI ChatGPT", icon: <BrandIcon name="openai" />, desc: "Connect ChatGPT", soon: true },
+            { name: "MCP Server", icon: <BrandIcon name="mcp" />, desc: "Model Context Protocol", soon: true },
+            { name: "API", icon: <BrandIcon name="api" />, desc: "Build with the OctoMeet API", soon: true },
           ]} />
         </div>
       </div>
+      {cfg && <ConnectIntegrationModal item={cfg} onClose={() => setCfg(null)} onSaved={() => load()} />}
     </>
   );
 }
@@ -2888,13 +2937,38 @@ function Radio({ label, desc, def, checked, onClick }) {
 }
 
 /* ========================= MEETING DETAIL ========================== */
-// Build an 8-point series for a metric's sparkline: hovers around the metric's value,
-// using the real sentiment timeline as the wiggle shape (gentle, Read.ai-style).
-function metricSeries(value, sentimentTimeline) {
-  const base = (Array.isArray(sentimentTimeline) && sentimentTimeline.length) ? sentimentTimeline : [0, 0.08, 0.04, 0.12, 0.08, 0.16, 0.12, 0.18];
-  const mean = base.reduce((a, b) => a + b, 0) / base.length;
-  const v = Number.isFinite(value) ? value : 60;
-  return base.map((x) => Math.max(0, Math.min(100, v + (x - mean) * 10)));
+// Build a REAL per-metric time series for the sparkline, derived from the actual meeting:
+//  - engagement: speaking activity over time (turns + word density + questions per time bucket)
+//  - sentiment:  the real sentiment timeline from the AI analysis
+//  - readScore:  a blend of the engagement + sentiment curves
+// Each metric gets a DISTINCT, data-grounded shape (no more identical fake curves).
+function metricSeries(kind, meeting) {
+  const N = 10;
+  const turns = (meeting.transcript || []).filter((t) => t && t.at != null && t.at >= 0);
+  let durSec = (meeting.durationMin || 0) * 60;
+  if (!durSec && turns.length) durSec = Math.max(...turns.map((t) => t.at)) || 0;
+  const sentRaw = (Array.isArray(meeting.sentimentTimeline) && meeting.sentimentTimeline.length) ? meeting.sentimentTimeline : null;
+  const sc = meeting.scores || {};
+  const resample = (a, n) => { if (!a || !a.length) return new Array(n).fill(0.5); if (a.length === 1) return new Array(n).fill(a[0]); const out = []; for (let i = 0; i < n; i++) { const idx = (i / (n - 1)) * (a.length - 1); const lo = Math.floor(idx), hi = Math.ceil(idx), f = idx - lo; out.push(a[lo] * (1 - f) + a[hi] * f); } return out; };
+  const norm = (arr) => { const mn = Math.min(...arr), mx = Math.max(...arr); const r = (mx - mn) || 1; return arr.map((x) => (x - mn) / r); };
+
+  // Real engagement signal: per-bucket talking activity.
+  let engShape = null;
+  if (durSec > 0 && turns.length) {
+    const act = new Array(N).fill(0);
+    for (const t of turns) { const b = Math.min(N - 1, Math.max(0, Math.floor((t.at / durSec) * N))); const words = (t.text || "").split(/\s+/).filter(Boolean).length; act[b] += 1 + words / 35 + ((t.text || "").includes("?") ? 2 : 0); }
+    if (act.some((x) => x > 0)) engShape = norm(act);
+  }
+  const sentShape = sentRaw ? resample(sentRaw.map((x) => (x + 1) / 2), N) : null; // [-1..1] -> [0..1]
+
+  let shape;
+  if (kind === "sentiment") shape = sentShape || engShape || new Array(N).fill(0.5);
+  else if (kind === "engagement") shape = engShape || sentShape || new Array(N).fill(0.5);
+  else { const e = engShape || sentShape || new Array(N).fill(0.5); const s = sentShape || e; shape = e.map((x, i) => 0.6 * x + 0.4 * s[i]); }
+
+  const v = Number.isFinite(sc[kind === "readScore" ? "overall" : kind]) ? sc[kind === "readScore" ? "overall" : kind] : 60;
+  const mean = shape.reduce((a, b) => a + b, 0) / shape.length;
+  return shape.map((x) => Math.max(2, Math.min(100, v + (x - mean) * 22))); // center on the value, real swing
 }
 
 // Lightweight inline sparkline (line + soft gradient fill) that stretches to its container.
@@ -3787,9 +3861,9 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
 
         <div className="mb-5 grid grid-cols-3 gap-3">
           {[
-            { l: "Read Score", v: meeting.scores.overall, series: metricSeries(meeting.scores.overall, meeting.sentimentTimeline) },
-            { l: "Engagement", v: meeting.scores.engagement, series: metricSeries(meeting.scores.engagement, meeting.sentimentTimeline) },
-            { l: "Sentiment", v: meeting.scores.sentiment, series: (Array.isArray(meeting.sentimentTimeline) && meeting.sentimentTimeline.length) ? meeting.sentimentTimeline.map((x) => ((x + 1) / 2) * 100) : metricSeries(meeting.scores.sentiment, meeting.sentimentTimeline) },
+            { l: "Read Score", v: meeting.scores.overall, series: metricSeries("readScore", meeting) },
+            { l: "Engagement", v: meeting.scores.engagement, series: metricSeries("engagement", meeting) },
+            { l: "Sentiment", v: meeting.scores.sentiment, series: metricSeries("sentiment", meeting) },
           ].map((s) => {
             const has = Number.isFinite(s.v) && s.v > 0;
             const lab = s.v >= 70 ? "GOOD" : s.v >= 40 ? "OKAY" : s.v >= 20 ? "FAIR" : "LOW";
