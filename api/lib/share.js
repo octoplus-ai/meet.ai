@@ -23,5 +23,5 @@ export async function resolveShareToken(token) {
   const m = rows[0];
   const entry = (m.shares || []).find((s) => s && s.token === token && !s.revoked);
   if (!entry) return null;
-  return { meeting: m, role: entry.role === "Editor" ? "Editor" : "Viewer", email: entry.email };
+  return { meeting: m, role: entry.role === "Editor" ? "Editor" : "Viewer", email: entry.email, magic: entry.magic || null };
 }

@@ -677,7 +677,14 @@ function SharedReportView({ token }) {
       })
       .catch(() => setErr(true));
   };
-  useEffect(() => { loadReport(); /* eslint-disable-next-line */ }, [token]);
+  useEffect(() => {
+    // Magic link from the email ("View report"): auto-verify (1 click), then load. A bare
+    // ?share link without this secret falls through to the email-code gate.
+    const v = new URLSearchParams(window.location.search).get("v");
+    if (v) fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "magic", v }) }).then(() => loadReport()).catch(() => loadReport());
+    else loadReport();
+    /* eslint-disable-next-line */
+  }, [token]);
 
   if (otp) return <ShareOtpGate token={token} emailHint={otp.emailHint} onVerified={() => { setMeeting(null); loadReport(); }} />;
   if (err) return (

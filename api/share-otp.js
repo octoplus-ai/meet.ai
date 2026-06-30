@@ -20,6 +20,15 @@ export default async function handler(req, res) {
     if (!r || !r.email) return res.status(404).json({ error: "invalid link" });
     const email = String(r.email).toLowerCase();
 
+    // Magic-link: the email's "View report" button carries a secret that proves the visitor
+    // got the email. Verify it and set the cookie - 1 click, no typing. The bare ?share link
+    // (without this secret) still requires the OTP code, so a leaked link alone can't enter.
+    if (action === "magic") {
+      if (!r.magic || String(body.v || "") !== String(r.magic)) return res.status(401).json({ error: "bad_magic" });
+      res.setHeader("Set-Cookie", `om_v_${token}=1; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
+      return res.status(200).json({ ok: true });
+    }
+
     if (action === "request") {
       const code = String(Math.floor(100000 + Math.random() * 900000));
       const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString();
