@@ -2216,8 +2216,18 @@ function IntegrationsView({ onAsk }) {
 const DEFAULT_POLICY = { autoJoin: true, recording: true, consent: true, affective: true, externalShare: false, lockMembers: false, which: "all", who: "any", retention: "90", notetakerName: "OctoMeet AI" };
 function MeetingPolicyView({ onAsk }) {
   const [p, setP] = useState(DEFAULT_POLICY);
-  useEffect(() => { (async () => { const saved = await store.get(POLICY_KEY, null); if (saved) setP({ ...DEFAULT_POLICY, ...saved }); })(); }, []);
-  const set1 = (k, v) => setP((s) => { const next = { ...s, [k]: v }; store.set(POLICY_KEY, next); toast("Policy saved"); return next; });
+  // Single source of truth = the DB (so the auto-join cron + bot honor it). Falls back to the
+  // local copy while the request is in flight.
+  useEffect(() => {
+    (async () => { const saved = await store.get(POLICY_KEY, null); if (saved) setP((s) => ({ ...s, ...saved })); })();
+    fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.policy && Object.keys(d.policy).length) setP((s) => ({ ...DEFAULT_POLICY, ...s, ...d.policy })); else if (d) setP((s) => ({ ...s, autoJoin: d.auto_join !== false, notetakerName: d.notetaker_name || s.notetakerName })); }).catch(() => {});
+  }, []);
+  const set1 = (k, v) => setP((s) => {
+    const next = { ...s, [k]: v };
+    store.set(POLICY_KEY, next);
+    fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ policy: next }) }).then(() => toast("Policy saved")).catch(() => toast("Policy saved locally"));
+    return next;
+  });
   const which = p.which, who = p.who, retention = p.retention;
   return (
     <>
