@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 8000, system: sys, messages: [{ role: "user", content: JSON.stringify(texts).slice(0, 120000) }] }),
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 8000, system: sys, messages: [{ role: "user", content: JSON.stringify(texts).slice(0, 120000) }] }),
     }).then((x) => x.json());
     const out = (r && r.content && r.content[0] && r.content[0].text) || "";
     let lines;

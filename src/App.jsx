@@ -3683,15 +3683,9 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     await fetchLang(k);
     setSubBusy(false);
   };
-  // Pre-warm: as soon as the player mounts, translate all menu languages in the background
-  // (skips any already cached in the report) so subtitles are ready before they're turned on.
-  useEffect(() => {
-    if (!meetingId || !(turns || []).length) return;
-    let alive = true;
-    (async () => { for (const k of SUB_LANGS) { if (!alive) break; if (!subCache[k]) await fetchLang(k); } })();
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetingId]);
+  // On-demand translation: we DON'T pre-translate all languages (that cost ~8x). Subtitles are
+  // translated only when a language is selected (chooseLang), then cached in the report so the
+  // next time is instant + free. Any languages already cached load immediately.
   // The active subtitle phrase (and a stable key) for a language at a given time: split the turn
   // into phrases and advance through them across the turn's duration (Netflix-style).
   const phraseAt = (lang, time) => {
