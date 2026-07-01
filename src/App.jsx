@@ -1373,6 +1373,28 @@ function PeoplePopover({ meeting }) {
   );
 }
 
+// Reports "Participants" column: quick-copy guest emails + email guests (Gmail compose). Tooltips
+// on hover. Emails come from the meeting's known contacts (calendar attendees + shared people).
+function ParticipantsCell({ meeting }) {
+  const emails = [...new Set((meeting.contacts || []).map((c) => c.email).filter(Boolean))];
+  const copy = (e) => { e.stopPropagation(); if (!emails.length) return toast("No participant emails on file"); navigator.clipboard.writeText(emails.join(", ")).then(() => toast(`Copied ${emails.length} email${emails.length > 1 ? "s" : ""}`)).catch(() => {}); };
+  const mail = (e) => { e.stopPropagation(); if (!emails.length) return toast("No participant emails on file"); window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(emails.join(",")) + "&su=" + encodeURIComponent(meeting.title || "Meeting"), "_blank"); };
+  const faded = emails.length ? "" : " opacity-40";
+  const tip = "pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100";
+  return (
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <div className="group relative">
+        <button onClick={copy} className={"flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-violet-600" + faded}><Copy size={15} /></button>
+        <span className={tip}>Copy guest emails</span>
+      </div>
+      <div className="group relative">
+        <button onClick={mail} className={"flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-violet-600" + faded}><Mail size={15} /></button>
+        <span className={tip}>Email guests</span>
+      </div>
+    </div>
+  );
+}
+
 function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder, user, onRename, onDelete }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
@@ -1590,10 +1612,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               <AnalyticsPanel meetings={selectedMeetings} onOpen={onOpen} onClose={() => setShowAnalytics(false)} />
             ) : (
             <div className="mt-4 overflow-hidden">
-              <div className="grid grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+              <div className="grid grid-cols-[1.4fr_1fr_0.9fr_0.8fr_0.5fr_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
                 <div className="flex items-center gap-6"><span>{t("source")}</span><span>{t("report")}</span></div>
                 <div className="flex items-center gap-1">{t("dateTime")} <ArrowDown size={12} /></div>
                 <div>{t("folders")}</div>
+                <div>Participants</div>
                 <div>{t("owner")}</div>
                 <div></div>
               </div>
@@ -1603,7 +1626,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                   <div className="bg-slate-50/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t(BUCKET_TKEY[g.label] || "today")}</div>
                   {g.items.map((m) => (
                     <div key={m.id} onClick={() => onOpen(m.id)} role="button" tabIndex={0}
-                      className="grid w-full cursor-pointer grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-violet-50/40">
+                      className="grid w-full cursor-pointer grid-cols-[1.4fr_1fr_0.9fr_0.8fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-violet-50/40">
                       <div className="flex min-w-0 items-center gap-3">
                         <button onClick={(e) => { e.stopPropagation(); toggleSel(m.id); }} title="Select" className={"flex h-5 w-5 shrink-0 items-center justify-center rounded border transition " + (sel.has(m.id) ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 text-transparent hover:border-violet-400")}><Check size={13} /></button>
                         <VideoThumb src={m.video} source={m.source} size={44} at={m.coverAt} />
@@ -1622,6 +1645,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                       <div>
                         <FolderPicker meeting={m} folders={allFolders} onSave={saveFolders} onCreate={createFolder} />
                       </div>
+                      <ParticipantsCell meeting={m} />
                       <div>
                         {(() => {
                           // Owner = the connected Google user (responsible for the subscription).
