@@ -5,6 +5,7 @@ import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { getBot, latestCode, mapStatus } from "./lib/recall.js";
 import { processMeeting } from "./lib/process.js";
+import { getEventAttendees } from "./lib/google.js";
 
 const ACTIVE = new Set(["scheduled", "joining", "in_call", "recording", "processing"]);
 const ENDED = /call_ended|done|recording_done|fatal|recording_permission_denied|media_expired/;
@@ -99,6 +100,20 @@ export default async function handler(req, res) {
       const fixedById = Object.fromEntries(fixed.map((x) => [x.id, x]));
       for (let i = 0; i < m.length; i++) if (fixedById[m[i].id]) m[i] = fixedById[m[i].id];
     }
+    // Backfill invitee emails: meetings that came from a calendar invite but never had their
+    // attendee list saved. The invite is where a participant's email actually lives (Recall only
+    // gives names), so this is what makes "copy/email participants" have real emails. One-time
+    // per meeting (once saved, it's skipped); capped so the request stays fast.
+    const needAtt = m.filter((x) => x.calendar_event_id && (!Array.isArray(x.attendees) || x.attendees.length === 0)).slice(0, 8);
+    if (needAtt.length && process.env.GOOGLE_CLIENT_SECRET) {
+      await Promise.all(needAtt.map(async (mm) => {
+        try {
+          const att = await getEventAttendees(s[0].user_id, mm.calendar_event_id);
+          if (att.length) { await sb(`meetings?id=eq.${mm.id}`, { method: "PATCH", body: { attendees: att } }); mm.attendees = att; }
+        } catch (e) { /* leave attendees null; retry next load */ }
+      }));
+    }
+
     res.status(200).json({ meetings: m });
   } catch (e) {
     console.error("meetings error:", e && (e.message || e));

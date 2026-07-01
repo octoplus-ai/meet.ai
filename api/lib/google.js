@@ -54,6 +54,27 @@ export async function annotateEvent(userId, eventId, note) {
   } catch (e) { return false; }
 }
 
+// The people ACTUALLY on a meeting's calendar invite: [{email, name, responseStatus, organizer}].
+// This is where a participant's email lives (Recall/diarization only gives us names). Filters out
+// room/resource attendees; always includes the organizer so the host is never missing. [] on failure.
+export async function getEventAttendees(userId, eventId) {
+  try {
+    const token = await getValidToken(userId);
+    if (!token || !eventId) return [];
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
+    const ev = await fetch(url, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+    if (!ev || ev.error) return [];
+    const out = (ev.attendees || [])
+      .filter((a) => a && a.email && !a.resource)
+      .map((a) => ({ email: String(a.email).toLowerCase(), name: a.displayName || "", responseStatus: a.responseStatus || "", organizer: !!a.organizer }));
+    const org = ev.organizer && ev.organizer.email;
+    if (org && !out.some((a) => a.email === String(org).toLowerCase())) {
+      out.push({ email: String(org).toLowerCase(), name: (ev.organizer && ev.organizer.displayName) || "", responseStatus: "accepted", organizer: true });
+    }
+    return out;
+  } catch (e) { return []; }
+}
+
 // Returns normalized upcoming events in [now, now + days].
 export async function listUpcomingEvents(userId, { days = 7 } = {}) {
   const token = await getValidToken(userId);

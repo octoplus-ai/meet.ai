@@ -1334,10 +1334,9 @@ function PeoplePopover({ meeting, emailBook = {} }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
-  const names = (meeting.participants || []).map((p) => p.name).filter(Boolean);
-  const emailFor = (nm) => emailBook[normName(nm)] || "";
-  const emails = meetingParticipantEmails(meeting, emailBook);
-  const count = meeting.participantsCount != null ? meeting.participantsCount : names.length;
+  const { withEmail, noEmail } = meetingPeople(meeting, emailBook);
+  const emails = withEmail.map((p) => p.email);
+  const count = meeting.participantsCount != null ? meeting.participantsCount : (withEmail.length + noEmail.length);
   const openMenu = (e) => { e.stopPropagation(); const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } setOpen(true); };
   const copyEmails = async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(emails.join(", ")); toast(emails.length ? `Copied ${emails.length} email${emails.length > 1 ? "s" : ""}` : "No emails on file for this meeting"); } catch (err) {} };
   return (
@@ -1352,13 +1351,19 @@ function PeoplePopover({ meeting, emailBook = {} }) {
               {emails.length > 0 && <button onClick={copyEmails} className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"><Copy size={11} /> Copy emails</button>}
             </div>
             <div className="max-h-64 overflow-y-auto">
-              {names.map((nm, i) => { const em = emailFor(nm); return (
-                <div key={i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
-                  <Avatar name={nm} email={em || nm} size={22} />
-                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{nm}</div>{em && <div className="truncate text-[11px] text-slate-400">{em}</div>}</div>
+              {withEmail.map((p, i) => (
+                <div key={"e" + i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+                  <Avatar name={p.name || p.email} email={p.email} size={22} />
+                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{p.name || p.email}</div>{p.name && <div className="truncate text-[11px] text-slate-400">{p.email}</div>}</div>
                 </div>
-              ); })}
-              {!names.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">No participant data.</div>}
+              ))}
+              {noEmail.map((p, i) => (
+                <div key={"n" + i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+                  <Avatar name={p.name} size={22} />
+                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{p.name}</div><div className="truncate text-[11px] text-slate-300">no email on file</div></div>
+                </div>
+              ))}
+              {!withEmail.length && !noEmail.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">No participant data.</div>}
             </div>
           </div>
         </>
@@ -1369,16 +1374,34 @@ function PeoplePopover({ meeting, emailBook = {} }) {
 
 const normName = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
 const isEmail = (e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e);
-// Emails of the people who ACTUALLY PARTICIPATED in THIS meeting (per-meeting, independent):
-//  - each participant NAME (from the report) resolved to an email via the directory, AND
-//  - this meeting's own calendar attendees (real invitees, with emails).
-// We do NOT include the report's share recipients - those are people it was shared with, not
-// participants. A participant whose email we've never seen is simply omitted (can't be invented).
+// The real people of THIS meeting (per-meeting, independent), from two truthful sources:
+//   1) the calendar invitees (meeting.attendees) - this is where a participant's EMAIL lives, and
+//   2) the participants the report detected (meeting.participants), resolved to an email via the
+//      directory when we know it.
+// We deliberately do NOT use the report's share recipients (people it was shared with != who was
+// in the meeting). Returns { withEmail:[{name,email}], noEmail:[{name}] } deduped by email.
+function meetingPeople(meeting, emailBook = {}) {
+  const byEmail = new Map(); const noEmail = [];
+  const addEmail = (email, name) => {
+    const e = String(email || "").toLowerCase();
+    if (!isEmail(e)) return;
+    const cur = byEmail.get(e);
+    if (!cur) byEmail.set(e, { name: name || "", email: e });
+    else if (!cur.name && name) cur.name = name; // upgrade a blank name if a better one shows up
+  };
+  (meeting.participants || []).forEach((p) => {
+    const nm = p && p.name; if (!nm) return;
+    const e = emailBook[normName(nm)];
+    if (e) addEmail(e, nm); else if (nm.toLowerCase() !== "speaker") noEmail.push({ name: nm });
+  });
+  (meeting.attendees || []).forEach((a) => {
+    const e = typeof a === "string" ? a : (a && a.email);
+    if (e) addEmail(e, (a && a.name) || "");
+  });
+  return { withEmail: [...byEmail.values()], noEmail };
+}
 function meetingParticipantEmails(meeting, emailBook = {}) {
-  const out = [];
-  (meeting.participants || []).forEach((p) => { const e = p && p.name && emailBook[normName(p.name)]; if (e) out.push(e); });
-  (meeting.attendees || []).forEach((a) => { const e = typeof a === "string" ? a : (a && a.email); if (e) out.push(String(e).toLowerCase()); });
-  return [...new Set(out.filter(isEmail))];
+  return meetingPeople(meeting, emailBook).withEmail.map((p) => p.email);
 }
 
 // Reports "Participants" column: quick-copy guest emails + email guests (Gmail compose). Tooltips on hover.
