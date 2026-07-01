@@ -658,7 +658,6 @@ const NAV = [
   { k: "add-people", tkey: "addPeople", icon: Users },
   { k: "ask", tkey: "ask", icon: Sparkles },
   { k: "reports", tkey: "reports", icon: ClipboardList },
-  { k: "analytics", label: "Analytics", icon: BarChart3 },
   { k: "folders", tkey: "folders", icon: Folder, plus: true },
   { k: "calendar", tkey: "calendar", icon: Calendar },
   { k: "for-you", tkey: "forYou", icon: Star, gap: true },
@@ -974,7 +973,6 @@ export default function App() {
         {view === "folders" && <FoldersView onAsk={goAsk} meetings={allMeetings} onOpenFolder={(name) => { setFolderFilter(name); setView("reports"); }} user={user} />}
         {view === "calendar" && <CalendarView onAsk={goAsk} initialTab={calTab} meetings={allMeetings} onOpen={openMeeting} />}
         {view === "for-you" && <ForYouView meetings={allMeetings} onOpen={openMeeting} onAsk={goAsk} user={user} />}
-        {view === "analytics" && <AnalyticsView meetings={allMeetings} user={user} onOpen={openMeeting} onAsk={goAsk} />}
         {view === "coaching" && <CoachingView onAsk={goAsk} />}
         {view === "recommendations" && <RecommendationsView onAsk={goAsk} />}
         {view === "integrations" && <IntegrationsView onAsk={goAsk} />}
@@ -1388,27 +1386,30 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const [fSource, setFSource] = useState("all");
   const [fFolder, setFFolder] = useState("all");
   const [sel, setSel] = useState(() => new Set()); // selected meeting ids for bulk actions
+  const [showAnalytics, setShowAnalytics] = useState(false); // inline analytics over the selection
   const [bulkBusy, setBulkBusy] = useState("");     // "" | "doc" | "deck"
   const [bulkDoc, setBulkDoc] = useState(null);     // { doc, meta }
   const [bulkDeck, setBulkDeck] = useState(null);   // { deck, theme, imgUrls, meta }
   const toggleSel = (id) => setSel((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const genBulkDoc = async () => {
+  const genBulkDoc = async (regenerate) => {
     if (bulkBusy) return; setBulkBusy("doc");
     try {
-      const r = await fetch("/api/document", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingIds: [...sel] }) });
+      const r = await fetch("/api/document", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingIds: [...sel], regenerate: !!regenerate }) });
       const d = await r.json();
+      if (r.status === 429) { toast("You've reached this month's limit for AI documents."); return; }
       if (!r.ok || !d.doc) { toast("Couldn't generate the document"); return; }
       setBulkDoc({ doc: d.doc, meta: d.meta });
     } catch (e) { toast("Network error"); } finally { setBulkBusy(""); }
   };
-  const genBulkDeck = async () => {
+  const genBulkDeck = async (regenerate) => {
     if (bulkBusy) return; setBulkBusy("deck");
     try {
-      const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingIds: [...sel], slideCount: 10, themeId: "sleek-dark" }) });
+      const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingIds: [...sel], slideCount: 10, themeId: "sleek-dark", regenerate: !!regenerate }) });
       const d = await r.json();
+      if (r.status === 429) { toast("You've reached this month's limit for presentations."); return; }
       if (!r.ok || !d.deck) { toast("Couldn't generate the deck"); return; }
-      const deck = coerceDeck(d.deck, { wantN: 10, imageCount: 0 });
-      setBulkDeck({ deck, theme: getTheme("sleek-dark"), imgUrls: [], meta: d.meta });
+      const deck = coerceDeck(d.deck, { wantN: 10, imageCount: (d.genImages || []).length });
+      setBulkDeck({ deck, theme: getTheme(d.themeId || "sleek-dark"), imgUrls: d.genImages || [], meta: d.meta });
     } catch (e) { toast("Network error"); } finally { setBulkBusy(""); }
   };
   const [manualFolders, setManualFolders] = useState([]);
@@ -1476,6 +1477,9 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   }, [filtered]);
   const live = useMemo(() => meetings.filter((m) => m.real && ["joining", "in_call", "recording"].includes(m.status)), [meetings]);
   const proc = useMemo(() => meetings.filter((m) => m.real && m.status === "processing"), [meetings]);
+  const selectedMeetings = filtered.filter((m) => sel.has(m.id));
+  const allSelected = filtered.length > 0 && filtered.every((m) => sel.has(m.id));
+  const toggleAll = () => setSel(allSelected ? new Set() : new Set(filtered.map((m) => m.id)));
 
   return (
     <>
@@ -1553,8 +1557,18 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               {(fOwner !== "all" || fDate !== "all" || fType !== "all" || fSource !== "all" || fFolder !== "all") && (
                 <button onClick={() => { setFOwner("all"); setFDate("all"); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">Clear filters</button>
               )}
+              <div className="flex-1" />
+              {filtered.length > 0 && (
+                <button onClick={toggleAll} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">
+                  <span className={"flex h-4 w-4 items-center justify-center rounded border " + (allSelected ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 text-transparent")}><Check size={11} /></span>
+                  {allSelected ? "Deselect all" : "Select all"}
+                </button>
+              )}
             </div>
 
+            {showAnalytics ? (
+              <AnalyticsPanel meetings={selectedMeetings} onOpen={onOpen} onClose={() => setShowAnalytics(false)} />
+            ) : (
             <div className="mt-4 overflow-hidden">
               <div className="grid grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
                 <div className="flex items-center gap-6"><span>{t("source")}</span><span>{t("report")}</span></div>
@@ -1607,6 +1621,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               ))}
               {!filtered.length && <div className="py-16 text-center text-sm text-slate-400">{tab === "incomplete" ? (q ? `No in-progress meetings match “${q}”.` : "No meetings in progress. Live & processing meetings will appear here.") : (q ? `No reports match “${q}”.` : "No reports yet.")}</div>}
             </div>
+            )}
           </>
       </div>
 
@@ -1637,13 +1652,14 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
       {sel.size > 0 && (
         <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-2xl">
           <span className="text-[13px] font-semibold text-slate-700">{sel.size} selected</span>
+          <button onClick={() => setShowAnalytics((v) => !v)} className={"flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold " + (showAnalytics ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50")}><BarChart3 size={14} /> Analytics</button>
           <button onClick={genBulkDoc} disabled={!!bulkBusy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{bulkBusy === "doc" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Doc</button>
           <button onClick={genBulkDeck} disabled={!!bulkBusy} className="flex items-center gap-1.5 rounded-lg border border-violet-300 px-3 py-1.5 text-[13px] font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-60">{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} Presentation</button>
-          <button onClick={() => setSel(new Set())} title="Clear selection" className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+          <button onClick={() => { setSel(new Set()); setShowAnalytics(false); }} title="Clear selection" className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
         </div>
       )}
-      {bulkDoc && <DocModal doc={bulkDoc.doc} meta={bulkDoc.meta} onClose={() => setBulkDoc(null)} />}
-      {bulkDeck && <SlidesModal deck={bulkDeck.deck} theme={bulkDeck.theme} imgUrls={bulkDeck.imgUrls} meta={bulkDeck.meta} onClose={() => setBulkDeck(null)} />}
+      {bulkDoc && <DocModal doc={bulkDoc.doc} meta={bulkDoc.meta} onClose={() => setBulkDoc(null)} onRegenerate={() => genBulkDoc(true)} regenerating={bulkBusy === "doc"} />}
+      {bulkDeck && <SlidesModal deck={bulkDeck.deck} theme={bulkDeck.theme} imgUrls={bulkDeck.imgUrls} meta={bulkDeck.meta} onClose={() => setBulkDeck(null)} onRegenerate={() => genBulkDeck(true)} regenerating={bulkBusy === "deck"} />}
     </>
   );
 }
@@ -2146,16 +2162,10 @@ function CalToggle({ on, onChange }) {
 }
 
 /* ============================ ANALYTICS ============================= */
-function AnalyticsView({ meetings, user, onOpen, onAsk }) {
-  const [range, setRange] = useState("all"); // "7" | "30" | "90" | "all"
+// Inline analytics over a chosen set of meetings (the selection in Reports).
+function AnalyticsPanel({ meetings, onOpen, onClose }) {
   const RATE = 50; // assumed $/hour/participant for cost estimates
-  const M = useMemo(() => {
-    const base = (meetings || []).filter((m) => !m.real || m.status === "done");
-    if (range === "all") return base;
-    const d = +range;
-    return base.filter((m) => daysAgo(m.date) <= d);
-  }, [meetings, range]);
-
+  const M = meetings || [];
   const n = M.length;
   const partCount = (m) => (m.participantsCount != null ? m.participantsCount : (m.participants ? m.participants.length : 0));
   const totalMin = M.reduce((a, m) => a + (m.durationMin || 0), 0);
@@ -2222,18 +2232,15 @@ function AnalyticsView({ meetings, user, onOpen, onAsk }) {
   const maxSrc = Math.max(1, ...Object.values(srcCount));
 
   return (
-    <>
-      <SectionTop title="Analytics" onAsk={onAsk} right={
-        <div className="flex gap-1 rounded-lg border border-slate-200 p-0.5">
-          {[["7", "7d"], ["30", "30d"], ["90", "90d"], ["all", "All"]].map(([k, l]) => (
-            <button key={k} onClick={() => setRange(k)} className={"rounded-md px-2.5 py-1 text-[12px] font-semibold " + (range === k ? "bg-violet-600 text-white" : "text-slate-500 hover:bg-slate-100")}>{l}</button>
-          ))}
-        </div>} />
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        {n === 0 ? (
-          <div className="py-24 text-center text-sm text-slate-400">No finished meetings in this range yet.</div>
-        ) : (
-          <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mb-6">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><BarChart3 size={16} className="text-violet-600" /> Analytics · {n} meeting{n === 1 ? "" : "s"} selected</div>
+        <button onClick={onClose} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><ArrowLeft size={14} /> Back to list</button>
+      </div>
+      {n === 0 ? (
+        <div className="py-24 text-center text-sm text-slate-400">Select meetings to see analytics.</div>
+      ) : (
+          <div className="space-y-6">
             <H>Overview</H>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
               <Kpi label="Meetings" value={n} />
@@ -2293,12 +2300,11 @@ function AnalyticsView({ meetings, user, onOpen, onAsk }) {
             </div>
 
             <p className="pt-2 text-center text-[11px] leading-relaxed text-slate-400">
-              Computed from your recorded meetings. Deeper KPIs (punctuality, invited-vs-attended, camera/mic, technical audio quality, agenda adherence) arrive with the in-house capture bot, which surfaces that data.
+              Computed from the selected meetings. Deeper KPIs (punctuality, invited-vs-attended, camera/mic, technical audio quality, agenda adherence) arrive with the in-house capture bot, which surfaces that data.
             </p>
           </div>
-        )}
-      </div>
-    </>
+      )}
+    </div>
   );
 }
 
@@ -3951,19 +3957,20 @@ function AskPanel({ meeting, shared, shareTok }) {
     }
     setAtts((a) => [...a, ...out].slice(0, 6));
   };
-  const generate = async () => {
+  const generate = async (regenerate) => {
     if (genBusy) return;
     setGenBusy(true); setShowComposer(false);
     const images = atts.filter((a) => a.kind === "image").map((a) => ({ mediaType: a.mediaType, data: a.data }));
     const files = atts.filter((a) => a.kind === "file").map((a) => ({ name: a.name, text: a.text }));
     try {
-      const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined, slideCount, themeId, withImages, images, files }) });
+      const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined, slideCount, themeId, withImages, images, files, regenerate: !!regenerate }) });
       const d = await r.json();
+      if (r.status === 429) { toast(withImages ? "You've reached this month's limit for presentations with images." : "You've reached this month's limit for presentations."); return; }
       if (!r.ok || !d.deck) { toast("Couldn't generate the deck - try again"); return; }
       const genImages = Array.isArray(d.genImages) ? d.genImages : [];
       const imgUrls = images.map((im) => `data:${im.mediaType};base64,${im.data}`).concat(genImages);
       const deck = coerceDeck(d.deck, { wantN: slideCount, imageCount: imgUrls.length });
-      setDeckState({ deck, theme: getTheme(themeId), imgUrls, meta: d.meta });
+      setDeckState({ deck, theme: getTheme(d.themeId || themeId), imgUrls, meta: d.meta });
       setAtts([]);
     } catch (e) { toast("Network error"); } finally { setGenBusy(false); }
   };
@@ -4060,7 +4067,7 @@ function AskPanel({ meeting, shared, shareTok }) {
           <button onClick={() => ask()} disabled={busy} className="text-violet-600 transition disabled:text-slate-300"><Send size={16} /></button>
         </div>
       </div>
-      {deckState && <SlidesModal deck={deckState.deck} theme={deckState.theme} imgUrls={deckState.imgUrls} meta={deckState.meta} onClose={() => setDeckState(null)} />}
+      {deckState && <SlidesModal deck={deckState.deck} theme={deckState.theme} imgUrls={deckState.imgUrls} meta={deckState.meta} onClose={() => setDeckState(null)} onRegenerate={() => generate(true)} regenerating={genBusy} />}
     </aside>
   );
 }
@@ -4140,7 +4147,7 @@ function docHTML(doc, meta) {
   const full = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${DOC_CSS}</style></head><body>${body}</body></html>`;
   return { full, title: doc.title || meta.title || "Meeting" };
 }
-function DocModal({ loading, doc, meta, onClose }) {
+function DocModal({ loading, doc, meta, onClose, onRegenerate, regenerating }) {
   const built = loading ? null : docHTML(doc, meta);
   const full = built ? built.full : "";
   const title = built ? built.title : "Meeting";
@@ -4153,6 +4160,7 @@ function DocModal({ loading, doc, meta, onClose }) {
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><Sparkles size={16} className="text-violet-600" /> AI Document</div>
           <div className="flex items-center gap-2">
+            {onRegenerate && <button onClick={onRegenerate} disabled={loading || regenerating} title="Generate a fresh version" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">{regenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Regenerate</button>}
             <button onClick={dlPDF} disabled={loading} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-50"><Download size={14} /> PDF</button>
             <button onClick={dlWord} disabled={loading} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Download size={14} /> Word</button>
             <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
@@ -4184,7 +4192,7 @@ async function downscaleImage(file, max = 1280, quality = 0.82) {
 }
 
 // Full-screen Gamma-style deck preview (thumbnail rail + slide viewer) + PDF / PPTX export.
-function SlidesModal({ deck, theme, imgUrls, meta, onClose }) {
+function SlidesModal({ deck, theme, imgUrls, meta, onClose, onRegenerate, regenerating }) {
   const [idx, setIdx] = useState(0);
   const full = useMemo(() => deckHTML(deck, theme, imgUrls), [deck, theme, imgUrls]);
   const one = useMemo(() => deckHTML({ ...deck, slides: [deck.slides[idx]] }, theme, imgUrls, { fit: true }), [deck, theme, imgUrls, idx]);
@@ -4201,6 +4209,7 @@ function SlidesModal({ deck, theme, imgUrls, meta, onClose }) {
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <div className="flex items-center gap-2 truncate text-sm font-bold text-slate-800"><Presentation size={16} className="text-violet-600" /> {deck.title}</div>
           <div className="flex items-center gap-2">
+            {onRegenerate && <button onClick={onRegenerate} disabled={regenerating} title="Generate a fresh version" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">{regenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Regenerate</button>}
             <button onClick={dlPDF} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-semibold text-slate-600 hover:bg-slate-50"><Download size={14} /> PDF</button>
             <button onClick={dlPPTX} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Download size={14} /> PowerPoint</button>
             <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
@@ -4437,15 +4446,16 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     + `</body></html>`;
   const dl = (name, content, mime) => { const url = URL.createObjectURL(new Blob([content], { type: mime })); const a = document.createElement("a"); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
   // AI Smart Document: Claude builds a polished, well-structured doc (PDF + Word) from the meeting.
-  const genDoc = async () => {
+  const genDoc = async (regenerate) => {
     setMenu(null);
     if (docBusy) return;
     setDocBusy(true); // generate in the background - the button shows "Generating…", you can keep working
     try {
-      const r = await fetch("/api/document", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined }) });
+      const r = await fetch("/api/document", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined, regenerate: !!regenerate }) });
       const d = await r.json();
+      if (r.status === 429) { toast("You've reached this month's limit for AI documents."); return; }
       if (!r.ok || !d.doc) { toast("Couldn't generate the document - try again"); return; }
-      setDocData({ doc: d.doc, meta: d.meta || { title: meeting.title, date: meeting.date } }); // opens the modal now that it's ready
+      setDocData({ doc: d.doc, meta: d.meta || { title: meeting.title, date: meeting.date } }); // opens the modal (saved or fresh)
     } catch (e) { toast("Network error"); } finally { setDocBusy(false); }
   };
   const genFollowup = async () => {
@@ -5013,7 +5023,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       </div>
       </div>
       {!shared && <AskPanel meeting={meeting} shared={shared} shareTok={shareTok} />}
-      {docData && <DocModal loading={docData.loading} doc={docData.doc} meta={docData.meta} onClose={() => setDocData(null)} />}
+      {docData && <DocModal loading={docData.loading} doc={docData.doc} meta={docData.meta} onClose={() => setDocData(null)} onRegenerate={() => genDoc(true)} regenerating={docBusy} />}
       {fupData && <FollowupModal data={fupData} meetingId={meeting.id} onClose={() => setFupData(null)} />}
     </div>
   );

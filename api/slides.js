@@ -4,8 +4,16 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
+import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
 
-export const config = { maxDuration: 60 }; // AI image generation needs headroom
+export const config = { maxDuration: 60 };
+
+async function sessionUser(req) {
+  const t = parseCookies(req).om_session;
+  if (!t) return null;
+  const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
+  return s.length ? s[0].user_id : null;
+} // AI image generation needs headroom
 
 const MODEL = "claude-sonnet-4-6";
 const enc = encodeURIComponent;
@@ -89,6 +97,19 @@ export default async function handler(req, res) {
     const N = Math.max(4, Math.min(16, parseInt(body.slideCount, 10) || 8));
     const themeId = body.themeId || "sleek-dark";
     const withImages = !!body.withImages && !!process.env.OPENAI_API_KEY;
+    const kind = withImages ? "deck_img" : "deck";
+
+    // Saved-artifact cache + hidden monthly cap (owner session only).
+    const ownerId = await sessionUser(req);
+    const akey = artifactKey(mtgs.map((x) => x.id));
+    if (ownerId && !body.regenerate) {
+      const a = await getArtifact(ownerId, kind, akey);
+      if (a && a.payload && a.payload.deck) return res.status(200).json({ deck: a.payload.deck, genImages: a.payload.genImages || [], themeId: (a.meta && a.meta.themeId) || themeId, meta: a.meta || {}, cached: true });
+    }
+    if (ownerId) {
+      const q = await consumeQuota(ownerId, kind);
+      if (!q.ok) return res.status(429).json({ error: "limit", kind });
+    }
 
     const per = Math.max(1500, Math.floor(9000 / mtgs.length));
     const ctxText = mtgs.map((x) => meetingSection(x, per)).join("\n\n---\n\n") || "(no transcript available)";
@@ -102,7 +123,7 @@ export default async function handler(req, res) {
       ? `\n\nThe user attached ${images.length} image(s), referenceable as ${images.map((_, i) => `img_${i}`).join(", ")}. Use them on "imageText" slides via "imageRef" where genuinely relevant; otherwise omit imageRef.`
       : "";
 
-    const sys = `You are an expert presentation designer. Turn the ${multi ? `${mtgs.length} meetings below into ONE cohesive` : "meeting below into a"} tight, modern slide deck like Gamma${multi ? " that synthesizes the common story across them" : ""}.
+    const sys = `You are an expert presentation designer. Turn the ${multi ? `${mtgs.length} meetings below into ONE cohesive` : "meeting below into a"} tight, modern slide deck like Gamma${multi ? ". MERGE the meetings into a single unified narrative - do NOT dedicate separate slides to each meeting; synthesize the shared themes, consolidate decisions/action items across all of them, and tell one combined story" : ""}.
 
 HARD RULES
 - Return EXACTLY ${N} slides. The first slide MUST be "cover"; the last MUST be "closing".
@@ -150,7 +171,9 @@ Allowed layouts: ${VALID_LAYOUTS.join(", ")}. You may add an optional "note" (sp
       const userCount = images.length;
       picks.forEach((s, i) => { if (results[i]) { genImages.push(results[i]); s.bgImage = userCount + genImages.length - 1; } });
     }
-    return res.status(200).json({ deck, genImages, themeId, meta: { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "" } });
+    const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "", themeId, slideCount: N, withImages };
+    if (ownerId) await saveArtifact(ownerId, kind, akey, { deck, genImages }, meta);
+    return res.status(200).json({ deck, genImages, themeId, meta, cached: false });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
