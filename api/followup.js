@@ -58,7 +58,17 @@ export default async function handler(req, res) {
       ai ? `Action items:\n${ai}` : "",
       ns ? `Next steps:\n${ns}` : "",
     ].filter(Boolean).join("\n");
-    const sys = `Write a concise, warm, professional FOLLOW-UP EMAIL to send after this meeting. Same language the meeting was in. Structure: a brief thank-you, 2-4 bullet key outcomes/decisions, the agreed action items (with owners), and one clear next step. Sign off with the sender's name. Keep it skimmable (~120-180 words). Return ONLY JSON: {"subject":"...","body":"..."} where body is plain text with line breaks (\\n). No markdown, no fences.`;
+    const sys = `You are the MEETING HOST writing a genuine, HUMAN follow-up email in the first person ("I"/"we"), in the SAME language the meeting was held in. This is NOT a summary, minutes, or recap, and it must NOT sound like a bot. It should read like a thoughtful person who was actually in the room and is personally following up.
+
+Write it so it feels real:
+- Warm, natural, personal tone. Address the recipient(s) directly by name if known.
+- Reference 2-3 SPECIFIC things that were actually discussed (real names, topics, concerns, a point someone made) so it's clearly about THIS conversation, not a template.
+- Reinforce the value and momentum: acknowledge what matters to them, restate any commitment made, and end with ONE clear, low-friction next step or question (a real call to action).
+- Short and skimmable (~90-150 words). NO "Summary"/"Recap" headings and no robotic bullet dump - at most a tiny list only if it genuinely reads naturally.
+- Never invent facts; use only what's in the meeting. Sign off naturally with the sender's first name.
+
+The subject line must be specific and human (e.g. referencing the topic or next step) - never "Meeting Recap" or "Follow-up".
+Return ONLY JSON: {"subject":"...","body":"..."} where body is plain text with line breaks (\\n). No markdown, no fences.`;
     const up = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },

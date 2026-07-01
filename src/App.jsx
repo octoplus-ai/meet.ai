@@ -3518,6 +3518,11 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [volOpen, setVolOpen] = useState(false);
   const [subLang, setSubLang] = useState("off"); // subtitles language - OFF by default
   const [subMenu, setSubMenu] = useState(false);
+  const [dubMenu, setDubMenu] = useState(false);
+  const [dubUrl, setDubUrl] = useState(null);       // media proxy URL when a dubbed version is active
+  const [dubLang, setDubLang] = useState(null);
+  const [dubStatus, setDubStatus] = useState("idle"); // idle | dubbing | ready | error
+  const dubPollRef = useRef(null);
   const [subCache, setSubCache] = useState(() => (subtitles && typeof subtitles === "object") ? subtitles : {}); // { lang: [translated text per turn] }, pre-loaded from the report
   const [subBusy, setSubBusy] = useState(false);
   const cc = subLang !== "off";
@@ -3636,6 +3641,30 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const volFromEvent = (e) => { const t = volRef.current; if (!t) return; const r = t.getBoundingClientRect(); applyVol(1 - (e.clientY - r.top) / r.height); };
   const startVolDrag = (e) => { e.preventDefault(); volDragRef.current = true; volFromEvent(e); const mv = (ev) => volFromEvent(ev); const up = () => { volDragRef.current = false; window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }; window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); };
   const SUB_LANGS = ["English", "Español (Latinoamérica)", "Português (Brasil)", "Français", "Deutsch", "Italiano", "한국어", "日本語"];
+  // ElevenLabs video dubbing (keeps each participant's voice). Estimated cost by duration.
+  const DUB_LANGS = [["es", "Español"], ["en", "English"], ["pt", "Português"], ["fr", "Français"], ["de", "Deutsch"], ["it", "Italiano"], ["ja", "日本語"], ["ko", "한국어"], ["zh", "中文"], ["hi", "हिन्दी"], ["ru", "Русский"], ["ar", "العربية"]];
+  const DUB_USD_PER_MIN = 0.33;
+  const dubCost = "$" + (Math.max((dur || (meetingId ? 60 : 0)) / 60, 1) * DUB_USD_PER_MIN).toFixed(2);
+  const startDub = async (lang) => {
+    setDubMenu(false);
+    if (dubPollRef.current) { clearInterval(dubPollRef.current); dubPollRef.current = null; }
+    if (lang === "original") { setDubUrl(null); setDubLang(null); setDubStatus("idle"); return; }
+    setDubLang(lang); setDubStatus("dubbing"); setDubUrl(null);
+    try {
+      const r = await fetch("/api/dub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", meetingId, lang }) });
+      const d = await r.json();
+      if (!r.ok) { setDubStatus("error"); toast(d.error === "no_elevenlabs_key" ? "Dubbing not configured yet" : d.error === "no_recording" ? "This meeting has no recording to dub" : "Couldn't start dubbing"); return; }
+      dubPollRef.current = setInterval(async () => {
+        try {
+          const sr = await fetch("/api/dub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "status", meetingId, lang }) });
+          const sd = await sr.json();
+          if (sd.ready) { clearInterval(dubPollRef.current); dubPollRef.current = null; setDubUrl(`/api/dub?meetingId=${encodeURIComponent(meetingId)}&lang=${encodeURIComponent(lang)}${shareTok ? `&share=${encodeURIComponent(shareTok)}` : ""}`); setDubStatus("ready"); startedRef.current = false; setEverPlayed(false); toast("Dubbed video ready"); }
+          else if (sd.status === "failed") { clearInterval(dubPollRef.current); dubPollRef.current = null; setDubStatus("error"); toast("Dubbing failed - try again"); }
+        } catch (e) {}
+      }, 6000);
+    } catch (e) { setDubStatus("error"); toast("Network error"); }
+  };
+  useEffect(() => () => { if (dubPollRef.current) clearInterval(dubPollRef.current); }, []);
   // Translate (once) via the server, which caches into reports.subtitles so it is instant next time.
   const fetchLang = async (k) => {
     const texts = (turns || []).map((t) => t.text || "");
@@ -3720,7 +3749,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
 
   return (
     <div ref={wrapRef} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
-      <video ref={videoRef} src={src + "#t=" + (coverAt || 8)} preload="auto" playsInline
+      <video ref={videoRef} src={dubUrl || (src + "#t=" + (coverAt || 8))} preload="auto" playsInline
         onClick={() => { if (autoplayClick && !collapsed) toggle(); }}
         onLoadedMetadata={setD} onDurationChange={setD} onTimeUpdate={onTime}
         onSeeking={(e) => setCur(e.currentTarget.currentTime)} onSeeked={(e) => setCur(e.currentTarget.currentTime)}
@@ -3733,6 +3762,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           className="absolute right-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg bg-white/90 text-violet-700 shadow transition hover:bg-white">
           <ChevronsDownUp size={18} />
         </button>
+      )}
+      {/* Dubbing in progress indicator */}
+      {!collapsed && dubStatus === "dubbing" && (
+        <div className="absolute left-3 top-3 z-40 flex items-center gap-2 rounded-lg bg-black/70 px-3 py-1.5 text-[12px] font-medium text-white backdrop-blur"><Loader2 size={13} className="animate-spin" /> Dubbing to {dubLang}… (a few minutes)</div>
       )}
       {/* Subtitles overlay (off by default; language chosen via the CC menu). */}
       {!collapsed && cc && (capText || subBusy) && (
@@ -3854,6 +3887,29 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
             <button onClick={() => setSubMenu((s) => !s)} title="Subtitles"
               className={"flex h-5 items-center rounded px-1 text-[11px] font-bold transition hover:text-violet-300 " + (cc ? "bg-white text-neutral-900" : "")}>CC</button>
           </div>
+          {/* Dub video (ElevenLabs) - keeps each participant's voice. Owner only. */}
+          {!shareTok && meetingId && (
+            <div className="relative">
+              {dubMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setDubMenu(false)} />
+                  <div className="absolute bottom-9 right-0 z-50 max-h-[20rem] w-64 overflow-y-auto rounded-2xl border border-white/10 bg-neutral-950/95 p-2 text-white shadow-2xl backdrop-blur-md">
+                    <div className="px-3 pt-2 text-center text-[13px] font-bold">Dub video</div>
+                    <div className="px-3 pb-2 text-center text-[11px] text-white/50">AI voices, keeps each speaker · ~{dubCost}</div>
+                    <button onClick={() => startDub("original")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10"><span className="w-4">{!dubUrl && <Check size={15} className="text-violet-300" />}</span>Original</button>
+                    {DUB_LANGS.map(([code, label]) => (
+                      <button key={code} onClick={() => startDub(code)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
+                        <span className="w-4">{dubLang === code && dubUrl && <Check size={15} className="text-violet-300" />}</span>
+                        <span className={dubLang === code ? "font-semibold" : "text-white/85"}>{label}</span>
+                        {dubLang === code && dubStatus === "dubbing" && <Loader2 size={13} className="ml-auto animate-spin text-white/60" />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <button onClick={() => setDubMenu((s) => !s)} title="Dub the video into another language (AI, keeps each voice)" className={"hover:text-violet-300 " + (dubUrl ? "text-violet-300" : "")}><Globe size={16} /></button>
+            </div>
+          )}
           <button onClick={() => setShowSettings((s) => !s)} title="Settings (playback speed & overlays)" className="flex items-center gap-0.5 hover:text-violet-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
           <button onClick={pip} title="Picture in picture (click the screen or this button to go back)" className="hover:text-violet-300"><PictureInPicture2 size={16} /></button>
           <button onClick={fs} title="Fullscreen" className="hover:text-violet-300"><Maximize2 size={16} /></button>
