@@ -1335,7 +1335,7 @@ function PeoplePopover({ meeting, emailBook = {} }) {
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
   const names = (meeting.participants || []).map((p) => p.name).filter(Boolean);
-  const emailFor = (nm) => emailBook[String(nm).trim().toLowerCase()] || "";
+  const emailFor = (nm) => emailBook[normName(nm)] || "";
   const emails = meetingParticipantEmails(meeting, emailBook);
   const count = meeting.participantsCount != null ? meeting.participantsCount : names.length;
   const openMenu = (e) => { e.stopPropagation(); const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } setOpen(true); };
@@ -1367,16 +1367,18 @@ function PeoplePopover({ meeting, emailBook = {} }) {
   );
 }
 
-// ALL emails associated with THIS meeting, deterministically (per-meeting, independent):
-//  1) every email directly attached to the meeting (calendar attendees + people with access), and
-//  2) participant NAMES resolved to emails via the directory (best-effort, tolerates missing ones).
-// Union of both so "copy/send" always grabs the full known set (name-matching alone was flaky).
+const normName = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const isEmail = (e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e);
+// Emails of the people who ACTUALLY PARTICIPATED in THIS meeting (per-meeting, independent):
+//  - each participant NAME (from the report) resolved to an email via the directory, AND
+//  - this meeting's own calendar attendees (real invitees, with emails).
+// We do NOT include the report's share recipients - those are people it was shared with, not
+// participants. A participant whose email we've never seen is simply omitted (can't be invented).
 function meetingParticipantEmails(meeting, emailBook = {}) {
   const out = [];
-  (meeting.contacts || []).forEach((c) => { if (c && c.email) out.push(String(c.email).toLowerCase()); });
+  (meeting.participants || []).forEach((p) => { const e = p && p.name && emailBook[normName(p.name)]; if (e) out.push(e); });
   (meeting.attendees || []).forEach((a) => { const e = typeof a === "string" ? a : (a && a.email); if (e) out.push(String(e).toLowerCase()); });
-  (meeting.participants || []).forEach((p) => { const e = p && p.name && emailBook[String(p.name).trim().toLowerCase()]; if (e) out.push(e); });
-  return [...new Set(out.filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e)))];
+  return [...new Set(out.filter(isEmail))];
 }
 
 // Reports "Participants" column: quick-copy guest emails + email guests (Gmail compose). Tooltips on hover.
@@ -1512,7 +1514,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   // + the owner. Used to resolve each meeting's participant NAMES to emails.
   const emailBook = useMemo(() => {
     const b = {};
-    const add = (name, email) => { if (name && email) b[String(name).trim().toLowerCase()] = String(email).toLowerCase(); };
+    const add = (name, email) => { if (name && email) b[normName(name)] = String(email).toLowerCase(); };
     if (user && user.name && user.email) add(user.name, user.email);
     meetings.forEach((mm) => (mm.contacts || []).forEach((c) => add(c.name, c.email)));
     return b;
