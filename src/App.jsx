@@ -1486,7 +1486,6 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
     <>
       <div className="border-b border-slate-200 bg-white px-6 pt-3">
         <div className="mb-3 flex items-center gap-2">
-          <ChevronLeft size={18} className="text-slate-400" />
           <h1 className="text-lg font-bold text-slate-900">{t("reports")}</h1>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
@@ -1559,21 +1558,33 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 <button onClick={() => { setFOwner("all"); setFDate("all"); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">Clear filters</button>
               )}
               <div className="flex-1" />
-              {/* Bulk actions: always visible, greyed/disabled until a selection is made. */}
-              {sel.size > 0 && <span className="text-[12px] font-semibold text-slate-500">{sel.size} selected</span>}
-              <button onClick={() => setShowAnalytics((v) => !v)} disabled={sel.size === 0} title="Analytics for the selected meetings"
-                className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition " + (sel.size === 0 ? "cursor-not-allowed border-slate-100 text-slate-300" : (showAnalytics ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"))}><BarChart3 size={14} /> Analytics</button>
-              <button onClick={() => genBulkDoc()} disabled={sel.size === 0 || !!bulkBusy} title="AI document from the selected meetings"
-                className={"flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition " + (sel.size === 0 ? "cursor-not-allowed bg-slate-100 text-slate-300" : "bg-violet-600 text-white hover:bg-violet-500")}>{bulkBusy === "doc" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Doc</button>
-              <button onClick={() => genBulkDeck()} disabled={sel.size === 0 || !!bulkBusy} title="Presentation from the selected meetings"
-                className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition " + (sel.size === 0 ? "cursor-not-allowed border-slate-100 text-slate-300" : "border-violet-300 text-violet-700 hover:bg-violet-50")}>{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} Presentation</button>
-              {filtered.length > 0 && (
-                <button onClick={toggleAll} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">
+              {/* Bulk actions: always visible + active-looking. Hover shows a hint until a selection is made. */}
+              <div className="group relative">
+                <button onClick={() => (sel.size ? setShowAnalytics((v) => !v) : toast("Select one or more meetings first"))}
+                  className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition " + (showAnalytics && sel.size ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50")}><BarChart3 size={14} /> Analytics</button>
+                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">Select one or more meetings to see analytics.</span>}
+              </div>
+              <div className="group relative">
+                <button onClick={() => (sel.size ? genBulkDoc() : toast("Select one or more meetings first"))} disabled={!!bulkBusy}
+                  className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-violet-500 disabled:opacity-60">{bulkBusy === "doc" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Doc</button>
+                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">Select one or more meetings to generate a document.</span>}
+              </div>
+              <div className="group relative">
+                <button onClick={() => (sel.size ? genBulkDeck() : toast("Select one or more meetings first"))} disabled={!!bulkBusy}
+                  className="flex items-center gap-1.5 rounded-lg border border-violet-300 px-3 py-2 text-[13px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-60">{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} Presentation</button>
+                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">Select one or more meetings to generate a presentation.</span>}
+              </div>
+            </div>
+            {/* Select all — right under the search/filters row */}
+            {filtered.length > 0 && (
+              <div className="mb-1 flex items-center gap-3">
+                <button onClick={toggleAll} className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 transition hover:text-violet-700">
                   <span className={"flex h-4 w-4 items-center justify-center rounded border " + (allSelected ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 text-transparent")}><Check size={11} /></span>
                   {allSelected ? "Deselect all" : "Select all"}
                 </button>
-              )}
-            </div>
+                {sel.size > 0 && <span className="text-[12px] font-semibold text-violet-600">{sel.size} selected</span>}
+              </div>
+            )}
 
             {showAnalytics ? (
               <AnalyticsPanel meetings={selectedMeetings} onOpen={onOpen} onClose={() => setShowAnalytics(false)} />
@@ -2233,9 +2244,9 @@ function AnalyticsPanel({ meetings, onOpen, onClose }) {
 
   return (
     <div className="mb-6">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center gap-3">
+        <button onClick={onClose} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-violet-500"><ArrowLeft size={15} /> Back to reports</button>
         <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><BarChart3 size={16} className="text-violet-600" /> Analytics · {n} meeting{n === 1 ? "" : "s"} selected</div>
-        <button onClick={onClose} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><ArrowLeft size={14} /> Back to list</button>
       </div>
       {n === 0 ? (
         <div className="py-24 text-center text-sm text-slate-400">Select meetings to see analytics.</div>
