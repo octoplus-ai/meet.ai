@@ -1367,14 +1367,16 @@ function PeoplePopover({ meeting, emailBook = {} }) {
   );
 }
 
-// Emails of THIS meeting's actual participants: resolve each participant NAME against a
-// name->email directory (built from all known contacts + the owner) and add any calendar
-// attendees. Per-meeting and independent (not the report's share recipients).
-function meetingParticipantEmails(meeting, emailBook) {
-  const names = (meeting.participants || []).map((p) => p && p.name).filter(Boolean);
-  const out = names.map((n) => emailBook[String(n).trim().toLowerCase()]).filter(Boolean);
+// ALL emails associated with THIS meeting, deterministically (per-meeting, independent):
+//  1) every email directly attached to the meeting (calendar attendees + people with access), and
+//  2) participant NAMES resolved to emails via the directory (best-effort, tolerates missing ones).
+// Union of both so "copy/send" always grabs the full known set (name-matching alone was flaky).
+function meetingParticipantEmails(meeting, emailBook = {}) {
+  const out = [];
+  (meeting.contacts || []).forEach((c) => { if (c && c.email) out.push(String(c.email).toLowerCase()); });
   (meeting.attendees || []).forEach((a) => { const e = typeof a === "string" ? a : (a && a.email); if (e) out.push(String(e).toLowerCase()); });
-  return [...new Set(out)];
+  (meeting.participants || []).forEach((p) => { const e = p && p.name && emailBook[String(p.name).trim().toLowerCase()]; if (e) out.push(e); });
+  return [...new Set(out.filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e)))];
 }
 
 // Reports "Participants" column: quick-copy guest emails + email guests (Gmail compose). Tooltips on hover.
