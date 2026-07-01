@@ -55,6 +55,7 @@ export function coerceDeck(raw, { wantN, imageCount = 0 } = {}) {
     }
     if (layout === "timeline") o.events = (Array.isArray(s && s.events) ? s.events : []).slice(0, 5).map((e) => ({ when: String((e && e.when) || ""), what: String((e && e.what) || "") }));
     if (layout === "closing") { o.headline = String((s && (s.headline || s.title)) || ""); o.bullets = arr(s && s.bullets, 5); o.contact = String((s && s.contact) || ""); }
+    if (s && typeof s.bgImage === "number" && s.bgImage < imageCount) o.bgImage = s.bgImage; // full-bleed background image index
     return o;
   });
   if (wantN) {
@@ -141,13 +142,24 @@ export function deckCSS(t) {
   .tlwhen{color:${t.accent};font-weight:700;font-size:20px}
   .tldot{width:14px;height:14px;border-radius:50%;background:${t.accent};margin-left:-9px}
   .tlwhat{color:${t.body};font-size:22px}
+  /* full-bleed background image + legibility scrim */
+  .content{position:relative;z-index:2;width:100%}
+  .bgimg{position:absolute;inset:0;background-size:cover;background-position:center;z-index:0}
+  .scrim{position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(0,0,0,.30),rgba(0,0,0,.72))}
+  .hasbg h1,.hasbg h2,.hasbg h3,.hasbg p,.hasbg li,.hasbg blockquote,.hasbg .statlabel,.hasbg .sub,.hasbg .caption,.hasbg .attr,.hasbg .tlwhat{color:#fff !important}
   @page{size:1280px 720px;margin:0}
   @media print{.slide{margin:0;break-after:page;border:none}}
   `;
 }
 
-// imgs = array of data: URLs (base64 with prefix) for imageText slides.
-export function deckHTML(deck, theme, imgs = []) {
-  const body = deck.slides.map((s) => `<section class="slide">${slideInner(s, theme, imgs)}</section>`).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(deck.title)}</title><style>${deckCSS(theme)}</style></head><body>${body}</body></html>`;
+// imgs = array of data: URLs (base64 with prefix). opts.fit -> scale a single slide to fit the viewport (preview).
+export function deckHTML(deck, theme, imgs = [], opts = {}) {
+  const body = deck.slides.map((s) => {
+    const hasBg = s.bgImage != null && imgs[s.bgImage];
+    const bg = hasBg ? `<div class="bgimg" style="background-image:url('${imgs[s.bgImage]}')"></div><div class="scrim"></div>` : "";
+    return `<section class="slide${hasBg ? " hasbg" : ""}">${bg}<div class="content">${slideInner(s, theme, imgs)}</div></section>`;
+  }).join("");
+  const fitCSS = opts.fit ? `html,body{width:100%;height:100%;overflow:hidden;background:transparent;display:flex;align-items:center;justify-content:center}.slide{margin:0;flex:none}` : "";
+  const fitJS = opts.fit ? `<script>(function(){function f(){var s=document.querySelector('.slide');if(!s)return;var k=Math.min(innerWidth/1280,innerHeight/720);s.style.transform='scale('+k+')';s.style.transformOrigin='center center';}addEventListener('resize',f);f();setTimeout(f,60);})();</script>` : "";
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(deck.title)}</title><style>${deckCSS(theme)}${fitCSS}</style></head><body>${body}${fitJS}</body></html>`;
 }

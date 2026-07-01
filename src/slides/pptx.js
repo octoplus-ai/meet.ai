@@ -21,13 +21,21 @@ export async function exportPptx(deck, t, imgs = []) {
   p.layout = "OCTO169";
   p.author = "OctoMeet"; p.title = deck.title;
   const W = 13.333, MX = 0.9;
-  const head = { fontFace: "Poppins", color: hx(t.heading) };
-  const bodyc = { fontFace: "Inter", color: hx(t.body) };
+  const headBase = { fontFace: "Poppins", color: hx(t.heading) };
+  const bodyBase = { fontFace: "Inter", color: hx(t.body) };
   const bullets = (a, opt) => (a || []).map((x) => ({ text: x, options: { bullet: { code: "2022" }, ...opt } }));
 
   for (const s of deck.slides) {
     const sl = p.addSlide();
     sl.background = { color: hx(t.bg) };
+    // Full-bleed AI background image + dark scrim, text forced white for legibility.
+    const onImg = (s.bgImage != null && imgs[s.bgImage]) ? imgs[s.bgImage] : null;
+    let head = headBase, bodyc = bodyBase;
+    if (onImg) {
+      sl.addImage({ data: onImg, x: 0, y: 0, w: 13.333, h: 7.5, sizing: { type: "cover", w: 13.333, h: 7.5 } });
+      sl.addShape(p.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 7.5, fill: { color: "000000", transparency: 45 } });
+      head = { fontFace: "Poppins", color: "FFFFFF" }; bodyc = { fontFace: "Inter", color: "FFFFFF" };
+    }
 
     if (s.layout === "cover" || s.layout === "closing") {
       sl.addShape(p.ShapeType.rect, { x: MX, y: 2.2, w: 0.75, h: 0.12, fill: { color: hx(t.accent) } });

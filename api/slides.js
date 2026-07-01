@@ -5,9 +5,26 @@ import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 
+export const config = { maxDuration: 60 }; // AI image generation needs headroom
+
 const MODEL = "claude-sonnet-4-6";
 const enc = encodeURIComponent;
 const VALID_LAYOUTS = ["cover", "agenda", "bullets", "twoColumn", "bigStat", "quote", "imageText", "timeline", "closing"];
+
+// Generate one AI image (OpenAI gpt-image-1) as a data URL, or null on failure.
+async function genImage(key, prompt) {
+  try {
+    const r = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "gpt-image-1", prompt: String(prompt || "").slice(0, 900), size: "1536x1024", quality: "medium", n: 1 }),
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const b64 = d && d.data && d.data[0] && d.data[0].b64_json;
+    return b64 ? "data:image/png;base64," + b64 : null;
+  } catch (e) { return null; }
+}
 
 async function loadMeeting(req, body) {
   const t = parseCookies(req).om_session;
@@ -39,6 +56,7 @@ export default async function handler(req, res) {
 
     const N = Math.max(4, Math.min(16, parseInt(body.slideCount, 10) || 8));
     const themeId = body.themeId || "sleek-dark";
+    const withImages = !!body.withImages && !!process.env.OPENAI_API_KEY;
 
     const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
     const tr = r.transcript;
@@ -74,7 +92,7 @@ HARD RULES
 - Choose the layout that fits the content: bigStat for a single KPI; quote for a verbatim quote; twoColumn for comparisons; timeline for sequences/roadmaps; agenda near the start; bullets only for 3-5 parallel points; imageText when an attached image is relevant.
 - NEVER invent statistics, numbers, quotes, names, dates or sources. Use ONLY facts in the meeting/attachments. A bigStat number must appear verbatim in the source; a quote must be verbatim from the transcript.
 - Write ALL text in the SAME language the meeting was held in; set "lang" to its ISO code.
-- The deck must be designed for theme "${themeId}" (clean, high-contrast, minimal).${imageManifest}
+- The deck must be designed for theme "${themeId}" (clean, high-contrast, minimal).${imageManifest}${withImages ? `\n- IMAGES: add an "imagePrompt" field to the COVER, the CLOSING, and 2-3 of the most visual content slides. imagePrompt = a vivid, literal ENGLISH description of a professional, cinematic photo/illustration with NO text or words in the image, relevant to that slide's topic. These become full-bleed backgrounds. Do NOT add imagePrompt to dense data/bullet slides that need a clean background. At most 5 imagePrompts total.` : ""}
 
 Return ONLY valid JSON (no markdown fences), EXACTLY:
 {"lang":"xx","title":"...","subtitle":"...","themeId":"${themeId}","slides":[
@@ -104,7 +122,16 @@ Allowed layouts: ${VALID_LAYOUTS.join(", ")}. You may add an optional "note" (sp
     let deck;
     try { deck = JSON.parse(text); } catch (e) { const s = text.indexOf("{"), end = text.lastIndexOf("}"); deck = JSON.parse(text.slice(s, end + 1)); }
     deck.themeId = themeId;
-    return res.status(200).json({ deck, themeId, meta: { title: m.title || "Meeting", date: m.start_time || m.created_at || "" } });
+
+    // Generate AI background images for slides Claude flagged with imagePrompt (parallel, capped).
+    let genImages = [];
+    if (withImages && Array.isArray(deck.slides)) {
+      const picks = deck.slides.filter((s) => s && typeof s.imagePrompt === "string" && s.imagePrompt.trim()).slice(0, 5);
+      const results = await Promise.all(picks.map((s) => genImage(process.env.OPENAI_API_KEY, s.imagePrompt)));
+      const userCount = images.length;
+      picks.forEach((s, i) => { if (results[i]) { genImages.push(results[i]); s.bgImage = userCount + genImages.length - 1; } });
+    }
+    return res.status(200).json({ deck, genImages, themeId, meta: { title: m.title || "Meeting", date: m.start_time || m.created_at || "" } });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

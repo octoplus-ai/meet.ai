@@ -3633,6 +3633,7 @@ function AskPanel({ meeting, shared, shareTok }) {
   const [showComposer, setShowComposer] = useState(false);
   const [slideCount, setSlideCount] = useState(8);
   const [themeId, setThemeId] = useState("sleek-dark");
+  const [withImages, setWithImages] = useState(false); // generate AI images based on the meeting
   const [atts, setAtts] = useState([]); // [{kind:'image'|'file', name, mediaType, data, text}]
   const [genBusy, setGenBusy] = useState(false);
   const [deckState, setDeckState] = useState(null); // {deck, theme, imgUrls, meta}
@@ -3654,11 +3655,12 @@ function AskPanel({ meeting, shared, shareTok }) {
     const images = atts.filter((a) => a.kind === "image").map((a) => ({ mediaType: a.mediaType, data: a.data }));
     const files = atts.filter((a) => a.kind === "file").map((a) => ({ name: a.name, text: a.text }));
     try {
-      const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined, slideCount, themeId, images, files }) });
+      const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined, slideCount, themeId, withImages, images, files }) });
       const d = await r.json();
       if (!r.ok || !d.deck) { toast("Couldn't generate the deck - try again"); return; }
-      const deck = coerceDeck(d.deck, { wantN: slideCount, imageCount: images.length });
-      const imgUrls = images.map((im) => `data:${im.mediaType};base64,${im.data}`);
+      const genImages = Array.isArray(d.genImages) ? d.genImages : [];
+      const imgUrls = images.map((im) => `data:${im.mediaType};base64,${im.data}`).concat(genImages);
+      const deck = coerceDeck(d.deck, { wantN: slideCount, imageCount: imgUrls.length });
       setDeckState({ deck, theme: getTheme(themeId), imgUrls, meta: d.meta });
       setAtts([]);
     } catch (e) { toast("Network error"); } finally { setGenBusy(false); }
@@ -3729,6 +3731,12 @@ function AskPanel({ meeting, shared, shareTok }) {
                   </button>
                 ))}
               </div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Images</div>
+              <div className="mb-3 flex gap-1.5">
+                <button onClick={() => setWithImages(false)} className={"flex-1 rounded-lg border py-1.5 text-[12px] font-semibold " + (!withImages ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>No images</button>
+                <button onClick={() => setWithImages(true)} className={"flex-1 rounded-lg border py-1.5 text-[12px] font-semibold " + (withImages ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>✨ AI images</button>
+              </div>
+              {withImages && <div className="mb-3 -mt-1 text-[11px] leading-snug text-slate-400">Generates a few images based on the meeting (slower, ~30s).</div>}
               {atts.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {atts.map((a, i) => (<span key={i} className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-600">{a.kind === "image" ? <ImagePlus size={11} /> : <Paperclip size={11} />}{(a.name || "image").slice(0, 18)}<button onClick={() => setAtts((x) => x.filter((_, j) => j !== i))}><X size={11} /></button></span>))}
@@ -3745,7 +3753,7 @@ function AskPanel({ meeting, shared, shareTok }) {
           </>
         )}
         <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 focus-within:border-violet-400">
-          <button onClick={() => canPresent ? setShowComposer((v) => !v) : toast("Available once the report is ready")} disabled={genBusy} title="Generate a presentation from this meeting" className="text-violet-600 transition hover:text-violet-700 disabled:text-slate-300">{genBusy ? <Loader2 size={16} className="animate-spin" /> : <Presentation size={16} />}</button>
+          <button onClick={() => canPresent ? setShowComposer((v) => !v) : toast("Available once the report is ready")} disabled={genBusy} title="Generate a presentation from this meeting" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 transition hover:bg-violet-200 disabled:opacity-50">{genBusy ? <Loader2 size={18} className="animate-spin" /> : <Presentation size={18} />}</button>
           <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} placeholder="Ask Octo anything…" className="flex-1 bg-transparent text-sm outline-none" />
           <button onClick={() => ask()} disabled={busy} className="text-violet-600 transition disabled:text-slate-300"><Send size={16} /></button>
         </div>
@@ -3877,7 +3885,7 @@ async function downscaleImage(file, max = 1280, quality = 0.82) {
 function SlidesModal({ deck, theme, imgUrls, meta, onClose }) {
   const [idx, setIdx] = useState(0);
   const full = useMemo(() => deckHTML(deck, theme, imgUrls), [deck, theme, imgUrls]);
-  const one = useMemo(() => deckHTML({ ...deck, slides: [deck.slides[idx]] }, theme, imgUrls), [deck, theme, imgUrls, idx]);
+  const one = useMemo(() => deckHTML({ ...deck, slides: [deck.slides[idx]] }, theme, imgUrls, { fit: true }), [deck, theme, imgUrls, idx]);
   useEffect(() => {
     const k = (e) => { if (e.key === "ArrowRight") setIdx((i) => Math.min(i + 1, deck.slides.length - 1)); if (e.key === "ArrowLeft") setIdx((i) => Math.max(i - 1, 0)); if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
