@@ -465,6 +465,7 @@ function adaptReal(m) {
     cover_url: m.cover_url || null,
     // Known emails for this meeting (calendar attendees + people it was shared with) - for
     // search, the participants popover and "copy emails".
+    attendees: Array.isArray(m.attendees) ? m.attendees : [],
     contacts: (() => {
       const out = [];
       (Array.isArray(m.attendees) ? m.attendees : []).forEach((a) => { const e = typeof a === "string" ? a : (a && a.email); if (e) out.push({ email: String(e).toLowerCase(), name: (a && a.name) || "" }); });
@@ -1328,18 +1329,17 @@ function RowMenu({ onShare, onDownload, onRename, onDelete }) {
   );
 }
 
-// Participant-count chip that opens a popover: participant names + known emails + "Copy emails".
-function PeoplePopover({ meeting }) {
+// Participant-count chip -> popover: THIS meeting's participants + their resolved emails + copy.
+function PeoplePopover({ meeting, emailBook = {} }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
   const names = (meeting.participants || []).map((p) => p.name).filter(Boolean);
-  const contacts = meeting.contacts || [];
-  const emails = contacts.map((c) => c.email).filter(Boolean);
+  const emailFor = (nm) => emailBook[String(nm).trim().toLowerCase()] || "";
+  const emails = meetingParticipantEmails(meeting, emailBook);
   const count = meeting.participantsCount != null ? meeting.participantsCount : names.length;
   const openMenu = (e) => { e.stopPropagation(); const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } setOpen(true); };
   const copyEmails = async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(emails.join(", ")); toast(emails.length ? `Copied ${emails.length} email${emails.length > 1 ? "s" : ""}` : "No emails on file for this meeting"); } catch (err) {} };
-  const extra = contacts.filter((c) => !names.some((n) => n.toLowerCase() === (c.name || "").toLowerCase()));
   return (
     <span className="relative" onClick={(e) => e.stopPropagation()}>
       <button ref={btnRef} onClick={(e) => (open ? setOpen(false) : openMenu(e))} className="flex items-center gap-1 text-[12px] text-slate-400 transition hover:text-violet-600"><Users size={12} /> {count}</button>
@@ -1352,19 +1352,13 @@ function PeoplePopover({ meeting }) {
               {emails.length > 0 && <button onClick={copyEmails} className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"><Copy size={11} /> Copy emails</button>}
             </div>
             <div className="max-h-64 overflow-y-auto">
-              {names.map((nm, i) => { const c = contacts.find((x) => x.name && x.name.toLowerCase() === nm.toLowerCase()); return (
+              {names.map((nm, i) => { const em = emailFor(nm); return (
                 <div key={i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
-                  <Avatar name={nm} email={(c && c.email) || nm} size={22} />
-                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{nm}</div>{c && c.email && <div className="truncate text-[11px] text-slate-400">{c.email}</div>}</div>
+                  <Avatar name={nm} email={em || nm} size={22} />
+                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{nm}</div>{em && <div className="truncate text-[11px] text-slate-400">{em}</div>}</div>
                 </div>
               ); })}
-              {extra.map((c, i) => (
-                <div key={"c" + i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
-                  <Avatar name={c.name || c.email} email={c.email} size={22} />
-                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{c.name || c.email}</div>{c.name && <div className="truncate text-[11px] text-slate-400">{c.email}</div>}</div>
-                </div>
-              ))}
-              {!names.length && !extra.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">No participant data.</div>}
+              {!names.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">No participant data.</div>}
             </div>
           </div>
         </>
@@ -1373,10 +1367,19 @@ function PeoplePopover({ meeting }) {
   );
 }
 
-// Reports "Participants" column: quick-copy guest emails + email guests (Gmail compose). Tooltips
-// on hover. Emails come from the meeting's known contacts (calendar attendees + shared people).
-function ParticipantsCell({ meeting }) {
-  const emails = [...new Set((meeting.contacts || []).map((c) => c.email).filter(Boolean))];
+// Emails of THIS meeting's actual participants: resolve each participant NAME against a
+// name->email directory (built from all known contacts + the owner) and add any calendar
+// attendees. Per-meeting and independent (not the report's share recipients).
+function meetingParticipantEmails(meeting, emailBook) {
+  const names = (meeting.participants || []).map((p) => p && p.name).filter(Boolean);
+  const out = names.map((n) => emailBook[String(n).trim().toLowerCase()]).filter(Boolean);
+  (meeting.attendees || []).forEach((a) => { const e = typeof a === "string" ? a : (a && a.email); if (e) out.push(String(e).toLowerCase()); });
+  return [...new Set(out)];
+}
+
+// Reports "Participants" column: quick-copy guest emails + email guests (Gmail compose). Tooltips on hover.
+function ParticipantsCell({ meeting, emailBook }) {
+  const emails = meetingParticipantEmails(meeting, emailBook);
   const copy = (e) => { e.stopPropagation(); if (!emails.length) return toast("No participant emails on file"); navigator.clipboard.writeText(emails.join(", ")).then(() => toast(`Copied ${emails.length} email${emails.length > 1 ? "s" : ""}`)).catch(() => {}); };
   const mail = (e) => { e.stopPropagation(); if (!emails.length) return toast("No participant emails on file"); window.open("https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(emails.join(",")) + "&su=" + encodeURIComponent(meeting.title || "Meeting"), "_blank"); };
   const faded = emails.length ? "" : " opacity-40";
@@ -1503,6 +1506,15 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const selectedMeetings = filtered.filter((m) => sel.has(m.id));
   const allSelected = filtered.length > 0 && filtered.every((m) => sel.has(m.id));
   const toggleAll = () => setSel(allSelected ? new Set() : new Set(filtered.map((m) => m.id)));
+  // Directory of name -> email built from every known contact (calendar attendees + shared people)
+  // + the owner. Used to resolve each meeting's participant NAMES to emails.
+  const emailBook = useMemo(() => {
+    const b = {};
+    const add = (name, email) => { if (name && email) b[String(name).trim().toLowerCase()] = String(email).toLowerCase(); };
+    if (user && user.name && user.email) add(user.name, user.email);
+    meetings.forEach((mm) => (mm.contacts || []).forEach((c) => add(c.name, c.email)));
+    return b;
+  }, [meetings, user]);
 
   return (
     <>
@@ -1633,7 +1645,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-slate-800">{m.title}</div>
                           <div className="mt-1 flex items-center gap-2">
-                            <PeoplePopover meeting={m} />
+                            <PeoplePopover meeting={m} emailBook={emailBook} />
                             {m.real && m.status && m.status !== "done" ? <StatusBadge status={m.status} /> : <ScoreChip value={m.scores.overall} />}
                           </div>
                         </div>
@@ -1645,7 +1657,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                       <div>
                         <FolderPicker meeting={m} folders={allFolders} onSave={saveFolders} onCreate={createFolder} />
                       </div>
-                      <ParticipantsCell meeting={m} />
+                      <ParticipantsCell meeting={m} emailBook={emailBook} />
                       <div>
                         {(() => {
                           // Owner = the connected Google user (responsible for the subscription).
