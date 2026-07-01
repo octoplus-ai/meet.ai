@@ -14,6 +14,17 @@ async function deeplTranslate(texts, lang) {
   const target = DEEPL_MAP[lang];
   if (!DEEPL || !target) return null;
   const host = DEEPL.trim().endsWith(":fx") ? "https://api-free.deepl.com" : "https://api.deepl.com";
+  // Cost guard: only use DeepL while inside the FREE monthly allowance. Once it would exceed it
+  // (and start charging the card), fall back to Haiku - which is cheaper than DeepL's paid rate.
+  try {
+    const reqChars = texts.reduce((a, t) => a + String(t == null ? "" : t).length, 0);
+    const ur = await fetch(host + "/v2/usage", { headers: { Authorization: "DeepL-Auth-Key " + DEEPL } });
+    if (ur.ok) {
+      const u = await ur.json();
+      const used = u.character_count || 0, limit = u.character_limit || 0;
+      if (limit && used + reqChars > limit) return null; // would exceed free quota -> use Haiku instead
+    }
+  } catch (e) { /* if the usage check fails, proceed; a 456 quota error below still falls back */ }
   const out = [];
   try {
     for (let i = 0; i < texts.length; i += 50) { // DeepL allows up to 50 text params per request
