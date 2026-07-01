@@ -50,8 +50,13 @@ export default async function handler(req, res) {
     const ns = (r.next_steps || []).map((x) => `- ${typeof x === "string" ? x : (x && x.task) || ""}`).join("\n");
     const people = (Array.isArray(r.participants) ? r.participants : (Array.isArray(m.participants) ? m.participants : [])).map((p) => (typeof p === "string" ? p : (p && p.name))).filter(Boolean);
     const u = (await sb(`app_users?id=eq.${a.ownerId}&select=name,email`))[0] || {};
+    // Meeting type signal (folder the AI classified it into + report category) drives the style.
+    const folders = (Array.isArray(m.folders) && m.folders.length) ? m.folders : (m.folder ? [m.folder] : []);
+    const typeHint = [...folders, r.category].filter(Boolean).join(", ");
     const ctx = [
       `Meeting: ${m.title || "Meeting"}`,
+      typeHint ? `Meeting type / folder: ${typeHint}` : "",
+      (r.topics && r.topics.length) ? `Topics: ${r.topics.join(", ")}` : "",
       people.length ? `Participants: ${people.join(", ")}` : "",
       `Sender: ${u.name || u.email || "The host"}`,
       r.summary ? `Summary: ${r.summary}` : "",
@@ -60,10 +65,19 @@ export default async function handler(req, res) {
     ].filter(Boolean).join("\n");
     const sys = `You are the MEETING HOST writing a genuine, HUMAN follow-up email in the first person ("I"/"we"), in the SAME language the meeting was held in. This is NOT a summary, minutes, or recap, and it must NOT sound like a bot. It should read like a thoughtful person who was actually in the room and is personally following up.
 
-Write it so it feels real:
-- Warm, natural, personal tone. Address the recipient(s) directly by name if known.
-- Reference 2-3 SPECIFIC things that were actually discussed (real names, topics, concerns, a point someone made) so it's clearly about THIS conversation, not a template.
-- Reinforce the value and momentum: acknowledge what matters to them, restate any commitment made, and end with ONE clear, low-friction next step or question (a real call to action).
+FIRST, infer the MEETING TYPE from the "Meeting type / folder", the topics and the content, and adapt the follow-up STYLE to fit it. Pick the ONE that matches:
+- Sales / discovery / demo / proposal / negotiation → reinforce the value for THEM, acknowledge a concern or need they raised, and drive to the next step that advances the deal (a call, a proposal, a trial). Confident, not pushy.
+- Onboarding / explanatory / training / support → clarify what was covered, confirm they're set, and share/point to the next resource or step. Helpful and reassuring.
+- Reminder / logistics → short and to the point: restate the specific commitment, date or action and gently nudge.
+- Informative / status / internal update → a crisp confirmation of the key decisions/info and who owns what. Efficient.
+- 1:1 / team / people management → personal and supportive; acknowledge the person, align on priorities/next check-in.
+- Interview / hiring → warm, thank them, and state the next step in the process + timing.
+- If unclear, default to a warm professional follow-up.
+
+Then write it so it feels real:
+- Warm, natural, HUMAN tone that matches the type above. First person; address the recipient(s) by name if known.
+- Reference 2-3 SPECIFIC things actually discussed (real names, topics, concerns, a point someone made) so it's clearly about THIS conversation, not a template.
+- Reinforce momentum and end with ONE clear, low-friction next step or question (a real call to action) appropriate to the type.
 - Short and skimmable (~90-150 words). NO "Summary"/"Recap" headings and no robotic bullet dump - at most a tiny list only if it genuinely reads naturally.
 - Never invent facts; use only what's in the meeting. Sign off naturally with the sender's first name.
 

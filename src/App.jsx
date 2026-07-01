@@ -460,7 +460,8 @@ function adaptReal(m) {
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
     subtitles: (r.subtitles && typeof r.subtitles === "object") ? r.subtitles : {},
-    video: (done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null,
+    video: (done && m.capture_mode === "inhouse_bot" && m.recording_url) ? m.recording_url
+      : ((done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null),
     cover_url: m.cover_url || null,
     // Known emails for this meeting (calendar attendees + people it was shared with) - for
     // search, the participants popover and "copy emails".
@@ -1558,6 +1559,14 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 <button onClick={() => { setFOwner("all"); setFDate("all"); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">Clear filters</button>
               )}
               <div className="flex-1" />
+              {/* Bulk actions: always visible, greyed/disabled until a selection is made. */}
+              {sel.size > 0 && <span className="text-[12px] font-semibold text-slate-500">{sel.size} selected</span>}
+              <button onClick={() => setShowAnalytics((v) => !v)} disabled={sel.size === 0} title="Analytics for the selected meetings"
+                className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition " + (sel.size === 0 ? "cursor-not-allowed border-slate-100 text-slate-300" : (showAnalytics ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"))}><BarChart3 size={14} /> Analytics</button>
+              <button onClick={() => genBulkDoc()} disabled={sel.size === 0 || !!bulkBusy} title="AI document from the selected meetings"
+                className={"flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition " + (sel.size === 0 ? "cursor-not-allowed bg-slate-100 text-slate-300" : "bg-violet-600 text-white hover:bg-violet-500")}>{bulkBusy === "doc" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Doc</button>
+              <button onClick={() => genBulkDeck()} disabled={sel.size === 0 || !!bulkBusy} title="Presentation from the selected meetings"
+                className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition " + (sel.size === 0 ? "cursor-not-allowed border-slate-100 text-slate-300" : "border-violet-300 text-violet-700 hover:bg-violet-50")}>{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} Presentation</button>
               {filtered.length > 0 && (
                 <button onClick={toggleAll} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">
                   <span className={"flex h-4 w-4 items-center justify-center rounded border " + (allSelected ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 text-transparent")}><Check size={11} /></span>
@@ -1647,15 +1656,6 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               <button onClick={confirmDelete} className="rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-rose-500">Delete Report</button>
             </div>
           </div>
-        </div>
-      )}
-      {sel.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-2xl">
-          <span className="text-[13px] font-semibold text-slate-700">{sel.size} selected</span>
-          <button onClick={() => setShowAnalytics((v) => !v)} className={"flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold " + (showAnalytics ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50")}><BarChart3 size={14} /> Analytics</button>
-          <button onClick={genBulkDoc} disabled={!!bulkBusy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{bulkBusy === "doc" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Doc</button>
-          <button onClick={genBulkDeck} disabled={!!bulkBusy} className="flex items-center gap-1.5 rounded-lg border border-violet-300 px-3 py-1.5 text-[13px] font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-60">{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} Presentation</button>
-          <button onClick={() => { setSel(new Set()); setShowAnalytics(false); }} title="Clear selection" className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
         </div>
       )}
       {bulkDoc && <DocModal doc={bulkDoc.doc} meta={bulkDoc.meta} onClose={() => setBulkDoc(null)} onRegenerate={() => genBulkDoc(true)} regenerating={bulkBusy === "doc"} />}

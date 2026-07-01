@@ -72,7 +72,8 @@ async function createRecallBot(recallBody) {
 // Dedups on calendar_event_id so we never double-book a calendar meeting.
 export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarEventId, botName }) {
   if (!meetingUrl) return { skipped: "no url" };
-  if (!process.env.RECALL_API_KEY) return { error: "RECALL_API_KEY missing" };
+  const OWN = process.env.BOT_ORCHESTRATOR_URL; // set once the in-house bot is live -> use it instead of Recall
+  if (!OWN && !process.env.RECALL_API_KEY) return { error: "RECALL_API_KEY missing" };
 
   if (calendarEventId) {
     const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&status=neq.error&select=id,bot_id`);
@@ -83,6 +84,31 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
   if (exUrl && exUrl.length) return { already: true, meeting: exUrl[0] };
 
   const joinDate = joinAt ? new Date(joinAt) : null;
+
+  // ===== In-house bot path (own orchestrator). Falls through to Recall if not configured. =====
+  if (OWN) {
+    const scheduledOwn = joinDate && joinDate.getTime() > Date.now() + 30 * 1000;
+    const botId = "own_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const m = await sb("meetings", {
+      method: "POST", prefer: "return=representation",
+      body: {
+        user_id: userId, title: title || "Live meeting", source: "OctoMeet Bot", meeting_url: meetingUrl,
+        bot_id: botId, status: scheduledOwn ? "scheduled" : "joining", capture_mode: "inhouse_bot",
+        start_time: scheduledOwn ? joinDate.toISOString() : new Date().toISOString(), calendar_event_id: calendarEventId || null,
+      },
+    });
+    const APP = process.env.APP_URL || "https://meet-ai-three-beige.vercel.app/";
+    try {
+      await fetch(OWN.replace(/\/$/, "") + "/bots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + (process.env.BOT_ORCHESTRATOR_SECRET || "") },
+        body: JSON.stringify({ meetingId: m[0].id, botId, userId, meetingUrl, joinAt: joinAt || null, botName: botName || "OctoMeet AI", callbackUrl: APP + "api/bot/ingest", statusUrl: APP + "api/bot/status", callbackSecret: process.env.BOT_INGEST_SECRET }),
+      });
+    } catch (e) { /* orchestrator unreachable: the meeting stays 'scheduled' and can be retried */ }
+    if (calendarEventId) annotateEvent(userId, calendarEventId, "🐙 OctoMeet AI will join and record this meeting, then add the AI summary & report link here.").catch(() => {});
+    return { ok: true, scheduled: !!scheduledOwn, bot_id: botId, meeting: m[0], mode: "inhouse" };
+  }
+
   const scheduled = joinDate && joinDate.getTime() > Date.now() + 30 * 1000;
   const recallBody = {
     meeting_url: meetingUrl,

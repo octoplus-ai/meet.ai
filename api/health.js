@@ -16,6 +16,8 @@ export default async function handler(req, res) {
       DEEPL_API_KEY: !!process.env.DEEPL_API_KEY,
       RECALL_API_KEY: !!process.env.RECALL_API_KEY,
       RECALL_REGION_URL: process.env.RECALL_REGION_URL || null,
+      BOT_INGEST_SECRET: !!process.env.BOT_INGEST_SECRET,
+      BOT_ORCHESTRATOR_URL: !!process.env.BOT_ORCHESTRATOR_URL,
     },
   };
   // Live DeepL check: confirms the key works + how close we are to the free monthly allowance.
