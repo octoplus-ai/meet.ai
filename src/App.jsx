@@ -462,6 +462,14 @@ function adaptReal(m) {
     subtitles: (r.subtitles && typeof r.subtitles === "object") ? r.subtitles : {},
     video: (done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null,
     cover_url: m.cover_url || null,
+    // Known emails for this meeting (calendar attendees + people it was shared with) - for
+    // search, the participants popover and "copy emails".
+    contacts: (() => {
+      const out = [];
+      (Array.isArray(m.attendees) ? m.attendees : []).forEach((a) => { const e = typeof a === "string" ? a : (a && a.email); if (e) out.push({ email: String(e).toLowerCase(), name: (a && a.name) || "" }); });
+      (Array.isArray(m.shares) ? m.shares : []).forEach((s) => { if (s && s.email && !s.revoked) out.push({ email: String(s.email).toLowerCase(), name: s.name || "" }); });
+      const seen = {}; return out.filter((c) => (seen[c.email] ? false : (seen[c.email] = true)));
+    })(),
     real: true, status: m.status, error: m.error || null, calendarEventId: m.calendar_event_id || null,
   };
 }
@@ -650,6 +658,7 @@ const NAV = [
   { k: "add-people", tkey: "addPeople", icon: Users },
   { k: "ask", tkey: "ask", icon: Sparkles },
   { k: "reports", tkey: "reports", icon: ClipboardList },
+  { k: "analytics", label: "Analytics", icon: BarChart3 },
   { k: "folders", tkey: "folders", icon: Folder, plus: true },
   { k: "calendar", tkey: "calendar", icon: Calendar },
   { k: "for-you", tkey: "forYou", icon: Star, gap: true },
@@ -965,6 +974,7 @@ export default function App() {
         {view === "folders" && <FoldersView onAsk={goAsk} meetings={allMeetings} onOpenFolder={(name) => { setFolderFilter(name); setView("reports"); }} user={user} />}
         {view === "calendar" && <CalendarView onAsk={goAsk} initialTab={calTab} meetings={allMeetings} onOpen={openMeeting} />}
         {view === "for-you" && <ForYouView meetings={allMeetings} onOpen={openMeeting} onAsk={goAsk} user={user} />}
+        {view === "analytics" && <AnalyticsView meetings={allMeetings} user={user} onOpen={openMeeting} onAsk={goAsk} />}
         {view === "coaching" && <CoachingView onAsk={goAsk} />}
         {view === "recommendations" && <RecommendationsView onAsk={goAsk} />}
         {view === "integrations" && <IntegrationsView onAsk={goAsk} />}
@@ -1080,12 +1090,12 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
         {NAV.map((n) => (
           <React.Fragment key={n.k}>
             {n.gap && <div className="my-2 border-t border-white/5" />}
-            <button onClick={() => setView(n.k)} title={t(n.tkey)}
+            <button onClick={() => setView(n.k)} title={n.label || t(n.tkey)}
               className={"group mb-0.5 flex w-full items-center rounded-lg px-3 py-2 text-[13px] font-medium transition " +
                 (collapsed ? "justify-center" : "gap-2.5") + " " +
                 (view === n.k ? "bg-violet-600 text-white shadow" : "text-slate-300 hover:bg-white/5 hover:text-white")}>
               <n.icon size={16} className="shrink-0" />
-              {!collapsed && <span className="flex-1 text-left">{t(n.tkey)}</span>}
+              {!collapsed && <span className="flex-1 text-left">{n.label || t(n.tkey)}</span>}
               {!collapsed && n.plus && <FolderPlus size={14} className="text-slate-500 group-hover:text-slate-300" />}
             </button>
           </React.Fragment>
@@ -1319,6 +1329,51 @@ function RowMenu({ onShare, onDownload, onRename, onDelete }) {
   );
 }
 
+// Participant-count chip that opens a popover: participant names + known emails + "Copy emails".
+function PeoplePopover({ meeting }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const names = (meeting.participants || []).map((p) => p.name).filter(Boolean);
+  const contacts = meeting.contacts || [];
+  const emails = contacts.map((c) => c.email).filter(Boolean);
+  const count = meeting.participantsCount != null ? meeting.participantsCount : names.length;
+  const openMenu = (e) => { e.stopPropagation(); const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } setOpen(true); };
+  const copyEmails = async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(emails.join(", ")); toast(emails.length ? `Copied ${emails.length} email${emails.length > 1 ? "s" : ""}` : "No emails on file for this meeting"); } catch (err) {} };
+  const extra = contacts.filter((c) => !names.some((n) => n.toLowerCase() === (c.name || "").toLowerCase()));
+  return (
+    <span className="relative" onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} onClick={(e) => (open ? setOpen(false) : openMenu(e))} className="flex items-center gap-1 text-[12px] text-slate-400 transition hover:text-violet-600"><Users size={12} /> {count}</button>
+      {open && pos && (
+        <>
+          <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+          <div className="fixed z-[56] w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
+            <div className="flex items-center justify-between px-2 py-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Participants</span>
+              {emails.length > 0 && <button onClick={copyEmails} className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"><Copy size={11} /> Copy emails</button>}
+            </div>
+            <div className="max-h-64 overflow-y-auto">
+              {names.map((nm, i) => { const c = contacts.find((x) => x.name && x.name.toLowerCase() === nm.toLowerCase()); return (
+                <div key={i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+                  <Avatar name={nm} email={(c && c.email) || nm} size={22} />
+                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{nm}</div>{c && c.email && <div className="truncate text-[11px] text-slate-400">{c.email}</div>}</div>
+                </div>
+              ); })}
+              {extra.map((c, i) => (
+                <div key={"c" + i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+                  <Avatar name={c.name || c.email} email={c.email} size={22} />
+                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{c.name || c.email}</div>{c.name && <div className="truncate text-[11px] text-slate-400">{c.email}</div>}</div>
+                </div>
+              ))}
+              {!names.length && !extra.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">No participant data.</div>}
+            </div>
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
 function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder, user, onRename, onDelete }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
@@ -1332,6 +1387,30 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const [fType, setFType] = useState("all");
   const [fSource, setFSource] = useState("all");
   const [fFolder, setFFolder] = useState("all");
+  const [sel, setSel] = useState(() => new Set()); // selected meeting ids for bulk actions
+  const [bulkBusy, setBulkBusy] = useState("");     // "" | "doc" | "deck"
+  const [bulkDoc, setBulkDoc] = useState(null);     // { doc, meta }
+  const [bulkDeck, setBulkDeck] = useState(null);   // { deck, theme, imgUrls, meta }
+  const toggleSel = (id) => setSel((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const genBulkDoc = async () => {
+    if (bulkBusy) return; setBulkBusy("doc");
+    try {
+      const r = await fetch("/api/document", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingIds: [...sel] }) });
+      const d = await r.json();
+      if (!r.ok || !d.doc) { toast("Couldn't generate the document"); return; }
+      setBulkDoc({ doc: d.doc, meta: d.meta });
+    } catch (e) { toast("Network error"); } finally { setBulkBusy(""); }
+  };
+  const genBulkDeck = async () => {
+    if (bulkBusy) return; setBulkBusy("deck");
+    try {
+      const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingIds: [...sel], slideCount: 10, themeId: "sleek-dark" }) });
+      const d = await r.json();
+      if (!r.ok || !d.deck) { toast("Couldn't generate the deck"); return; }
+      const deck = coerceDeck(d.deck, { wantN: 10, imageCount: 0 });
+      setBulkDeck({ deck, theme: getTheme("sleek-dark"), imgUrls: [], meta: d.meta });
+    } catch (e) { toast("Network error"); } finally { setBulkBusy(""); }
+  };
   const [manualFolders, setManualFolders] = useState([]);
   useEffect(() => { store.get("octomeet:folders", []).then((f) => setManualFolders(Array.isArray(f) ? f : [])); }, []);
   // Only folders actually in use (AI-assigned across meetings) + ones you created manually.
@@ -1380,7 +1459,12 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
       .filter((m) => fFolder === "all" || (m.folders || (m.folder ? [m.folder] : [])).includes(fFolder))
       .filter((m) => fType === "all" || (fType === "completed" ? (!m.real || m.status === "done") : (m.real && INCOMPLETE.includes(m.status))))
       .filter((m) => { if (fDate === "all") return true; const d = daysAgo(m.date); return fDate === "today" ? d <= 0 : fDate === "week" ? d <= 7 : d <= 31; })
-      .filter((m) => !q || m.title.toLowerCase().includes(q.toLowerCase()))
+      .filter((m) => {
+        if (!q) return true;
+        const s = q.toLowerCase();
+        const hay = (m.title + " " + (m.summary || "") + " " + (m.participants || []).map((p) => p.name).join(" ") + " " + (m.contacts || []).map((c) => c.name + " " + c.email).join(" ")).toLowerCase();
+        return hay.includes(s);
+      })
       .sort((a, b) => (b.date + b.timeStart).localeCompare(a.date + a.timeStart)),
     [meetings, q, tab, folderFilter, fOwner, fDate, fType, fSource, fFolder]
   );
@@ -1455,8 +1539,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
             <div className="mb-1 flex flex-wrap items-center gap-2">
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("filterByTitle")}
-                  className="w-64 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-violet-400" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search meeting, company or person…"
+                  className="w-72 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-violet-400" />
               </div>
               {folderFilter && (
                 <span className="flex items-center gap-1.5 rounded-lg bg-violet-50 px-3 py-2 text-[13px] font-semibold text-violet-700"><Folder size={13} /> {folderFilter}<button onClick={onClearFolder} className="ml-1 text-violet-400 hover:text-violet-700"><X size={13} /></button></span>
@@ -1486,12 +1570,13 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                   {g.items.map((m) => (
                     <div key={m.id} onClick={() => onOpen(m.id)} role="button" tabIndex={0}
                       className="grid w-full cursor-pointer grid-cols-[1.4fr_1.1fr_1fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-violet-50/40">
-                      <div className="flex min-w-0 items-center gap-4">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <button onClick={(e) => { e.stopPropagation(); toggleSel(m.id); }} title="Select" className={"flex h-5 w-5 shrink-0 items-center justify-center rounded border transition " + (sel.has(m.id) ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 text-transparent hover:border-violet-400")}><Check size={13} /></button>
                         <VideoThumb src={m.video} source={m.source} size={44} at={m.coverAt} />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-slate-800">{m.title}</div>
                           <div className="mt-1 flex items-center gap-2">
-                            <span className="flex items-center gap-1 text-[12px] text-slate-400"><Users size={12} /> {m.participantsCount ?? m.participants.length}</span>
+                            <PeoplePopover meeting={m} />
                             {m.real && m.status && m.status !== "done" ? <StatusBadge status={m.status} /> : <ScoreChip value={m.scores.overall} />}
                           </div>
                         </div>
@@ -1549,6 +1634,16 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
           </div>
         </div>
       )}
+      {sel.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-2xl">
+          <span className="text-[13px] font-semibold text-slate-700">{sel.size} selected</span>
+          <button onClick={genBulkDoc} disabled={!!bulkBusy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{bulkBusy === "doc" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Doc</button>
+          <button onClick={genBulkDeck} disabled={!!bulkBusy} className="flex items-center gap-1.5 rounded-lg border border-violet-300 px-3 py-1.5 text-[13px] font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-60">{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} Presentation</button>
+          <button onClick={() => setSel(new Set())} title="Clear selection" className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+        </div>
+      )}
+      {bulkDoc && <DocModal doc={bulkDoc.doc} meta={bulkDoc.meta} onClose={() => setBulkDoc(null)} />}
+      {bulkDeck && <SlidesModal deck={bulkDeck.deck} theme={bulkDeck.theme} imgUrls={bulkDeck.imgUrls} meta={bulkDeck.meta} onClose={() => setBulkDeck(null)} />}
     </>
   );
 }
@@ -2048,6 +2143,163 @@ function CalToggle({ on, onChange }) {
   useEffect(() => { setV(on); }, [on]);
   const toggle = () => { const n = !v; setV(n); if (onChange) onChange(n); };
   return <button onClick={toggle} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (v ? "bg-emerald-500" : "bg-slate-200")}><span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (v ? "left-[22px]" : "left-0.5")} /></button>;
+}
+
+/* ============================ ANALYTICS ============================= */
+function AnalyticsView({ meetings, user, onOpen, onAsk }) {
+  const [range, setRange] = useState("all"); // "7" | "30" | "90" | "all"
+  const RATE = 50; // assumed $/hour/participant for cost estimates
+  const M = useMemo(() => {
+    const base = (meetings || []).filter((m) => !m.real || m.status === "done");
+    if (range === "all") return base;
+    const d = +range;
+    return base.filter((m) => daysAgo(m.date) <= d);
+  }, [meetings, range]);
+
+  const n = M.length;
+  const partCount = (m) => (m.participantsCount != null ? m.participantsCount : (m.participants ? m.participants.length : 0));
+  const totalMin = M.reduce((a, m) => a + (m.durationMin || 0), 0);
+  const avgMin = n ? Math.round(totalMin / n) : 0;
+  const cost = Math.round(M.reduce((a, m) => a + ((m.durationMin || 0) / 60) * Math.max(1, partCount(m)) * RATE, 0));
+  const avg = (f) => (n ? Math.round(M.reduce((a, m) => a + (f(m) || 0), 0) / n) : 0);
+  const avgScore = avg((m) => m.scores && m.scores.overall);
+  const avgEng = avg((m) => m.scores && m.scores.engagement);
+  const avgPart = n ? (M.reduce((a, m) => a + partCount(m), 0) / n).toFixed(1) : "0";
+
+  const allAI = M.flatMap((m) => m.actionItems || []);
+  const aiTotal = allAI.length;
+  const aiOwner = allAI.filter((a) => a.owner && String(a.owner).trim()).length;
+  const aiDue = allAI.filter((a) => a.due && String(a.due).trim()).length;
+  const execScore = aiTotal ? Math.round(100 * ((aiOwner / aiTotal) * 0.5 + (aiDue / aiTotal) * 0.5)) : 0;
+  const withAgendaFollow = M.filter((m) => (m.actionItems || []).length || (m.nextSteps || []).length).length;
+  const followRate = n ? Math.round((withAgendaFollow / n) * 100) : 0;
+
+  const speakerAgg = {};
+  M.forEach((m) => (m.participants || []).forEach((p) => { const k = p.name || "Speaker"; (speakerAgg[k] = speakerAgg[k] || { name: k, talk: 0, meets: 0 }); speakerAgg[k].talk += p.talkPct || 0; speakerAgg[k].meets++; }));
+  const speakers = Object.values(speakerAgg).map((s) => ({ name: s.name, avgTalk: Math.round(s.talk / Math.max(1, s.meets)), meets: s.meets })).sort((a, b) => b.meets - a.meets).slice(0, 8);
+  const silent = M.reduce((a, m) => a + (m.participants || []).filter((p) => (p.talkPct || 0) === 0).length, 0);
+
+  const sent = { Positive: 0, Neutral: 0, Negative: 0 };
+  M.forEach((m) => { const l = m.sentimentLabel || "Neutral"; sent[l] = (sent[l] || 0) + 1; });
+  const topicCount = {}; M.forEach((m) => (m.topics || []).forEach((t) => (topicCount[t] = (topicCount[t] || 0) + 1)));
+  const topTopics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const srcCount = {}; M.forEach((m) => { const s = m.source || "Other"; srcCount[s] = (srcCount[s] || 0) + 1; });
+
+  const couldBeEmail = M.filter((m) => (m.actionItems || []).length === 0 && (m.scores && m.scores.engagement || 0) < 40);
+  const longMeetings = M.filter((m) => (m.durationMin || 0) > 60);
+
+  const Kpi = ({ label, value, sub, color }) => (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-[12px] font-medium text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-bold" style={{ color: color || "#1e293b" }}>{value}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-slate-400">{sub}</div>}
+    </div>
+  );
+  const Gauge = ({ label, value }) => (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-baseline justify-between"><span className="text-[13px] font-semibold text-slate-700">{label}</span><span className="text-lg font-bold" style={{ color: scoreColor(value) }}>{value}</span></div>
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full" style={{ width: value + "%", background: scoreColor(value) }} /></div>
+    </div>
+  );
+  const Bars = ({ title, rows, max, fmt }) => (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 text-sm font-bold text-slate-800">{title}</div>
+      {rows.length ? (
+        <div className="space-y-2.5">
+          {rows.map((r, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className="w-40 shrink-0 truncate text-[13px] text-slate-600">{r.label}</div>
+              <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-violet-500" style={{ width: (max ? Math.round((r.value / max) * 100) : r.value) + "%" }} /></div>
+              <div className="w-14 shrink-0 text-right text-[12px] font-semibold text-slate-700">{fmt ? fmt(r.value) : r.value}</div>
+            </div>
+          ))}
+        </div>
+      ) : <div className="py-6 text-center text-[13px] text-slate-400">No data yet.</div>}
+    </div>
+  );
+  const H = ({ children }) => <div className="mt-2 mb-1 text-[13px] font-bold uppercase tracking-wide text-slate-400">{children}</div>;
+  const maxTopic = Math.max(1, ...topTopics.map((t) => t[1]));
+  const maxSrc = Math.max(1, ...Object.values(srcCount));
+
+  return (
+    <>
+      <SectionTop title="Analytics" onAsk={onAsk} right={
+        <div className="flex gap-1 rounded-lg border border-slate-200 p-0.5">
+          {[["7", "7d"], ["30", "30d"], ["90", "90d"], ["all", "All"]].map(([k, l]) => (
+            <button key={k} onClick={() => setRange(k)} className={"rounded-md px-2.5 py-1 text-[12px] font-semibold " + (range === k ? "bg-violet-600 text-white" : "text-slate-500 hover:bg-slate-100")}>{l}</button>
+          ))}
+        </div>} />
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        {n === 0 ? (
+          <div className="py-24 text-center text-sm text-slate-400">No finished meetings in this range yet.</div>
+        ) : (
+          <div className="mx-auto max-w-5xl space-y-6">
+            <H>Overview</H>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+              <Kpi label="Meetings" value={n} />
+              <Kpi label="Total hours" value={(totalMin / 60).toFixed(1)} />
+              <Kpi label="Avg duration" value={avgMin + "m"} />
+              <Kpi label="Avg participants" value={avgPart} />
+              <Kpi label="Est. cost" value={"$" + cost.toLocaleString()} sub={"~$" + RATE + "/h/person"} />
+              <Kpi label="Avg Read Score" value={avgScore} color={scoreColor(avgScore)} />
+            </div>
+
+            <H>Scores</H>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Gauge label="Meeting Quality" value={avgScore} />
+              <Gauge label="Engagement" value={avgEng} />
+              <Gauge label="Execution" value={execScore} />
+            </div>
+
+            <H>People & Participation</H>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Bars title="Most active people (avg talk-time)" rows={speakers.map((s) => ({ label: s.name, value: s.avgTalk }))} max={100} fmt={(v) => v + "%"} />
+              <div className="grid grid-cols-2 gap-3">
+                <Kpi label="Silent participants" value={silent} sub="never spoke" color={silent ? "#F97316" : "#16A34A"} />
+                <Kpi label="Balanced talk-time" value={avg((m) => m.scores && m.scores.balance)} color={scoreColor(avg((m) => m.scores && m.scores.balance))} />
+                <Kpi label="Positive sentiment" value={sent.Positive} sub="meetings" color="#16A34A" />
+                <Kpi label="Negative sentiment" value={sent.Negative} sub="meetings" color={sent.Negative ? "#EF4444" : "#94A3B8"} />
+              </div>
+            </div>
+
+            <H>Meeting Effectiveness & Execution</H>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <Kpi label="Action items" value={aiTotal} />
+              <Kpi label="With owner" value={aiTotal ? Math.round((aiOwner / aiTotal) * 100) + "%" : "-"} color={scoreColor(aiTotal ? (aiOwner / aiTotal) * 100 : 0)} />
+              <Kpi label="With deadline" value={aiTotal ? Math.round((aiDue / aiTotal) * 100) + "%" : "-"} color={scoreColor(aiTotal ? (aiDue / aiTotal) * 100 : 0)} />
+              <Kpi label="With follow-up" value={followRate + "%"} sub="have next steps" color={scoreColor(followRate)} />
+            </div>
+
+            <H>Meeting Intelligence</H>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Bars title="Top topics" rows={topTopics.map(([t, c]) => ({ label: t, value: c }))} max={maxTopic} />
+              <Bars title="Meetings by source" rows={Object.entries(srcCount).map(([s, c]) => ({ label: s, value: c }))} max={maxSrc} />
+            </div>
+
+            <H>Improvement Opportunities</H>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div><div className="text-2xl font-bold text-amber-700">{couldBeEmail.length}</div><div className="text-[12px] text-slate-600">Could have been an email <span className="text-slate-400">(no action items, low engagement)</span></div></div>
+                <div><div className="text-2xl font-bold text-amber-700">{longMeetings.length}</div><div className="text-[12px] text-slate-600">Long meetings <span className="text-slate-400">(over 60 min)</span></div></div>
+                <div><div className="text-2xl font-bold text-amber-700">{silent}</div><div className="text-[12px] text-slate-600">Silent participants <span className="text-slate-400">(consider not inviting)</span></div></div>
+              </div>
+              {(couldBeEmail.length > 0) && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {couldBeEmail.slice(0, 6).map((m) => (
+                    <button key={m.id} onClick={() => onOpen(m.id)} className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-[12px] font-medium text-slate-600 hover:border-amber-300">{m.title}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <p className="pt-2 text-center text-[11px] leading-relaxed text-slate-400">
+              Computed from your recorded meetings. Deeper KPIs (punctuality, invited-vs-attended, camera/mic, technical audio quality, agenda adherence) arrive with the in-house capture bot, which surfaces that data.
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 /* ============================ FOR YOU ============================= */
@@ -3925,6 +4177,45 @@ function SlidesModal({ deck, theme, imgUrls, meta, onClose }) {
   );
 }
 
+// Review + send (or copy) an AI-drafted follow-up email.
+function FollowupModal({ data, meetingId, onClose }) {
+  const [subject, setSubject] = useState(data.subject || "");
+  const [bodyTxt, setBodyTxt] = useState(data.body || "");
+  const [to, setTo] = useState((data.to || []).join(", "));
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    const emails = to.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    if (!emails.length) return toast("Add at least one recipient");
+    setBusy(true);
+    try {
+      const r = await fetch("/api/followup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "send", meetingId, subject, body: bodyTxt, to: emails }) });
+      const d = await r.json();
+      if (r.ok) { toast(`Follow-up sent to ${d.sent} recipient${d.sent === 1 ? "" : "s"}`); onClose(); }
+      else toast(d.error === "needScope" ? "Reconnect Google to send email" : "Couldn't send - try again");
+    } catch (e) { toast("Network error"); } finally { setBusy(false); }
+  };
+  const copy = async () => { try { await navigator.clipboard.writeText(`Subject: ${subject}\n\n${bodyTxt}`); toast("Copied to clipboard"); } catch (e) {} };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><Mail size={16} className="text-violet-600" /> Follow-up email</div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <div className="flex-1 space-y-3 overflow-y-auto p-5">
+          <div><label className="text-[12px] font-semibold text-slate-500">To</label><input value={to} onChange={(e) => setTo(e.target.value)} placeholder="emails, comma separated" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" /></div>
+          <div><label className="text-[12px] font-semibold text-slate-500">Subject</label><input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" /></div>
+          <div><label className="text-[12px] font-semibold text-slate-500">Message</label><textarea value={bodyTxt} onChange={(e) => setBodyTxt(e.target.value)} rows={12} className="mt-1 w-full resize-none rounded-lg border border-slate-200 p-3 text-sm leading-relaxed outline-none focus:border-violet-400" /></div>
+        </div>
+        <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3">
+          <button onClick={copy} className="flex items-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-slate-700"><Copy size={14} /> Copy</button>
+          <button onClick={send} disabled={busy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send from my Gmail</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shared, onRename, onDelete, role, shareTok, user }) {
   // Capability matrix (Read.ai parity): Owner (not shared) = all; Editor token = edit+share+manage; Viewer = read-only.
   const canEdit = !shared || role === "Editor";
@@ -3949,6 +4240,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   const [menu, setMenu] = useState(null); // header dropdown: "download" | "push" | "more" | null
   const [docBusy, setDocBusy] = useState(false); // generating in the background (button spinner)
   const [docData, setDocData] = useState(null); // { doc, meta } -> opens the modal when ready
+  const [fupBusy, setFupBusy] = useState(false);
+  const [fupData, setFupData] = useState(null); // { subject, body, to } -> opens the follow-up modal
   const [renaming, setRenaming] = useState(false);
   const [renameVal, setRenameVal] = useState("");
   const [access, setAccess] = useState([]); // per-person shares [{email,role,name}]
@@ -4105,6 +4398,16 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       setDocData({ doc: d.doc, meta: d.meta || { title: meeting.title, date: meeting.date } }); // opens the modal now that it's ready
     } catch (e) { toast("Network error"); } finally { setDocBusy(false); }
   };
+  const genFollowup = async () => {
+    if (fupBusy) return;
+    setFupBusy(true);
+    try {
+      const r = await fetch("/api/followup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "draft", meetingId: meeting.id }) });
+      const d = await r.json();
+      if (!r.ok) { toast("Couldn't draft the email - try again"); return; }
+      setFupData({ subject: d.subject || "", body: d.body || "", to: d.to || [] });
+    } catch (e) { toast("Network error"); } finally { setFupBusy(false); }
+  };
   const doDownload = (kind) => {
     setMenu(null);
     const base = fileBase();
@@ -4144,7 +4447,14 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             : <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft size={16} /> {meeting.title}</button>}
           <div className="flex items-center gap-2">
             {/* AI Document - Claude builds a polished, well-structured doc (PDF + Word) */}
-            <button onClick={genDoc} disabled={docBusy} title="Generate an AI-written, well-structured document of this meeting" className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{docBusy ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <><Sparkles size={14} /> AI Doc</>}</button>
+            <div className="group relative">
+              <button onClick={genDoc} disabled={docBusy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{docBusy ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <><Sparkles size={14} /> AI Doc</>}</button>
+              <div className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-64 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">
+                Turns this meeting into a polished, well-structured document (summary, decisions, action items) - download as <b>PDF</b> or <b>Word</b>.
+              </div>
+            </div>
+            {/* Write a follow-up email (owner only - sends from their Gmail) */}
+            {!shared && <button onClick={genFollowup} disabled={fupBusy} title="Draft a follow-up email from this meeting" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">{fupBusy ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Follow-up</button>}
             {/* Download dropdown - everyone with access (incl. Viewer) can download */}
             <div className="relative">
               <button onClick={() => setMenu(menu === "download" ? null : "download")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download <ChevronDown size={13} /></button>
@@ -4654,6 +4964,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       </div>
       {!shared && <AskPanel meeting={meeting} shared={shared} shareTok={shareTok} />}
       {docData && <DocModal loading={docData.loading} doc={docData.doc} meta={docData.meta} onClose={() => setDocData(null)} />}
+      {fupData && <FollowupModal data={fupData} meetingId={meeting.id} onClose={() => setFupData(null)} />}
     </div>
   );
 }

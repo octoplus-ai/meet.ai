@@ -26,7 +26,10 @@ function buildContext(question, corpus) {
   const top = new Set(scored.slice().sort((a, b) => b.score - a.score).slice(0, 5).filter((s) => s.score > 0).map((s) => s.m.id));
   return corpus.map((m) => {
     const ai = (m.action_items || []).map((i) => `- [${i.done ? "x" : " "}] ${i.task || ""}${i.owner ? " (" + i.owner + ")" : ""}`).join("\n");
-    let block = `### ${m.title} - ${m.dateStr} (${m.source})  [id:${m.id}]\nSummary: ${m.summary || "(none)"}\nRead Score: ${m.score0}.\nAction items:\n${ai || "(none)"}`;
+    let block = `### ${m.title} - ${m.dateStr} (${m.source})  [id:${m.id}]\nSummary: ${m.summary || "(none)"}\nRead Score: ${m.score0}.`;
+    if (m.people && m.people.length) block += `\nParticipants: ${m.people.join(", ")}`;
+    if (m.contacts && m.contacts.length) block += `\nContacts (emails): ${m.contacts.join("; ")}`;
+    block += `\nAction items:\n${ai || "(none)"}`;
     if (top.has(m.id) && m.transcriptText) block += `\nTranscript excerpt:\n` + clip(m.transcriptText, 7000);
     return block;
   }).join("\n\n");
@@ -46,16 +49,24 @@ export default async function handler(req, res) {
     if (!question) return res.status(400).json({ error: "no question" });
 
     // Pull the corpus (finished meetings + their report) for this user.
-    const rows = await sb(`meetings?user_id=eq.${uid}&status=eq.done&select=id,title,start_time,created_at,source,meeting_url,reports(summary,topics,action_items,read_score,scores,transcript)&order=created_at.desc&limit=200`);
+    const rows = await sb(`meetings?user_id=eq.${uid}&status=eq.done&select=id,title,start_time,created_at,source,meeting_url,participants,shares,attendees,reports(summary,topics,action_items,read_score,scores,transcript,participants)&order=created_at.desc&limit=200`);
     const corpus = (rows || []).map((m) => {
       const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
       const tr = r.transcript;
       const transcriptText = Array.isArray(tr) ? tr.map((t) => `${t.speaker || ""}: ${t.text || ""}`).join("\n") : (typeof tr === "string" ? tr : "");
+      // Participant names (report participants > meeting participants).
+      const people = (Array.isArray(r.participants) ? r.participants : (Array.isArray(m.participants) ? m.participants : []))
+        .map((p) => (typeof p === "string" ? p : (p && p.name))).filter(Boolean);
+      // Known emails: calendar attendees + people the report was shared with.
+      const contacts = [];
+      (Array.isArray(m.attendees) ? m.attendees : []).forEach((a) => { const e = typeof a === "string" ? a : (a && a.email); if (e) contacts.push(a.name ? `${a.name} <${e}>` : e); });
+      (Array.isArray(m.shares) ? m.shares : []).forEach((s) => { if (s && s.email && !s.revoked) contacts.push(s.name ? `${s.name} <${s.email}>` : s.email); });
       return {
         id: m.id, title: m.title || "Meeting", source: m.source || "Google Meet",
         dateStr: String(m.start_time || m.created_at || "").slice(0, 10),
         summary: r.summary || "", topics: r.topics || [], action_items: r.action_items || [],
         score0: r.read_score || (r.scores && r.scores.overall) || 0, transcriptText,
+        people, contacts: [...new Set(contacts)],
       };
     });
     if (!corpus.length) {

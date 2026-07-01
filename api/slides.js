@@ -45,34 +45,53 @@ async function loadMeeting(req, body) {
   return null;
 }
 
+async function loadMeetings(req, body) {
+  if (Array.isArray(body.meetingIds) && body.meetingIds.length) {
+    const t = parseCookies(req).om_session;
+    if (!t) return [];
+    const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
+    if (!s.length) return [];
+    const ids = body.meetingIds.filter((x) => typeof x === "string").slice(0, 12).map(enc).join(",");
+    if (!ids) return [];
+    return (await sb(`meetings?id=in.(${ids})&user_id=eq.${s[0].user_id}&select=*,reports(*)`)) || [];
+  }
+  const one = await loadMeeting(req, body);
+  return one ? [one] : [];
+}
+function meetingSection(m, per) {
+  const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
+  const tr = r.transcript;
+  const transcriptText = Array.isArray(tr) ? tr.map((x) => `${x.speaker || ""}: ${x.text || ""}`).join("\n") : (typeof tr === "string" ? tr : "");
+  const participants = (Array.isArray(r.participants) ? r.participants : (Array.isArray(m.participants) ? m.participants : [])).map((p) => (typeof p === "string" ? p : (p && p.name))).filter(Boolean);
+  const ai = (r.action_items || []).map((a) => `- ${a.task || ""}${a.owner ? " (" + a.owner + ")" : ""}${a.due ? " [due " + a.due + "]" : ""}`).join("\n");
+  return [
+    `## Meeting: ${m.title || "Meeting"}`,
+    m.start_time ? `Date: ${m.start_time}` : "",
+    participants.length ? `Participants: ${participants.join(", ")}` : "",
+    r.summary ? `Summary: ${r.summary}` : "",
+    (r.topics && r.topics.length) ? `Topics: ${r.topics.join(", ")}` : "",
+    ai ? `Action items:\n${ai}` : "",
+    transcriptText ? `Transcript excerpt:\n${transcriptText.slice(0, per)}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
   try {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const m = await loadMeeting(req, body);
-    if (!m) return res.status(401).json({ error: "not authorized" });
+    const mtgs = await loadMeetings(req, body);
+    if (!mtgs.length) return res.status(401).json({ error: "not authorized" });
+    const multi = mtgs.length > 1;
+    const m = mtgs[0];
 
     const N = Math.max(4, Math.min(16, parseInt(body.slideCount, 10) || 8));
     const themeId = body.themeId || "sleek-dark";
     const withImages = !!body.withImages && !!process.env.OPENAI_API_KEY;
 
-    const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
-    const tr = r.transcript;
-    const transcriptText = Array.isArray(tr) ? tr.map((x) => `${x.speaker || ""}: ${x.text || ""}`).join("\n") : (typeof tr === "string" ? tr : "");
-    const participants = (Array.isArray(r.participants) ? r.participants : (Array.isArray(m.participants) ? m.participants : [])).map((p) => (typeof p === "string" ? p : (p && p.name))).filter(Boolean);
-    const ai = (r.action_items || []).map((a) => `- ${a.task || ""}${a.owner ? " (" + a.owner + ")" : ""}${a.due ? " [due " + a.due + "]" : ""}`).join("\n");
-
-    const ctxText = [
-      `Title: ${m.title || "Meeting"}`,
-      m.start_time ? `Date: ${m.start_time}` : "",
-      participants.length ? `Participants: ${participants.join(", ")}` : "",
-      r.summary ? `Summary: ${r.summary}` : "",
-      (r.topics && r.topics.length) ? `Topics: ${r.topics.join(", ")}` : "",
-      ai ? `Action items:\n${ai}` : "",
-      transcriptText ? `\nTranscript:\n${transcriptText.slice(0, 9000)}` : "(no transcript available)",
-    ].filter(Boolean).join("\n");
+    const per = Math.max(1500, Math.floor(9000 / mtgs.length));
+    const ctxText = mtgs.map((x) => meetingSection(x, per)).join("\n\n---\n\n") || "(no transcript available)";
 
     const fileText = (Array.isArray(body.files) ? body.files : []).slice(0, 5)
       .map((f) => `\n--- Attached file: ${String(f.name || "file")} ---\n${String(f.text || "").slice(0, 4000)}`).join("");
@@ -83,7 +102,7 @@ export default async function handler(req, res) {
       ? `\n\nThe user attached ${images.length} image(s), referenceable as ${images.map((_, i) => `img_${i}`).join(", ")}. Use them on "imageText" slides via "imageRef" where genuinely relevant; otherwise omit imageRef.`
       : "";
 
-    const sys = `You are an expert presentation designer. Turn the meeting below into a tight, modern slide deck like Gamma.
+    const sys = `You are an expert presentation designer. Turn the ${multi ? `${mtgs.length} meetings below into ONE cohesive` : "meeting below into a"} tight, modern slide deck like Gamma${multi ? " that synthesizes the common story across them" : ""}.
 
 HARD RULES
 - Return EXACTLY ${N} slides. The first slide MUST be "cover"; the last MUST be "closing".
@@ -131,7 +150,7 @@ Allowed layouts: ${VALID_LAYOUTS.join(", ")}. You may add an optional "note" (sp
       const userCount = images.length;
       picks.forEach((s, i) => { if (results[i]) { genImages.push(results[i]); s.bgImage = userCount + genImages.length - 1; } });
     }
-    return res.status(200).json({ deck, genImages, themeId, meta: { title: m.title || "Meeting", date: m.start_time || m.created_at || "" } });
+    return res.status(200).json({ deck, genImages, themeId, meta: { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "" } });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

@@ -39,14 +39,16 @@ async function notifyParticipants(meeting, ai, rep) {
 
     // 2) Auto-recap email to attendees + owner (only if the pref is on and Gmail is connected).
     let sent = 0;
+    let attendeeList = null; // persisted so the app (search, copy-emails, Ask Octo) knows participant emails
+    if (meeting.calendar_event_id && token) {
+      try {
+        const ev = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(meeting.calendar_event_id)}`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+        attendeeList = arr(ev && ev.attendees).filter((at) => at && at.email && !at.resource).map((at) => ({ email: String(at.email).toLowerCase(), name: at.displayName || "", response: at.responseStatus || "" }));
+      } catch (e) { /* ignore */ }
+    }
     if (prefs.autoRecap !== false && token && u.email) {
       const recips = new Set([u.email.toLowerCase()]);
-      if (meeting.calendar_event_id) {
-        try {
-          const ev = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(meeting.calendar_event_id)}`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
-          for (const at of arr(ev && ev.attendees)) { if (at && at.email && !at.resource && at.responseStatus !== "declined") recips.add(String(at.email).toLowerCase()); }
-        } catch (e) { /* ignore */ }
-      }
+      (attendeeList || []).forEach((at) => { if (at.response !== "declined") recips.add(at.email); });
       const to = [...recips].filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e));
       for (const email of to) {
         const e = entryFor(email);
@@ -56,7 +58,9 @@ async function notifyParticipants(meeting, ai, rep) {
         if (r.ok) sent++;
       }
     }
-    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { shares } }); // notified_at already claimed above
+    const finalPatch = { shares }; // notified_at already claimed above
+    if (attendeeList && attendeeList.length) finalPatch.attendees = attendeeList;
+    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: finalPatch });
     console.log("post-report actions: " + sent + " recap emails for " + meeting.id);
   } catch (e) { console.error("post-report actions error:", e && (e.message || e)); }
 }

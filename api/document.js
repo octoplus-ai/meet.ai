@@ -28,33 +28,52 @@ async function loadMeeting(req, body) {
   return null;
 }
 
+// Returns an array of owned meetings (1 for the single path, many for multi-select).
+async function loadMeetings(req, body) {
+  if (Array.isArray(body.meetingIds) && body.meetingIds.length) {
+    const t = parseCookies(req).om_session;
+    if (!t) return [];
+    const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
+    if (!s.length) return [];
+    const ids = body.meetingIds.filter((x) => typeof x === "string").slice(0, 12).map(enc).join(",");
+    if (!ids) return [];
+    return (await sb(`meetings?id=in.(${ids})&user_id=eq.${s[0].user_id}&select=*,reports(*)`)) || [];
+  }
+  const one = await loadMeeting(req, body);
+  return one ? [one] : [];
+}
+
+function meetingSection(m, per) {
+  const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
+  const tr = r.transcript;
+  const transcriptText = Array.isArray(tr) ? tr.map((x) => `${x.speaker || ""}: ${x.text || ""}`).join("\n") : (typeof tr === "string" ? tr : "");
+  const participants = (Array.isArray(r.participants) ? r.participants : (Array.isArray(m.participants) ? m.participants : [])).map((p) => (typeof p === "string" ? p : (p && p.name))).filter(Boolean);
+  const ai = (r.action_items || []).map((a) => `- ${a.task || ""}${a.owner ? " (" + a.owner + ")" : ""}${a.due ? " [due " + a.due + "]" : ""}`).join("\n");
+  return [
+    `## Meeting: ${m.title || "Meeting"}`,
+    m.start_time ? `Date: ${m.start_time}` : "",
+    participants.length ? `Participants: ${participants.join(", ")}` : "",
+    r.summary ? `Summary: ${r.summary}` : "",
+    (r.topics && r.topics.length) ? `Topics: ${r.topics.join(", ")}` : "",
+    ai ? `Action items:\n${ai}` : "",
+    transcriptText ? `Transcript excerpt:\n${transcriptText.slice(0, per)}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
   try {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const m = await loadMeeting(req, body);
-    if (!m) return res.status(401).json({ error: "not authorized" });
+    const mtgs = await loadMeetings(req, body);
+    if (!mtgs.length) return res.status(401).json({ error: "not authorized" });
+    const multi = mtgs.length > 1;
+    const m = mtgs[0];
+    const per = Math.max(1500, Math.floor(8000 / mtgs.length));
+    const ctx = mtgs.map((x) => meetingSection(x, per)).join("\n\n---\n\n");
 
-    const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
-    const tr = r.transcript;
-    const transcriptText = Array.isArray(tr) ? tr.map((x) => `${x.speaker || ""}: ${x.text || ""}`).join("\n") : (typeof tr === "string" ? tr : "");
-    const participants = (Array.isArray(r.participants) ? r.participants : (Array.isArray(m.participants) ? m.participants : [])).map((p) => (typeof p === "string" ? p : (p && p.name))).filter(Boolean);
-    const ai = (r.action_items || []).map((a) => `- ${a.task || ""}${a.owner ? " (" + a.owner + ")" : ""}${a.due ? " [due " + a.due + "]" : ""}`).join("\n");
-
-    const ctx = [
-      `Title: ${m.title || "Meeting"}`,
-      m.start_time ? `Date: ${m.start_time}` : "",
-      participants.length ? `Participants: ${participants.join(", ")}` : "",
-      r.summary ? `Summary: ${r.summary}` : "",
-      (r.topics && r.topics.length) ? `Topics: ${r.topics.join(", ")}` : "",
-      ai ? `Action items:\n${ai}` : "",
-      (r.chapters && r.chapters.length) ? `Chapters: ${r.chapters.map((c) => (typeof c === "string" ? c : c.title)).join(", ")}` : "",
-      transcriptText ? `\nTranscript:\n${transcriptText.slice(0, 8000)}` : "",
-    ].filter(Boolean).join("\n");
-
-    const sys = `You are an expert meeting analyst and document designer. Read the meeting below and produce a POLISHED, executive-ready document - the kind that scores 100/100 for clarity and structure. Decide the perfect structure yourself based on what was actually discussed (it differs for a sales call vs a 1:1 vs a planning session).
+    const sys = `You are an expert meeting analyst and document designer. ${multi ? `You are given ${mtgs.length} meetings. SYNTHESIZE them into ONE cohesive, executive-ready document: find the common threads, consolidate decisions and action items ACROSS all meetings, and note per-meeting specifics where relevant.` : "Read the meeting below and produce a POLISHED, executive-ready document"} - the kind that scores 100/100 for clarity and structure. Decide the perfect structure yourself based on what was actually discussed (it differs for a sales call vs a 1:1 vs a planning session).
 
 Write in the SAME language the meeting was held in (detect it). Be specific and concrete - use real names, numbers, decisions and quotes from the transcript, never generic filler. Each section heading gets a fitting emoji. Keep it skimmable.
 
@@ -86,7 +105,7 @@ Rules: 4-6 sections; BE CONCISE - short paragraphs (1-2 sentences) and prefer bu
     text = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
     let doc;
     try { doc = JSON.parse(text); } catch (e) { const s = text.indexOf("{"), end = text.lastIndexOf("}"); doc = JSON.parse(text.slice(s, end + 1)); }
-    return res.status(200).json({ doc, meta: { title: m.title || "Meeting", date: m.start_time || m.created_at || "" } });
+    return res.status(200).json({ doc, meta: { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "" } });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
