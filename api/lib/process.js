@@ -15,7 +15,12 @@ const arr = (x) => (Array.isArray(x) ? x : []);
 // Idempotent via meetings.notified_at. Best-effort; never throws into the pipeline.
 async function notifyParticipants(meeting, ai, rep) {
   try {
+    // ATOMIC CLAIM: only ONE run may send the recap. A conditional PATCH (notified_at IS NULL)
+    // is resolved atomically by Postgres row-locking, so concurrent processMeeting runs
+    // (webhook retry + poll/reprocess) can never double-send. If we don't win, bail.
     if (meeting.notified_at) return;
+    const claim = await sb(`meetings?id=eq.${meeting.id}&notified_at=is.null`, { method: "PATCH", body: { notified_at: new Date().toISOString() }, prefer: "return=representation" });
+    if (!Array.isArray(claim) || !claim.length) return;
     const ownerId = meeting.user_id;
     const u = (await sb(`app_users?id=eq.${ownerId}&select=name,email,sharing_prefs,integrations`))[0] || {};
     const prefs = (u.sharing_prefs && typeof u.sharing_prefs === "object") ? u.sharing_prefs : {};
@@ -51,7 +56,7 @@ async function notifyParticipants(meeting, ai, rep) {
         if (r.ok) sent++;
       }
     }
-    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { shares, notified_at: new Date().toISOString() } });
+    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { shares } }); // notified_at already claimed above
     console.log("post-report actions: " + sent + " recap emails for " + meeting.id);
   } catch (e) { console.error("post-report actions error:", e && (e.message || e)); }
 }
