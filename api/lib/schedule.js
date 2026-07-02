@@ -78,8 +78,34 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
   if (calendarEventId) {
     // Dedup on the calendar event (one row per event, enforced by a DB unique index). Include ALL
     // statuses so a past errored meeting doesn't trigger a duplicate INSERT (23505) on every sweep.
-    const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&select=id,bot_id`);
-    if (ex && ex.length) return { already: true, meeting: ex[0] };
+    const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&select=id,bot_id,status,start_time,status_synced_at`);
+    if (ex && ex.length) {
+      const m0 = ex[0];
+      const evStart = joinAt ? new Date(joinAt) : null;
+      // RE-ARM the same row (can't insert a second one) when:
+      //  - it errored and the event was rescheduled to the future, OR
+      //  - it errored, the meeting is still ongoing (<60 min in), and the last attempt ended >12 min
+      //    ago (join-wait is 10 min, so cycles never overlap and a ghost meeting can't spam boots), OR
+      //  - it's still "scheduled" but the event time moved (user rescheduled before it ran).
+      const lastSync = m0.status_synced_at ? new Date(m0.status_synced_at).getTime() : 0;
+      const futureEv = evStart && evStart.getTime() > Date.now() + 30000;
+      const ongoingEv = evStart && evStart.getTime() > Date.now() - 60 * 60000;
+      const cooledDown = Date.now() - lastSync > 12 * 60000;
+      const timeChanged = evStart && m0.start_time && Math.abs(new Date(m0.start_time).getTime() - evStart.getTime()) > 120000;
+      const rearm = OWN && ((m0.status === "error" && (futureEv || (ongoingEv && cooledDown))) || (m0.status === "scheduled" && timeChanged));
+      if (!rearm) return { already: true, meeting: m0 };
+      const schedOwn = futureEv;
+      await sb(`meetings?id=eq.${m0.id}`, { method: "PATCH", body: { status: schedOwn ? "scheduled" : "joining", error: null, meeting_url: meetingUrl, start_time: schedOwn ? evStart.toISOString() : new Date().toISOString(), status_synced_at: new Date().toISOString() } });
+      const APP0 = (process.env.APP_URL || "https://meet-ai-three-beige.vercel.app").replace(/\/+$/, "");
+      try {
+        await fetch(OWN.replace(/\/$/, "") + "/bots", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-orch-secret": process.env.ORCH_SHARED_SECRET || "" },
+          body: JSON.stringify({ meetingId: m0.id, botId: m0.bot_id, userId, meetingUrl, joinAt: schedOwn ? joinAt : null, botName: botName || "OctoMeet AI", callbackUrl: APP0 + "/api/bot/ingest", statusUrl: APP0 + "/api/bot/status", callbackSecret: process.env.BOT_INGEST_SECRET }),
+        });
+      } catch (e) { /* next sweep retries */ }
+      return { ok: true, rearmed: true, scheduled: !!schedOwn, bot_id: m0.bot_id, meeting: m0, mode: "inhouse" };
+    }
   }
   // Cross-path dedup (V1 + V2 + cron): never two bots for the same active meeting URL.
   const exUrl = await sb(`meetings?user_id=eq.${userId}&meeting_url=eq.${encodeURIComponent(meetingUrl)}&status=in.(scheduled,joining,in_call,recording,processing)&select=id,bot_id`);
