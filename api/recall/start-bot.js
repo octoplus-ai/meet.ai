@@ -17,7 +17,8 @@ export default async function handler(req, res) {
     if (!s.length) return res.status(401).json({ error: "not authenticated" });
 
     if (!body.meetingUrl) return res.status(400).json({ error: "meetingUrl required" });
-    if (!process.env.RECALL_API_KEY) return res.status(400).json({ error: "RECALL_API_KEY not configured in Vercel" });
+    // In-house bot (BOT_ORCHESTRATOR_URL) is the active path; Recall is only a fallback.
+    if (!process.env.BOT_ORCHESTRATOR_URL && !process.env.RECALL_API_KEY) return res.status(400).json({ error: "No bot backend configured (set BOT_ORCHESTRATOR_URL or RECALL_API_KEY)" });
 
     const result = await scheduleBot(s[0].user_id, {
       meetingUrl: body.meetingUrl, title: body.title, joinAt: body.joinAt,
