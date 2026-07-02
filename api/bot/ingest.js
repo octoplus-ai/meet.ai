@@ -67,6 +67,7 @@ export default async function handler(req, res) {
     const patch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString(), participants: participants.map((p) => p.name), capture_mode: "inhouse_bot" };
     if (body.durationMin) patch.duration_min = body.durationMin;
     if (body.recordingUrl) patch.recording_url = body.recordingUrl;
+    if (body.coverUrl) patch.cover_url = body.coverUrl; // real frame extracted by the worker -> report + recap email thumbnail
     await sb(`meetings?id=eq.${enc(meeting.id)}`, { method: "PATCH", body: patch });
 
     res.status(200).json({ ok: true, meeting_id: meeting.id });
