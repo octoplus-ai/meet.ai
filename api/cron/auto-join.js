@@ -5,9 +5,13 @@ import { armUserCalendar } from "../lib/schedule.js";
 
 export default async function handler(req, res) {
   try {
-    // Allow Vercel Cron (sets x-vercel-cron) or a manual call with the shared key.
+    // Auth: Vercel Cron sets x-vercel-cron (external requests can't forge x-vercel-* headers, Vercel
+    // strips them). Also accept an Authorization: Bearer <CRON_SECRET> for manual/secure triggering.
     const key = new URL(req.url, "http://x").searchParams.get("key");
-    const isCron = req.headers["x-vercel-cron"] || (process.env.RECALL_WEBHOOK_SECRET && key === process.env.RECALL_WEBHOOK_SECRET);
+    const bearer = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const isCron = req.headers["x-vercel-cron"]
+      || (process.env.CRON_SECRET && bearer === process.env.CRON_SECRET)
+      || (process.env.RECALL_WEBHOOK_SECRET && key === process.env.RECALL_WEBHOOK_SECRET);
     if (!isCron) return res.status(401).json({ error: "unauthorized" });
 
     const users = await sb(`app_users?auto_join=eq.true&select=id,notetaker_name,recall_calendar_id`);

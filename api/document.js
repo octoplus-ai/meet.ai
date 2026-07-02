@@ -94,31 +94,39 @@ export default async function handler(req, res) {
     const per = Math.max(1500, Math.floor(8000 / mtgs.length));
     const ctx = mtgs.map((x) => meetingSection(x, per)).join("\n\n---\n\n");
 
-    const sys = `You are an expert meeting analyst and document designer. ${multi ? `You are given ${mtgs.length} meetings. MERGE them into ONE unified, executive-ready document - do NOT create a separate section per meeting and do NOT summarize them one by one. Instead, combine and cross-reference everything: synthesize the shared themes, consolidate decisions and action items ACROSS the whole set, reconcile what evolved between meetings, and tell ONE coherent story as if it were a single body of work.` : "Read the meeting below and produce a POLISHED, executive-ready document"} - the kind that scores 100/100 for clarity and structure. Decide the perfect structure yourself based on what was actually discussed (it differs for a sales call vs a 1:1 vs a planning session).
+    const sys = `You are a world-class chief-of-staff and knowledge designer. Your output is NOT a recap - it is "the best version of this meeting": a polished, reusable working document a professional can open before the NEXT similar meeting and be fully prepared, and can also present from directly. Think of it as the meeting distilled, cleaned up, and UPGRADED.
 
-Write in the SAME language the meeting was held in (detect it). Be specific and concrete - use real names, numbers, decisions and quotes from the transcript, never generic filler. Each section heading gets a fitting emoji. Keep it skimmable.
+${multi ? `You are given ${mtgs.length} meetings. MERGE them into ONE unified document - do NOT create a section per meeting or summarize them one by one. Synthesize the shared themes, consolidate decisions and action items ACROSS the whole set, reconcile what evolved between them, and tell ONE coherent story as a single body of work.` : "Read the meeting below and build the document."}
+
+WHAT MAKES IT "AMAZING" (do all of this):
+- DISTILL AND IMPROVE, don't transcribe. Turn rambling discussion into crisp, well-worded points. Fix filler, tangents and repetition. Keep ONLY what is genuinely important, decision-relevant, or reusable next time. Ruthlessly cut noise.
+- Make it REUSABLE. Where the content supports it, surface the durable value: the key topics explained clearly, the strongest arguments/talking points, the questions that mattered (and the answers), objections raised and how they were handled, useful data/numbers, and any framework or approach worth repeating. This is source material for future similar meetings.
+- Be CONCRETE and faithful. Use real names, numbers, decisions and short verbatim quotes from the transcript. NEVER invent facts, figures, owners or dates that are not in the source. If the meeting was thin, produce a shorter honest document rather than padding.
+- Be PRESENTATION-READY: confident, well-structured, skimmable. Each section heading gets a fitting emoji.
+- Decide the perfect structure YOURSELF based on what was actually discussed (a sales call, a 1:1, a planning session and a training session each deserve different sections). Prefer sections that will still be useful weeks later.
+- Write in the SAME language the meeting was held in (detect it).
 
 Return ONLY valid JSON (no markdown fences) with EXACTLY this shape:
 {
-  "title": "string - punchy document title",
-  "subtitle": "string - one line describing the meeting",
+  "title": "string - punchy, specific document title (not just the meeting name)",
+  "subtitle": "string - one line on what this doc gives the reader",
   "summaryLabel": "string - heading for the summary box IN THE DOCUMENT'S LANGUAGE, e.g. 'Resumen ejecutivo' or 'Executive summary' (NOT 'TL;DR')",
-  "tldr": "string - 1-2 sentence executive summary",
+  "tldr": "string - 2-3 sentence executive summary a busy person could read alone and be caught up",
   "tags": ["3-5 short topic tags"],
   "sections": [
     { "emoji": "📌", "heading": "Section title", "paragraphs": ["..."], "bullets": ["..."] }
   ],
-  "decisions": ["key decisions made"],
+  "decisions": ["key decisions made - verbatim intent, no invention"],
   "actionItems": [ { "task": "...", "owner": "...", "due": "..." } ],
   "nextSteps": ["concrete next steps"],
   "quote": { "text": "a memorable verbatim quote", "who": "speaker name" }
 }
-Rules: 4-6 sections; BE CONCISE - short paragraphs (1-2 sentences) and prefer bullets; bullets/paragraphs may be empty arrays where not needed; omit "quote" if none stands out; never invent facts not in the transcript.`;
+Rules: 4-7 sections, each earning its place. Prefer tight bullets over long paragraphs; paragraphs are 1-2 sentences max. bullets/paragraphs may be empty arrays where not needed. Omit "quote" if nothing stands out. Only include owners/dues that were actually stated.`;
 
     const up = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 1800, system: sys, messages: [{ role: "user", content: ctx }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 3000, system: sys, messages: [{ role: "user", content: ctx }] }),
     });
     if (!up.ok) { const tx = await up.text().catch(() => ""); return res.status(502).json({ error: "claude_failed", detail: tx.slice(0, 300) }); }
     const data = await up.json();

@@ -97,12 +97,12 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
         start_time: scheduledOwn ? joinDate.toISOString() : new Date().toISOString(), calendar_event_id: calendarEventId || null,
       },
     });
-    const APP = process.env.APP_URL || "https://meet-ai-three-beige.vercel.app/";
+    const APP = (process.env.APP_URL || "https://meet-ai-three-beige.vercel.app").replace(/\/+$/, "");
     try {
       await fetch(OWN.replace(/\/$/, "") + "/bots", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-orch-secret": process.env.ORCH_SHARED_SECRET || "" },
-        body: JSON.stringify({ meetingId: m[0].id, botId, userId, meetingUrl, joinAt: joinAt || null, botName: botName || "OctoMeet AI", callbackUrl: APP + "api/bot/ingest", statusUrl: APP + "api/bot/status", callbackSecret: process.env.BOT_INGEST_SECRET }),
+        body: JSON.stringify({ meetingId: m[0].id, botId, userId, meetingUrl, joinAt: joinAt || null, botName: botName || "OctoMeet AI", callbackUrl: APP + "/api/bot/ingest", statusUrl: APP + "/api/bot/status", callbackSecret: process.env.BOT_INGEST_SECRET }),
       });
     } catch (e) { /* orchestrator unreachable: the meeting stays 'scheduled' and can be retried */ }
     if (calendarEventId) annotateEvent(userId, calendarEventId, "🐙 OctoMeet AI will join and record this meeting, then add the AI summary & report link here.").catch(() => {});

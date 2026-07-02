@@ -19,19 +19,32 @@ const MODEL = "claude-sonnet-4-6";
 const enc = encodeURIComponent;
 const VALID_LAYOUTS = ["cover", "agenda", "bullets", "twoColumn", "bigStat", "quote", "imageText", "timeline", "closing"];
 
-// Generate one AI image (OpenAI gpt-image-1) as a data URL, or null on failure.
+// Generate one AI image as a data URL. Tries gpt-image-1, then falls back to dall-e-3 so images
+// NEVER silently break (gpt-image-1 requires an org-verified key; dall-e-3 does not). null only if both fail.
+async function genImageWith(key, model, prompt) {
+  const body = model === "gpt-image-1"
+    ? { model, prompt, size: "1536x1024", quality: "medium", n: 1 }
+    : { model: "dall-e-3", prompt, size: "1792x1024", quality: "hd", response_format: "b64_json", n: 1 };
+  const r = await fetch("https://api.openai.com/v1/images/generations", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${model} ${r.status}: ${(await r.text().catch(() => "")).slice(0, 160)}`);
+  const d = await r.json();
+  const b64 = d && d.data && d.data[0] && d.data[0].b64_json;
+  if (!b64) throw new Error(`${model}: empty response`);
+  return "data:image/png;base64," + b64;
+}
+
 async function genImage(key, prompt) {
-  try {
-    const r = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gpt-image-1", prompt: String(prompt || "").slice(0, 900), size: "1536x1024", quality: "medium", n: 1 }),
-    });
-    if (!r.ok) return null;
-    const d = await r.json();
-    const b64 = d && d.data && d.data[0] && d.data[0].b64_json;
-    return b64 ? "data:image/png;base64," + b64 : null;
-  } catch (e) { return null; }
+  const p = String(prompt || "").slice(0, 900);
+  if (!p) return null;
+  for (const model of ["gpt-image-1", "dall-e-3"]) {
+    try { return await genImageWith(key, model, p); }
+    catch (e) { console.warn("[slides] image gen failed on", model + ":", e.message); }
+  }
+  return null;
 }
 
 async function loadMeeting(req, body) {
@@ -132,7 +145,7 @@ HARD RULES
 - Choose the layout that fits the content: bigStat for a single KPI; quote for a verbatim quote; twoColumn for comparisons; timeline for sequences/roadmaps; agenda near the start; bullets only for 3-5 parallel points; imageText when an attached image is relevant.
 - NEVER invent statistics, numbers, quotes, names, dates or sources. Use ONLY facts in the meeting/attachments. A bigStat number must appear verbatim in the source; a quote must be verbatim from the transcript.
 - Write ALL text in the SAME language the meeting was held in; set "lang" to its ISO code.
-- The deck must be designed for theme "${themeId}" (clean, high-contrast, minimal).${imageManifest}${withImages ? `\n- IMAGES: add an "imagePrompt" field to the COVER, the CLOSING, and 2-3 of the most visual content slides. imagePrompt = a vivid, literal ENGLISH description of a professional, cinematic photo/illustration with NO text or words in the image, relevant to that slide's topic. These become full-bleed backgrounds. Do NOT add imagePrompt to dense data/bullet slides that need a clean background. At most 5 imagePrompts total.` : ""}
+- The deck must be designed for theme "${themeId}" (clean, high-contrast, minimal).${imageManifest}${withImages ? `\n- IMAGES: add an "imagePrompt" field to the COVER, the CLOSING, and 2-3 of the most visual content slides. imagePrompt = a vivid, literal ENGLISH description of a professional, cinematic photo/illustration with NO text, letters, words, logos, charts or UI in the image, relevant to that slide's topic. These become full-bleed backgrounds behind a dark scrim, so favor images with clear negative space and a focal subject off-center. Keep ONE consistent art direction across every image (same medium, palette, and lighting - e.g. "cinematic wide-angle photo, soft natural light, muted palette with a violet accent") so the deck looks designed by one hand. Do NOT add imagePrompt to dense data/bullet slides that need a clean background. At most 5 imagePrompts total.` : ""}
 
 Return ONLY valid JSON (no markdown fences), EXACTLY:
 {"lang":"xx","title":"...","subtitle":"...","themeId":"${themeId}","slides":[
