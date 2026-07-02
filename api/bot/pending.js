@@ -10,12 +10,18 @@ export default async function handler(req, res) {
     const given = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || req.headers["x-bot-ingest-secret"] || "";
     if (!SECRET || given !== SECRET) return res.status(401).json({ error: "unauthorized" });
 
-    const from = new Date(Date.now() - 15 * 60000).toISOString();
+    const from = new Date(Date.now() - 60 * 60000).toISOString(); // cover meetings that started up to 1h ago (still ongoing)
     const to = new Date(Date.now() + 7 * 86400000).toISOString();
-    const rows = await sb(
-      `meetings?capture_mode=eq.inhouse_bot&status=eq.scheduled&start_time=gte.${encodeURIComponent(from)}&start_time=lte.${encodeURIComponent(to)}` +
-      `&select=id,user_id,meeting_url,start_time,title,bot_id&order=start_time.asc&limit=100`
+    const staleJoin = Date.now() - 11 * 60000; // a "joining" row older than this = the worker died (join-wait is 10 min)
+    const raw = await sb(
+      `meetings?capture_mode=eq.inhouse_bot&status=in.(scheduled,joining)&start_time=gte.${encodeURIComponent(from)}&start_time=lte.${encodeURIComponent(to)}` +
+      `&select=id,user_id,meeting_url,start_time,title,bot_id,status,status_synced_at&order=start_time.asc&limit=100`
     );
+    // Re-arm scheduled meetings, plus "joining" meetings whose worker DIED (stale) so a failed initial
+    // arm POST is self-healed. A fresh/ongoing "joining" (worker still in the lobby) is skipped to avoid
+    // booting a duplicate bot; the orchestrator also dedups by meetingId within its lifetime.
+    const rows = (raw || []).filter((r) => r.status === "scheduled" ||
+      (r.status === "joining" && (!r.status_synced_at || new Date(r.status_synced_at).getTime() < staleJoin)));
 
     // Resolve each owner's notetaker display name (best-effort).
     const uids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
