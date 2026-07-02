@@ -68,7 +68,7 @@ async function notifyParticipants(meeting, ai, rep) {
 // Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
 // with a lower report_version are re-analyzed automatically (from their STORED transcript,
 // no Recall needed) so every past meeting reflects the latest improvements without re-recording.
-export const ANALYSIS_VERSION = 7;
+export const ANALYSIS_VERSION = 8;
 
 // Parse a stored transcript string ("[mm:ss] Name: text") into {t,text} turns.
 function parseStoredTurns(text) {
@@ -232,7 +232,7 @@ export async function processMeeting(meeting, { force = false } = {}) {
     topics: ai.topics || [],
     chapters: ai.chapters || [],
     highlights: ai.highlights || [],
-    coaching: ai.coaching || {},
+    coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null },
     participants,
     sentiment_timeline: ai.sentimentTimeline || [],
     sentiment_label: ai.sentimentLabel || "Neutral",
@@ -294,7 +294,7 @@ export async function reanalyzeStored(meeting) {
     summary: ai.summary || rep.summary || "",
     topics: ai.topics || [], key_questions: ai.keyQuestions || [], action_items: ai.actionItems || [],
     next_steps: ai.nextSteps || [], chapters: ai.chapters || [], highlights: ai.highlights || [],
-    coaching: ai.coaching || {}, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
+    coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null }, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
     scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
     read_score: sc.overall || rep.read_score || 0,
     category: ai.category || rep.category || null,

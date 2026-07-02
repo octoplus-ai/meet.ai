@@ -511,6 +511,7 @@ function adaptReal(m) {
     highlights: hl,
     coverAt,
     coaching: r.coaching || null,
+    pitchAnalysis: (r.coaching && r.coaching.pitch) || null,
     nextSteps: r.next_steps || [],
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
@@ -4573,12 +4574,13 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   const avgWpm = wpmParts.length ? Math.round(wpmParts.reduce((s, p) => s + p.wpm, 0) / wpmParts.length) : null;
 
   const TABS = [
-    { k: "notes", label: "Notes", icon: FileText },
-    { k: "transcript", label: "Transcript", icon: MessageSquareText },
-    { k: "deepdive", label: "Deep Dive", icon: BarChart3 },
-    { k: "coaching", label: "Coaching", icon: Presentation },
-    { k: "highlights", label: "Highlights", icon: Sparkles },
-    { k: "chapters", label: "Chapters & Topics", icon: ListChecks },
+    { k: "notes", label: tr("notes"), icon: FileText },
+    { k: "transcript", label: tr("transcript"), icon: MessageSquareText },
+    { k: "deepdive", label: tr("deepDive"), icon: BarChart3 },
+    { k: "pitch", label: tr("pitchAnalysis"), icon: Target },
+    { k: "coaching", label: tr("coachingTab"), icon: Presentation },
+    { k: "highlights", label: tr("highlightsTab"), icon: Sparkles },
+    { k: "chapters", label: tr("chaptersTopics"), icon: ListChecks },
   ];
 
   const fileBase = () => meeting.title.replace(/[^a-z0-9]+/gi, "_");
@@ -5063,6 +5065,37 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
               </ResponsiveContainer>
               ) : <p className="py-8 text-center text-sm text-slate-400">Not enough data for a sentiment timeline.</p>}
             </Card>
+          </div>
+        )}
+
+        {tab === "pitch" && (
+          <div className="space-y-5">
+            <div className="flex items-start gap-2 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-[13px] leading-snug text-violet-900">
+              <Target size={16} className="mt-0.5 shrink-0 text-violet-600" />{tr("pitchIntro")}
+            </div>
+            {meeting.pitchAnalysis && meeting.pitchAnalysis.overall && (
+              <Card title={tr("pitchOverall")} icon={Zap}>
+                <p className="text-sm leading-relaxed text-slate-600">{meeting.pitchAnalysis.overall}</p>
+              </Card>
+            )}
+            {(meeting.pitchAnalysis && Array.isArray(meeting.pitchAnalysis.speakers) && meeting.pitchAnalysis.speakers.length) ? (
+              meeting.pitchAnalysis.speakers.map((sp, i) => (
+                <Card key={i} title={sp.name || ("Speaker " + (i + 1))} icon={MessageSquareText}
+                  right={typeof sp.score === "number" ? <span className={"rounded-full px-2.5 py-0.5 text-[12px] font-bold " + (sp.score >= 75 ? "bg-emerald-100 text-emerald-700" : sp.score >= 50 ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700")}>{sp.score}/100</span> : null}>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-emerald-600">{tr("pitchWhatWorked")}</div>
+                      <ul className="space-y-1.5 text-sm text-slate-600">{(sp.worked || []).map((x, j) => <li key={j} className="flex gap-2"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-500" />{x}</li>)}</ul>
+                    </div>
+                    <div>
+                      <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-amber-600">{tr("pitchImprove")}</div>
+                      <ul className="space-y-1.5 text-sm text-slate-600">{(sp.improve || []).map((x, j) => <li key={j} className="flex gap-2"><Circle size={15} className="mt-0.5 shrink-0 text-amber-500" />{x}</li>)}</ul>
+                    </div>
+                  </div>
+                  {sp.sayNextTime && <div className="mt-4 rounded-xl border-l-4 border-violet-400 bg-violet-50 px-4 py-2.5"><div className="text-[11px] font-semibold uppercase tracking-wide text-violet-500">{tr("pitchNextTime")}</div><p className="mt-1 text-sm italic text-slate-700">&ldquo;{sp.sayNextTime}&rdquo;</p></div>}
+                </Card>
+              ))
+            ) : (!(meeting.pitchAnalysis && meeting.pitchAnalysis.overall) && <p className="py-10 text-center text-sm text-slate-400">{tr("pitchNoData")}</p>)}
           </div>
         )}
 
