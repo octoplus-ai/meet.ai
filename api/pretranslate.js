@@ -5,6 +5,8 @@ import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 
+export const config = { maxDuration: 60 }; // DeepL/Haiku translation of many subtitle lines
+
 const enc = encodeURIComponent;
 
 // Free/cheap translation: DeepL (free tier = 500k chars/mo) primary, Claude Haiku fallback.

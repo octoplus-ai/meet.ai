@@ -4,8 +4,13 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { getBot, latestCode, mapStatus } from "./lib/recall.js";
-import { processMeeting } from "./lib/process.js";
+import { processMeeting, reanalyzeStored } from "./lib/process.js";
 import { getEventAttendees } from "./lib/google.js";
+
+// This endpoint self-heals: it can run up to 2 full Claude re-analyses (~15-25s each) plus
+// Recall syncs inside a single request. Without the raised limit it would time out mid-heal
+// and leave meetings stuck. maxDuration also caps the total so the list still returns.
+export const config = { maxDuration: 60 };
 
 const ACTIVE = new Set(["scheduled", "joining", "in_call", "recording", "processing"]);
 const ENDED = /call_ended|done|recording_done|fatal|recording_permission_denied|media_expired/;
@@ -93,7 +98,10 @@ export default async function handler(req, res) {
       && !((x.reports[0].summary || "").trim())
       && ((x.reports[0].transcript || "").length > 50)).slice(0, 2);
     if (broken.length && process.env.ANTHROPIC_API_KEY) {
-      for (const mm of broken) { try { await processMeeting(mm, { force: true }); } catch (e) { /* retry next poll */ } }
+      // Re-analyze the STORED transcript (no Recall round-trip). Using processMeeting(force)
+      // here would re-fetch from Recall and, for in-house-bot meetings whose bot_id doesn't
+      // exist in Recall, read an empty transcript and WRONGLY flip a good meeting to "error".
+      for (const mm of broken) { try { await reanalyzeStored(mm); } catch (e) { /* retry next poll */ } }
       const ids = broken.map((x) => x.id).join(",");
       const fixed = await sb(`meetings?id=in.(${ids})&select=*,reports(*)`);
       for (const x of fixed) x.reports = x.reports ? (Array.isArray(x.reports) ? x.reports : [x.reports]) : [];

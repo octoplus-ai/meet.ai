@@ -151,7 +151,10 @@ export async function analyzeTranscript(text, title, participantNames) {
       // timestamped highlights, coaching…). 2500 truncated it mid-JSON → parse failure →
       // empty report. 8000 leaves ample headroom.
       max_tokens: 8000,
-      system: sys,
+      // The analysis system prompt is large and identical on every meeting AND every
+      // batched re-analysis. Caching it makes the prefill ~90% cheaper and faster on
+      // consecutive calls within the cache window (the reprocess-stale batches hit this).
+      system: [{ type: "text", text: sys, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `Title: ${title}\n\n${known}Transcript:\n${(text || "(no speech captured)").slice(0, 600000)}` }],
     }),
   });

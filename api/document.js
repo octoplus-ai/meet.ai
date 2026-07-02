@@ -5,6 +5,10 @@ import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
 
+// The Claude call that builds the doc can run ~15-25s; without this it would hit the
+// platform's short default timeout and the generation would fail mid-flight.
+export const config = { maxDuration: 60 };
+
 const MODEL = "claude-sonnet-4-6";
 const enc = encodeURIComponent;
 

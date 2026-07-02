@@ -5,6 +5,8 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 
+export const config = { maxDuration: 60 }; // streamed answer over the whole corpus can run long
+
 const MODEL = "claude-sonnet-4-6";
 const enc = encodeURIComponent;
 

@@ -5,6 +5,8 @@ import { parseCookies } from "./lib/session.js";
 import { getValidToken } from "./lib/google.js";
 import { sendViaGmail } from "./lib/email.js";
 
+export const config = { maxDuration: 60 }; // Claude draft call needs headroom past the default timeout
+
 const MODEL = "claude-sonnet-4-6";
 const enc = encodeURIComponent;
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

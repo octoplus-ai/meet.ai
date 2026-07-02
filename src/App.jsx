@@ -929,13 +929,20 @@ export default function App() {
 
   // Live polling: keep real meetings fresh so recording/processing states and the
   // finished AI report appear automatically, the way Read.ai updates in place.
+  // Adaptive cadence: poll fast (5s) while any meeting is live/processing so the finished
+  // report shows up quickly, and slow (30s) when everything is settled so we don't hammer
+  // the (heavy, self-healing) meetings endpoint or drain the user's battery for nothing.
+  const anyActive = useMemo(
+    () => (realMeetings || []).some((m) => ["scheduled", "joining", "in_call", "recording", "processing"].includes(m.status)),
+    [realMeetings]
+  );
   useEffect(() => {
     if (!authed) return;
-    const id = setInterval(() => { loadReal(); }, 12000);
+    const id = setInterval(() => { loadReal(); }, anyActive ? 5000 : 30000);
     const onFocus = () => loadReal();
     window.addEventListener("focus", onFocus);
     return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
-  }, [authed, loadReal]);
+  }, [authed, loadReal, anyActive]);
 
   // Read.ai-style auto-join: on sign-in AND periodically, arm a Recall bot for every
   // upcoming calendar meeting. Recall joins each at its exact start time and waits in
@@ -4671,7 +4678,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
               </div>
             </div>
             {/* Write a follow-up email (owner only - sends from their Gmail) */}
-            {!shared && <button onClick={genFollowup} disabled={fupBusy} title="Draft a follow-up email from this meeting" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">{fupBusy ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Follow-up</button>}
+            {!shared && <button onClick={genFollowup} disabled={fupBusy} title="Draft a follow-up email from this meeting" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">{fupBusy ? <><Loader2 size={14} className="animate-spin" /> Drafting…</> : <><Mail size={14} /> Follow-up</>}</button>}
             {/* Download dropdown - everyone with access (incl. Viewer) can download */}
             <div className="relative">
               <button onClick={() => setMenu(menu === "download" ? null : "download")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download <ChevronDown size={13} /></button>
@@ -5295,6 +5302,9 @@ function ChatView({ meetings, onOpen, seed }) {
   const endRef = useRef(null);
   const sentSeed = useRef(false);
   const started = msgs.length > 0;
+  // O(1) id -> meeting lookup for citation chips, so we don't linear-scan the whole corpus
+  // for every ref on every render as the answer streams in.
+  const meetingById = useMemo(() => { const map = new Map(); (meetings || []).forEach((x) => map.set(x.id, x)); return map; }, [meetings]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
 
@@ -5396,7 +5406,7 @@ function ChatView({ meetings, onOpen, seed }) {
                     <div className="whitespace-pre-wrap">{m.text}</div>
                     {m.refs && m.refs.length > 0 && (
                       <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
-                        {m.refs.map((id) => { const mt = meetings.find((x) => x.id === id); return mt ? (
+                        {m.refs.map((id) => { const mt = meetingById.get(id); return mt ? (
                           <button key={id} onClick={() => onOpen(id)} className="flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100"><FileText size={11} /> {mt.title}</button>
                         ) : null; })}
                       </div>
