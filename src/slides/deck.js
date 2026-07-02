@@ -30,6 +30,18 @@ export const THEMES = {
 export const THEME_LIST = Object.entries(THEMES).map(([id, t]) => ({ id, ...t }));
 export const getTheme = (id) => THEMES[id] || THEMES["sleek-dark"];
 
+// Build a full theme from a single user-picked accent color + light/dark mode.
+function hexToRgb(h) { h = String(h || "").replace("#", ""); if (h.length === 3) h = h.split("").map((c) => c + c).join(""); const n = parseInt(h || "7c3aed", 16); return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }; }
+function relLum(h) { const { r, g, b } = hexToRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
+export function customTheme(accent, mode = "dark") {
+  const a = /^#?[0-9a-fA-F]{3,6}$/.test(String(accent || "")) ? (accent[0] === "#" ? accent : "#" + accent) : "#7C3AED";
+  const accentText = relLum(a) > 0.6 ? "#0B1220" : "#FFFFFF"; // readable text on the accent
+  const base = { name: "Custom", accent: a, accentText, fontHead: `'Poppins','Inter',system-ui,sans-serif`, fontBody: `'Inter',system-ui,sans-serif` };
+  return mode === "light"
+    ? { ...base, mode: "light", bg: "#FFFFFF", surface: "#F6F8FA", heading: "#0B1220", body: "#475467", border: "#E5E9F0", muted: "#94A3B8" }
+    : { ...base, mode: "dark", bg: "#0E1116", surface: "#171B22", heading: "#F5F7FA", body: "#A8B0BD", border: "#262B33", muted: "#6B7280" };
+}
+
 const LAYOUTS = ["cover", "agenda", "bullets", "twoColumn", "bigStat", "quote", "imageText", "timeline", "closing"];
 const arr = (v, n = 99) => (Array.isArray(v) ? v : []).map((s) => String(s == null ? "" : s)).filter(Boolean).slice(0, n);
 

@@ -76,7 +76,9 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
   if (!OWN && !process.env.RECALL_API_KEY) return { error: "RECALL_API_KEY missing" };
 
   if (calendarEventId) {
-    const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&status=neq.error&select=id,bot_id`);
+    // Dedup on the calendar event (one row per event, enforced by a DB unique index). Include ALL
+    // statuses so a past errored meeting doesn't trigger a duplicate INSERT (23505) on every sweep.
+    const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&select=id,bot_id`);
     if (ex && ex.length) return { already: true, meeting: ex[0] };
   }
   // Cross-path dedup (V1 + V2 + cron): never two bots for the same active meeting URL.

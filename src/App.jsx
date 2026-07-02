@@ -9,9 +9,9 @@ import {
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type, Copy, Pencil,
   HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, KeyRound,
   ChevronsDownUp, ChevronsUpDown, Eye, ChevronUp, MinusCircle, MoreVertical,
-  Captions, AudioLines, ImagePlus, Paperclip,
+  Captions, AudioLines, ImagePlus, Paperclip, Languages,
 } from "lucide-react";
-import { THEME_LIST, getTheme, coerceDeck, deckHTML } from "./slides/deck.js";
+import { THEME_LIST, getTheme, customTheme, coerceDeck, deckHTML } from "./slides/deck.js";
 import { exportPptx } from "./slides/pptx.js";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -78,6 +78,61 @@ const _t = {
   he: ["הוסף אנשים","שאל את Octo","דוחות","תיקיות","יומן","בשבילך","אימון","המלצות","מדיניות פגישות","אינטגרציות","Enterprise","ניהול","הוסף לפגישה חיה","קישור Smart Scheduler","העתק קישור","הועתק!","שאל את Octo כל דבר...","דוחות","לא הושלמו","עודכן ב-15:00","העלה","סנן לפי כותרת...","כל הדוחות","בכל זמן","סוג","מקור","תיקייה","בעלים","דוח","תאריך ושעה","היום","השבוע","החודש","קודם","תוכניות ומחירים"],
 };
 const TR = Object.fromEntries(Object.entries(_t).map(([lng, arr]) => [lng, Object.fromEntries(KEYS.map((k, i) => [k, arr[i]]))]));
+
+// Extensible supplementary dictionary (object-per-language; easy to add keys). Merged into TR.
+// EN + ES are complete; other languages fall back to EN via t()/tr() automatically.
+const EXTRA = {
+  en: {
+    // video player
+    audioTranslation: "Audio translation", translatingAudio: "Translating audio to", dubKeepsVoices: "AI voices, keeps each speaker", original: "Original",
+    subtitles: "Subtitles", off: "Off", translatingSubs: "Translating subtitles…", play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
+    settings: "Settings", playbackSpeed: "Playback speed", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
+    recordingWillAppear: "Recording will appear here once processed.",
+    // report tabs
+    notes: "Notes", transcript: "Transcript", deepDive: "Deep Dive", coachingTab: "Coaching", highlightsTab: "Highlights", chaptersTopics: "Chapters & Topics", pitchAnalysis: "Pitch Analysis",
+    // notes
+    summary: "Summary", actionItems: "Action Items", nextSteps: "Next Steps", keyQuestions: "Key Questions", standard: "standard", short: "short",
+    noSummary: "No summary available for this meeting.", noActionItems: "No action items detected.", noNextSteps: "No next steps detected.", noKeyQuestions: "No key questions detected.",
+    // deep dive / scores
+    participationTalk: "Participation (talk time)", scores: "Scores", sentimentOverTime: "Sentiment over time", notEnoughSentiment: "Not enough data for a sentiment timeline.",
+    readScore: "Read Score", engagement: "Engagement", sentiment: "Sentiment", balance: "Balance", clarity: "Clarity", charisma: "Charisma",
+    // coaching
+    strengths: "Strengths", areasToImprove: "Areas to improve", tips: "Tips", talkingPace: "Talking Pace", impact: "Impact", perSpeaker: "Per-speaker breakdown",
+    // pitch analysis
+    pitchOverall: "Overall pitch", pitchWhatWorked: "What worked", pitchImprove: "How to improve", pitchNextTime: "Say this next time", pitchNoData: "Not enough spoken content to analyze the pitch.", pitchIntro: "AI pitch coaching per speaker, based on proven presentation & persuasion best practices.",
+    // reports list
+    searchMCP: "Search meeting, company or person…", analytics: "Analytics", aiDoc: "AI Doc", presentation: "Presentation", refresh: "Refresh",
+    selMeetingsAnalytics: "Select one or more meetings to see analytics.", selMeetingsDoc: "Select one or more meetings to generate a document.", selMeetingsPres: "Select one or more meetings to generate a presentation.",
+    participants: "Participants", copyEmails: "Copy emails", copyGuestEmails: "Copy guest emails", emailGuests: "Email guests", noParticipantData: "No participant data.", noEmailOnFile: "no email on file",
+    allTypes: "All types", completed: "Completed", inProgressF: "In progress", noReportsYet: "No reports yet.", renameReport: "Rename Report", deleteReport: "Delete Report", selectAll: "Select all",
+    // presentation composer
+    slides: "Slides", theme: "Theme", images: "Images", noImages: "No images", aiImages: "✨ AI images", customColor: "Custom color", pickColor: "Pick your accent color", lightBg: "Light", darkBg: "Dark",
+  },
+  es: {
+    audioTranslation: "Traducción de audio", translatingAudio: "Traduciendo el audio a", dubKeepsVoices: "Voces con IA, mantiene cada orador", original: "Original",
+    subtitles: "Subtítulos", off: "Desactivado", translatingSubs: "Traduciendo subtítulos…", play: "Reproducir", trailer: "Trailer", highlights: "Destacados", recording: "Grabación",
+    settings: "Ajustes", playbackSpeed: "Velocidad de reproducción", showMetricsOverlay: "Mostrar métricas en pantalla", showHighlightsOverlay: "Mostrar destacados en pantalla", autoplayClick: "Reproducir al hacer clic",
+    recordingWillAppear: "La grabación aparecerá acá cuando se procese.",
+    notes: "Notas", transcript: "Transcripción", deepDive: "Análisis profundo", coachingTab: "Coaching", highlightsTab: "Destacados", chaptersTopics: "Capítulos y temas", pitchAnalysis: "Análisis de pitch",
+    summary: "Resumen", actionItems: "Tareas", nextSteps: "Próximos pasos", keyQuestions: "Preguntas clave", standard: "estándar", short: "corto",
+    noSummary: "No hay resumen disponible para esta reunión.", noActionItems: "No se detectaron tareas.", noNextSteps: "No se detectaron próximos pasos.", noKeyQuestions: "No se detectaron preguntas clave.",
+    participationTalk: "Participación (tiempo de habla)", scores: "Puntajes", sentimentOverTime: "Sentimiento en el tiempo", notEnoughSentiment: "No hay datos suficientes para la línea de sentimiento.",
+    readScore: "Read Score", engagement: "Participación", sentiment: "Sentimiento", balance: "Balance", clarity: "Claridad", charisma: "Carisma",
+    strengths: "Fortalezas", areasToImprove: "A mejorar", tips: "Consejos", talkingPace: "Ritmo al hablar", impact: "Impacto", perSpeaker: "Desglose por orador",
+    pitchOverall: "Pitch general", pitchWhatWorked: "Qué funcionó", pitchImprove: "Cómo mejorarlo", pitchNextTime: "Decí esto la próxima", pitchNoData: "No hay suficiente contenido hablado para analizar el pitch.", pitchIntro: "Coaching de pitch con IA por orador, basado en mejores prácticas de presentación y persuasión.",
+    searchMCP: "Buscar reunión, empresa o persona…", analytics: "Analytics", aiDoc: "AI Doc", presentation: "Presentación", refresh: "Actualizar",
+    selMeetingsAnalytics: "Seleccioná una o más reuniones para ver analytics.", selMeetingsDoc: "Seleccioná una o más reuniones para generar un documento.", selMeetingsPres: "Seleccioná una o más reuniones para generar una presentación.",
+    participants: "Participantes", copyEmails: "Copiar emails", copyGuestEmails: "Copiar emails de invitados", emailGuests: "Enviar email a invitados", noParticipantData: "Sin datos de participantes.", noEmailOnFile: "sin email registrado",
+    allTypes: "Todos los tipos", completed: "Completados", inProgressF: "En progreso", noReportsYet: "Todavía no hay reportes.", renameReport: "Renombrar reporte", deleteReport: "Eliminar reporte", selectAll: "Seleccionar todo",
+    slides: "Diapositivas", theme: "Tema", images: "Imágenes", noImages: "Sin imágenes", aiImages: "✨ Imágenes IA", customColor: "Color personalizado", pickColor: "Elegí tu color de acento", lightBg: "Claro", darkBg: "Oscuro",
+  },
+};
+for (const lng of Object.keys(TR)) TR[lng] = { ...TR[lng], ...(EXTRA[lng] || {}) };
+
+// Module-level translator + current language, so components that don't receive the `t` prop
+// (e.g. MeetingVideo) can still translate. CUR_LANG is synced from the App on every render.
+let CUR_LANG = "en";
+const tr = (k) => (TR[CUR_LANG] && TR[CUR_LANG][k]) || TR.en[k] || k;
 const isRTL = (code) => !!(LANGS.find((l) => l.code === code) || {}).rtl;
 
 /* ---------------------------- storage shim ------------------------- */
@@ -908,6 +963,7 @@ export default function App() {
     setAuthed(false); setUser(null); store.set("octomeet:authed", false); setView("reports");
   };
   const setLang = (l) => { setLangState(l); store.set("octomeet:lang", l); };
+  CUR_LANG = lang; // keep the module-level translator (tr) in sync for prop-less components
   const t = (k) => (TR[lang] && TR[lang][k]) || TR.en[k] || k;
   const persist = async (next) => {
     const demo = next.filter((m) => !m.real);
@@ -1044,7 +1100,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
 
   return (
     <aside onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      className={"absolute inset-y-0 left-0 z-30 flex shrink-0 flex-col rai-sidebar text-slate-300 shadow-xl transition-all duration-200 " + (collapsed ? "w-[68px]" : "w-60")}>
+      className={"absolute inset-y-0 left-0 z-50 flex shrink-0 flex-col rai-sidebar text-slate-300 transition-all duration-200 " + (collapsed ? "w-[68px]" : "w-60 shadow-2xl shadow-black/40")}>
       {/* header */}
       <div className={"flex items-center px-3 pt-4 pb-3 " + (collapsed ? "justify-center" : "gap-2")}>
         <button onClick={() => setView("reports")} title="OctoMeet - all reports" className="flex h-8 w-8 shrink-0 items-center justify-center">
@@ -3839,12 +3895,41 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       )}
       {/* Dubbing in progress indicator */}
       {!collapsed && dubStatus === "dubbing" && (
-        <div className="absolute left-3 top-3 z-40 flex items-center gap-2 rounded-lg bg-black/70 px-3 py-1.5 text-[12px] font-medium text-white backdrop-blur"><Loader2 size={13} className="animate-spin" /> Dubbing to {dubLang}… (a few minutes)</div>
+        <div className="absolute left-3 top-3 z-40 flex items-center gap-2 rounded-lg bg-black/75 px-3 py-1.5 text-[12px] font-medium text-white"><Loader2 size={13} className="animate-spin" /> {tr("translatingAudio")} {dubLang}…</div>
+      )}
+      {/* Audio translation (ElevenLabs dubbing - keeps each participant's real voice). Top-right, owner only. */}
+      {!collapsed && !shareTok && meetingId && (
+        <div className="absolute right-14 top-3 z-40">
+          <button onClick={() => setDubMenu((s) => !s)} title={tr("audioTranslation")}
+            className={"group relative flex h-9 w-9 items-center justify-center rounded-lg bg-white/90 shadow transition hover:bg-white " + (dubUrl ? "text-violet-700" : "text-slate-700")}>
+            <Languages size={18} />
+            {dubStatus === "dubbing" && <Loader2 size={12} className="absolute -right-1 -top-1 animate-spin text-violet-600" />}
+            {dubUrl && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-500 ring-2 ring-white" />}
+            <span className="pointer-events-none absolute right-0 top-11 z-50 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">{tr("audioTranslation")}</span>
+          </button>
+          {dubMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setDubMenu(false)} />
+              <div className="absolute right-0 top-11 z-50 max-h-[20rem] w-64 overflow-y-auto rounded-2xl border border-white/10 bg-neutral-950/95 p-2 text-white shadow-2xl">
+                <div className="flex items-center justify-center gap-1.5 px-3 pt-2 text-center text-[13px] font-bold"><Languages size={14} /> {tr("audioTranslation")}</div>
+                <div className="px-3 pb-2 text-center text-[11px] text-white/50">{tr("dubKeepsVoices")} · ~{dubCost}</div>
+                <button onClick={() => startDub("original")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10"><span className="w-4">{!dubUrl && <Check size={15} className="text-violet-300" />}</span>{tr("original")}</button>
+                {DUB_LANGS.map(([code, label]) => (
+                  <button key={code} onClick={() => startDub(code)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
+                    <span className="w-4">{dubLang === code && dubUrl && <Check size={15} className="text-violet-300" />}</span>
+                    <span className={dubLang === code ? "font-semibold" : "text-white/85"}>{label}</span>
+                    {dubLang === code && dubStatus === "dubbing" && <Loader2 size={13} className="ml-auto animate-spin text-white/60" />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
       {/* Subtitles overlay (off by default; language chosen via the CC menu). */}
       {!collapsed && cc && (capText || subBusy) && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-6">
-          <span className="line-clamp-2 max-w-[70%] rounded-lg bg-black/85 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white shadow-lg backdrop-blur-md" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}>{subBusy && !subCache[subLang] ? "Translating subtitles…" : capText}</span>
+        <div className="pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-6" style={{ transform: "translateZ(0)" }}>
+          <span className="line-clamp-2 max-w-[70%] rounded-lg bg-black/80 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white shadow-lg" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.95)" }}>{subBusy && !subCache[subLang] ? "Translating subtitles…" : capText}</span>
         </div>
       )}
       {/* Hover menu: smart playback modes (only when paused so it doesn't block viewing). */}
@@ -3961,29 +4046,6 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
             <button onClick={() => setSubMenu((s) => !s)} title="Subtitles"
               className={"flex h-5 items-center rounded px-1 text-[11px] font-bold transition hover:text-violet-300 " + (cc ? "bg-white text-neutral-900" : "")}>CC</button>
           </div>
-          {/* Dub video (ElevenLabs) - keeps each participant's voice. Owner only. */}
-          {!shareTok && meetingId && (
-            <div className="relative">
-              {dubMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setDubMenu(false)} />
-                  <div className="absolute bottom-9 right-0 z-50 max-h-[20rem] w-64 overflow-y-auto rounded-2xl border border-white/10 bg-neutral-950/95 p-2 text-white shadow-2xl backdrop-blur-md">
-                    <div className="px-3 pt-2 text-center text-[13px] font-bold">Dub video</div>
-                    <div className="px-3 pb-2 text-center text-[11px] text-white/50">AI voices, keeps each speaker · ~{dubCost}</div>
-                    <button onClick={() => startDub("original")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10"><span className="w-4">{!dubUrl && <Check size={15} className="text-violet-300" />}</span>Original</button>
-                    {DUB_LANGS.map(([code, label]) => (
-                      <button key={code} onClick={() => startDub(code)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
-                        <span className="w-4">{dubLang === code && dubUrl && <Check size={15} className="text-violet-300" />}</span>
-                        <span className={dubLang === code ? "font-semibold" : "text-white/85"}>{label}</span>
-                        {dubLang === code && dubStatus === "dubbing" && <Loader2 size={13} className="ml-auto animate-spin text-white/60" />}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-              <button onClick={() => setDubMenu((s) => !s)} title="Dub the video into another language (AI, keeps each voice)" className={"hover:text-violet-300 " + (dubUrl ? "text-violet-300" : "")}><Globe size={16} /></button>
-            </div>
-          )}
           <button onClick={() => setShowSettings((s) => !s)} title="Settings (playback speed & overlays)" className="flex items-center gap-0.5 hover:text-violet-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
           <button onClick={pip} title="Picture in picture (click the screen or this button to go back)" className="hover:text-violet-300"><PictureInPicture2 size={16} /></button>
           <button onClick={fs} title="Fullscreen" className="hover:text-violet-300"><Maximize2 size={16} /></button>
@@ -4015,6 +4077,8 @@ function AskPanel({ meeting, shared, shareTok }) {
   const [showComposer, setShowComposer] = useState(false);
   const [slideCount, setSlideCount] = useState(8);
   const [themeId, setThemeId] = useState("sleek-dark");
+  const [customAccent, setCustomAccent] = useState("#7C3AED");
+  const [customMode, setCustomMode] = useState("dark");
   const [withImages, setWithImages] = useState(false); // generate AI images based on the meeting
   const [atts, setAtts] = useState([]); // [{kind:'image'|'file', name, mediaType, data, text}]
   const [genBusy, setGenBusy] = useState(false);
@@ -4044,7 +4108,8 @@ function AskPanel({ meeting, shared, shareTok }) {
       const genImages = Array.isArray(d.genImages) ? d.genImages : [];
       const imgUrls = images.map((im) => `data:${im.mediaType};base64,${im.data}`).concat(genImages);
       const deck = coerceDeck(d.deck, { wantN: slideCount, imageCount: imgUrls.length });
-      setDeckState({ deck, theme: getTheme(d.themeId || themeId), imgUrls, meta: d.meta });
+      const theme = themeId === "custom" ? customTheme(customAccent, customMode) : getTheme(d.themeId || themeId);
+      setDeckState({ deck, theme, imgUrls, meta: d.meta });
       setAtts([]);
     } catch (e) { toast("Network error"); } finally { setGenBusy(false); }
   };
@@ -4105,15 +4170,31 @@ function AskPanel({ meeting, shared, shareTok }) {
                   <button key={n} onClick={() => setSlideCount(n)} className={"flex-1 rounded-lg border py-1.5 text-[13px] font-semibold " + (slideCount === n ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>{n}</button>
                 ))}
               </div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Theme</div>
-              <div className="mb-3 grid grid-cols-2 gap-1.5">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tr("theme")}</div>
+              <div className="mb-2 grid grid-cols-2 gap-1.5">
                 {THEME_LIST.map((t) => (
                   <button key={t.id} onClick={() => setThemeId(t.id)} className={"flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left " + (themeId === t.id ? "border-violet-500" : "border-slate-200")}>
                     <span className="flex h-5 w-5 overflow-hidden rounded-full ring-1 ring-black/10"><span className="h-full w-1/2" style={{ background: t.bg }} /><span className="h-full w-1/2" style={{ background: t.accent }} /></span>
                     <span className="text-[12px] font-medium text-slate-700">{t.name}</span>
                   </button>
                 ))}
+                <button onClick={() => setThemeId("custom")} className={"flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left " + (themeId === "custom" ? "border-violet-500" : "border-slate-200")}>
+                  <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full ring-1 ring-black/10" style={{ background: customMode === "light" ? "#FFFFFF" : "#0E1116" }}><span className="h-3 w-3 rounded-full" style={{ background: customAccent }} /></span>
+                  <span className="text-[12px] font-medium text-slate-700">{tr("customColor")}</span>
+                </button>
               </div>
+              {themeId === "custom" && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50/50 px-2.5 py-2">
+                  <label className="relative h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-full ring-1 ring-black/10" title={tr("pickColor")} style={{ background: customAccent }}>
+                    <input type="color" value={customAccent} onChange={(e) => setCustomAccent(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+                  </label>
+                  <span className="font-mono text-[12px] uppercase text-slate-600">{customAccent}</span>
+                  <div className="ml-auto flex overflow-hidden rounded-lg border border-slate-200">
+                    <button onClick={() => setCustomMode("light")} className={"px-2.5 py-1 text-[12px] font-semibold " + (customMode === "light" ? "bg-violet-600 text-white" : "bg-white text-slate-600")}>{tr("lightBg")}</button>
+                    <button onClick={() => setCustomMode("dark")} className={"px-2.5 py-1 text-[12px] font-semibold " + (customMode === "dark" ? "bg-violet-600 text-white" : "bg-white text-slate-600")}>{tr("darkBg")}</button>
+                  </div>
+                </div>
+              )}
               <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Images</div>
               <div className="mb-3 flex gap-1.5">
                 <button onClick={() => setWithImages(false)} className={"flex-1 rounded-lg border py-1.5 text-[12px] font-semibold " + (!withImages ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>No images</button>
