@@ -140,12 +140,13 @@ export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
   const { events, error } = await listUpcomingEvents(userId, { days });
   if (error) return { error, armed: 0 };
   let armed = 0, already = 0, skipped = 0;
-  const note = "🐙 OctoMeet AI will join and record this meeting, then add the AI summary & report link here.";
   for (const e of events) {
     if (!e.meetingUrl || e.selfDeclined) { skipped++; continue; }
     const res = await scheduleBot(userId, { meetingUrl: e.meetingUrl, title: e.title, joinAt: e.start, calendarEventId: e.id, botName });
     if (res.ok) armed++;
-    else if (res.already) { already++; annotateEvent(userId, e.id, note).catch(() => {}); }
+    // "already" armed: scheduleBot annotated the event when it was first armed - don't PATCH the
+    // calendar event again on every sweep (the orchestrator hits this every few minutes now).
+    else if (res.already) already++;
     else skipped++;
   }
   return { armed, already, skipped, total: events.length };

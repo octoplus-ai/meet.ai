@@ -3,14 +3,18 @@
 import { sb } from "../lib/supa.js";
 import { armUserCalendar } from "../lib/schedule.js";
 
+export const config = { maxDuration: 60 };
+
 export default async function handler(req, res) {
   try {
     // Auth: Vercel Cron sets x-vercel-cron (external requests can't forge x-vercel-* headers, Vercel
-    // strips them). Also accept an Authorization: Bearer <CRON_SECRET> for manual/secure triggering.
+    // strips them). Also accept Bearer CRON_SECRET (manual) or Bearer BOT_INGEST_SECRET - the
+    // orchestrator sweeps this endpoint every few minutes so auto-join is near-realtime like Recall.
     const key = new URL(req.url, "http://x").searchParams.get("key");
     const bearer = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     const isCron = req.headers["x-vercel-cron"]
       || (process.env.CRON_SECRET && bearer === process.env.CRON_SECRET)
+      || (process.env.BOT_INGEST_SECRET && bearer === process.env.BOT_INGEST_SECRET)
       || (process.env.RECALL_WEBHOOK_SECRET && key === process.env.RECALL_WEBHOOK_SECRET);
     if (!isCron) return res.status(401).json({ error: "unauthorized" });
 
