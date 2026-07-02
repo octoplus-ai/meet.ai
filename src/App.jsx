@@ -85,7 +85,7 @@ const EXTRA = {
   en: {
     // video player
     audioTranslation: "Audio translation", translatingAudio: "Translating audio to", dubKeepsVoices: "AI voices, keeps each speaker", original: "Original",
-    subtitles: "Subtitles", off: "Off", translatingSubs: "Translating subtitles…", play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
+    subtitles: "Subtitles", off: "Off", translatingSubs: tr("translatingSubs"), play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
     settings: "Settings", playbackSpeed: "Playback speed", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
     recordingWillAppear: "Recording will appear here once processed.",
     // report tabs
@@ -1661,7 +1661,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
             <div className="mb-1 flex flex-wrap items-center gap-2">
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search meeting, company or person…"
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("searchMCP")}
                   className="w-72 rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-violet-400" />
               </div>
               {folderFilter && (
@@ -1679,18 +1679,18 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               {/* Bulk actions: always visible + active-looking. Hover shows a hint until a selection is made. */}
               <div className="group relative">
                 <button onClick={() => (sel.size ? setShowAnalytics((v) => !v) : toast("Select one or more meetings first"))}
-                  className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition " + (showAnalytics && sel.size ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50")}><BarChart3 size={14} /> Analytics</button>
-                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">Select one or more meetings to see analytics.</span>}
+                  className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition " + (showAnalytics && sel.size ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50")}><BarChart3 size={14} /> {tr("analytics")}</button>
+                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">{tr("selMeetingsAnalytics")}</span>}
               </div>
               <div className="group relative">
                 <button onClick={() => (sel.size ? genBulkDoc() : toast("Select one or more meetings first"))} disabled={!!bulkBusy}
-                  className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-violet-500 disabled:opacity-60">{bulkBusy === "doc" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Doc</button>
-                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">Select one or more meetings to generate a document.</span>}
+                  className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-violet-500 disabled:opacity-60">{bulkBusy === "doc" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} {tr("aiDoc")}</button>
+                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">{tr("selMeetingsDoc")}</span>}
               </div>
               <div className="group relative">
                 <button onClick={() => (sel.size ? genBulkDeck() : toast("Select one or more meetings first"))} disabled={!!bulkBusy}
-                  className="flex items-center gap-1.5 rounded-lg border border-violet-300 px-3 py-2 text-[13px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-60">{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} Presentation</button>
-                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">Select one or more meetings to generate a presentation.</span>}
+                  className="flex items-center gap-1.5 rounded-lg border border-violet-300 px-3 py-2 text-[13px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-60">{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} {tr("presentation")}</button>
+                {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">{tr("selMeetingsPres")}</span>}
               </div>
             </div>
             {/* Select all — right under the search/filters row */}
@@ -2480,7 +2480,7 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
                 ))}
               </div> : <p className="text-sm text-slate-400">No topics yet - analyze a meeting to see topic trends.</p>}
             </Card>
-            <Card title="Summary" icon={Sparkles}>
+            <Card title={tr("summary")} icon={Sparkles}>
               {summaries.length ? <div className="space-y-3">
                 {summaries.slice(0, 3).map((m, i) => (
                   <button key={i} onClick={() => onOpen(m.id)} className="block w-full text-left">
@@ -3858,10 +3858,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const started = startedRef.current && dur > 0 && cur > 2;
   const MENU = [
     started
-      ? { k: "full", label: "Play", sub: mins(Math.max(0, dur - cur)) + " left", primary: true, resume: true }
-      : { k: "full", label: "Recording", sub: dur ? mins(dur) : "", primary: true },
-    { k: "trailer", label: "Trailer", sub: dur ? mins(segTotal(buildSegments("trailer", dur))) : "<1m" },
-    { k: "highlights", label: "Highlights", sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "-" },
+      ? { k: "full", label: tr("play"), sub: mins(Math.max(0, dur - cur)) + " left", primary: true, resume: true }
+      : { k: "full", label: tr("recording"), sub: dur ? mins(dur) : "", primary: true },
+    { k: "trailer", label: tr("trailer"), sub: dur ? mins(segTotal(buildSegments("trailer", dur))) : "<1m" },
+    { k: "highlights", label: tr("highlights"), sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "-" },
   ];
 
   // Trailer plays as ONE continuous clip: hide the dots and show montage progress/time.
@@ -3950,11 +3950,11 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           <>
             <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)} />
             <div className="absolute bottom-12 right-2 z-50 w-72 rounded-2xl border border-white/10 bg-neutral-900/95 p-2 text-white shadow-2xl backdrop-blur-md">
-              <div className="px-2 py-2 text-center text-[14px] font-bold tracking-wide">Settings</div>
+              <div className="px-2 py-2 text-center text-[14px] font-bold tracking-wide">{tr("settings")}</div>
               {[
-                { label: "Show metrics on screen", v: showMetrics, set: setShowMetrics },
-                { label: "Show highlights on screen", v: showHighlights, set: setShowHighlights },
-                { label: "Auto-play video on click", v: autoplayClick, set: setAutoplayClick },
+                { label: tr("showMetricsOverlay"), v: showMetrics, set: setShowMetrics },
+                { label: tr("showHighlightsOverlay"), v: showHighlights, set: setShowHighlights },
+                { label: tr("autoplayClick"), v: autoplayClick, set: setAutoplayClick },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between px-3 py-2">
                   <span className="text-[13px] text-white/90">{row.label}</span>
@@ -4010,7 +4010,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           <button onClick={toggle} className="hover:text-violet-300">{playing ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}</button>
           <span className="whitespace-nowrap font-mono text-[12px] text-white/90">{tLeft} / {tRight}</span>
           {showMetrics && !isTrailer && curChapter && <span className="truncate text-[12px] text-white/70">• {curChapter}</span>}
-          {mode && mode !== "full" && <span className="shrink-0 rounded bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? "Trailer" : "Highlights"}</span>}
+          {mode && mode !== "full" && <span className="shrink-0 rounded bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{mode === "trailer" ? tr("trailer") : tr("highlights")}</span>}
           <div className="flex-1" />
           {/* Volume (Prime Video style): hover the speaker -> vertical slider appears; it stays
               while the cursor is over the button OR the slider (they overlap a few px so there is
@@ -4034,11 +4034,11 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setSubMenu(false)} />
                 <div className="absolute bottom-9 right-0 z-50 max-h-[19rem] w-64 overflow-y-auto rounded-2xl border border-white/10 bg-neutral-950/95 p-2 text-white shadow-2xl backdrop-blur-md">
-                  <div className="flex items-center justify-center gap-2 px-3 py-2 text-[14px] font-bold">Subtitles {subBusy && <Loader2 size={13} className="animate-spin text-white/60" />}</div>
+                  <div className="flex items-center justify-center gap-2 px-3 py-2 text-[14px] font-bold">{tr("subtitles")} {subBusy && <Loader2 size={13} className="animate-spin text-white/60" />}</div>
                   {["off", ...SUB_LANGS].map((k) => (
                     <button key={k} onClick={() => chooseLang(k)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
                       <span className="w-4">{subLang === k && <Check size={15} className="text-violet-300" />}</span>
-                      <span className={subLang === k ? "font-semibold" : "text-white/85"}>{k === "off" ? "Off" : k}</span>
+                      <span className={subLang === k ? "font-semibold" : "text-white/85"}>{k === "off" ? tr("off") : k}</span>
                     </button>
                   ))}
                 </div>
@@ -4948,9 +4948,9 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]">
                   {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-violet-700 shadow-sm" : "text-slate-500")}>{m}</button>)}
                 </div>) : null}>
-              {meeting.summary ? <p className="text-sm leading-relaxed text-slate-600">{summaryMode === "short" ? shortSummary : meeting.summary}</p> : <p className="text-sm text-slate-400">No summary available for this meeting.</p>}
+              {meeting.summary ? <p className="text-sm leading-relaxed text-slate-600">{summaryMode === "short" ? shortSummary : meeting.summary}</p> : <p className="text-sm text-slate-400">{tr("noSummary")}</p>}
             </Card>
-            <Card title="Action Items" icon={ListChecks}
+            <Card title={tr("actionItems")} icon={ListChecks}
               copyText={meeting.actionItems.map((a) => `- ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`).join("\n")}
               editText={meeting.actionItems.map((a) => a.task).join("\n")} onSaveEdit={canEdit ? (v) => editField("action_items", v) : undefined}>
               <div className="space-y-2">
@@ -4968,19 +4968,19 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                     </div>
                   </div>
                 ))}
-                {!meeting.actionItems.length && <p className="text-sm text-slate-400">No action items detected.</p>}
+                {!meeting.actionItems.length && <p className="text-sm text-slate-400">{tr("noActionItems")}</p>}
               </div>
             </Card>
-            <Card title="Next Steps" icon={Target}
+            <Card title={tr("nextSteps")} icon={Target}
               copyText={(meeting.nextSteps || []).join("\n")} editText={(meeting.nextSteps || []).join("\n")} onSaveEdit={canEdit ? (v) => editField("next_steps", v) : undefined}>
               <ul className="space-y-2">
                 {(meeting.nextSteps || []).map((s, i) => (
                   <li key={i} className="flex gap-2 text-sm text-slate-600"><ChevronRight size={16} className="mt-0.5 shrink-0 text-violet-400" />{s}</li>
                 ))}
-                {!(meeting.nextSteps && meeting.nextSteps.length) && <p className="text-sm text-slate-400">No next steps detected.</p>}
+                {!(meeting.nextSteps && meeting.nextSteps.length) && <p className="text-sm text-slate-400">{tr("noNextSteps")}</p>}
               </ul>
             </Card>
-            <Card title="Key Questions" icon={Quote}
+            <Card title={tr("keyQuestions")} icon={Quote}
               copyText={meeting.keyQuestions.join("\n")} editText={meeting.keyQuestions.join("\n")} onSaveEdit={canEdit ? (v) => editField("key_questions", v) : undefined}>
               <ul className="space-y-3">
                 {(meeting.keyQA && meeting.keyQA.length ? meeting.keyQA : meeting.keyQuestions.map((q) => ({ q, a: "" }))).map((qq, i) => (
@@ -4994,7 +4994,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                     </div>
                   </li>
                 ))}
-                {!meeting.keyQuestions.length && <p className="text-sm text-slate-400">No key questions detected.</p>}
+                {!meeting.keyQuestions.length && <p className="text-sm text-slate-400">{tr("noKeyQuestions")}</p>}
               </ul>
             </Card>
           </div>
@@ -5031,7 +5031,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
 
         {tab === "deepdive" && (
           <div className="space-y-5">
-            <Card title="Participation (talk time)" icon={Users}>
+            <Card title={tr("participationTalk")} icon={Users}>
               <TalkRibbon participants={meeting.participants} />
               <div className="mt-4 space-y-2">
                 {meeting.participants.map((p, i) => (
@@ -5043,7 +5043,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 ))}
               </div>
             </Card>
-            <Card title="Scores" icon={BarChart3}>
+            <Card title={tr("scores")} icon={BarChart3}>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <ScorePill label="Read Score" value={meeting.scores.overall} />
                 <ScorePill label="Engagement" value={meeting.scores.engagement} />
@@ -5052,7 +5052,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 <ScorePill label="Clarity" value={meeting.scores.clarity} />
               </div>
             </Card>
-            <Card title="Sentiment over time" icon={Activity}>
+            <Card title={tr("sentimentOverTime")} icon={Activity}>
               {meeting.sentimentTimeline.length ? (
               <ResponsiveContainer width="100%" height={170}>
                 <AreaChart data={meeting.sentimentTimeline.map((v, i) => ({ i, v }))} margin={{ left: -20, right: 6, top: 6 }}>
@@ -5063,7 +5063,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                   <Area type="monotone" dataKey="v" stroke="#7C3AED" strokeWidth={2.5} fill="url(#gScore)" />
                 </AreaChart>
               </ResponsiveContainer>
-              ) : <p className="py-8 text-center text-sm text-slate-400">Not enough data for a sentiment timeline.</p>}
+              ) : <p className="py-8 text-center text-sm text-slate-400">{tr("notEnoughSentiment")}</p>}
             </Card>
           </div>
         )}
@@ -5103,13 +5103,13 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           <div className="space-y-5">
             {meeting.coaching && (meeting.coaching.strengths?.length || meeting.coaching.improvements?.length || meeting.coaching.tips?.length) && (
               <div className="grid gap-5 md:grid-cols-3">
-                <Card title="Strengths" icon={ThumbsUp}>
+                <Card title={tr("strengths")} icon={ThumbsUp}>
                   <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.strengths || []).map((x, i) => <li key={i} className="flex gap-2"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-500" />{x}</li>)}</ul>
                 </Card>
-                <Card title="Areas to improve" icon={Target}>
+                <Card title={tr("areasToImprove")} icon={Target}>
                   <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.improvements || []).map((x, i) => <li key={i} className="flex gap-2"><Circle size={15} className="mt-0.5 shrink-0 text-amber-500" />{x}</li>)}</ul>
                 </Card>
-                <Card title="Tips" icon={Lightbulb}>
+                <Card title={tr("tips")} icon={Lightbulb}>
                   <ul className="space-y-1.5 text-sm text-slate-600">{(meeting.coaching.tips || []).map((x, i) => <li key={i} className="flex gap-2"><Sparkles size={15} className="mt-0.5 shrink-0 text-violet-500" />{x}</li>)}</ul>
                 </Card>
               </div>
