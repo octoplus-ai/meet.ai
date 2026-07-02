@@ -28,7 +28,13 @@ export default async function handler(req, res) {
     const turns = Array.isArray(body.turns) ? body.turns : [];
     const text = turns.map((t) => `[${t.t || ""}] ${t.speaker || "Speaker"}: ${t.text || ""}`).join("\n").trim();
     if (!text) {
-      await sb(`meetings?id=eq.${enc(meeting.id)}`, { method: "PATCH", body: { status: "error", error: "OctoMeet bot captured no transcript.", status_synced_at: new Date().toISOString() } });
+      // No speech captured (empty/silent meeting). Still persist the recording + cover so the video
+      // isn't lost, and mark the meeting done-but-empty rather than a hard error.
+      const p = { status: "error", error: "No speech was captured in this meeting.", capture_mode: "inhouse_bot", status_synced_at: new Date().toISOString() };
+      if (body.recordingUrl) p.recording_url = body.recordingUrl;
+      if (body.coverUrl) p.cover_url = body.coverUrl;
+      if (body.durationMin) p.duration_min = body.durationMin;
+      await sb(`meetings?id=eq.${enc(meeting.id)}`, { method: "PATCH", body: p });
       return res.status(200).json({ ok: false, skipped: "no transcript" });
     }
     const title = body.title || meeting.title || "Meeting";
