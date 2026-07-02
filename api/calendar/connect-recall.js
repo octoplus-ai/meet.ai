@@ -9,6 +9,9 @@ import { syncRecallCalendar } from "../lib/schedule.js";
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
   try {
+    // KILL SWITCH: with the in-house bot active, Recall's calendar must never (re)connect.
+    // The orchestrator sweeps /api/cron/auto-join every 5 min + arm-all covers app loads.
+    if (process.env.BOT_ORCHESTRATOR_URL) return res.status(200).json({ ok: true, disabled: "inhouse_bot" });
     const t = parseCookies(req).om_session;
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t || "")}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (!s.length) return res.status(401).json({ error: "not authenticated" });

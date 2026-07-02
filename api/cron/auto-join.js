@@ -22,8 +22,9 @@ export default async function handler(req, res) {
     const results = [];
     for (const u of users) {
       try {
-        // Recall-Calendar users are handled by the calendar webhook (V2) — skip V1 to avoid duplicates.
-        if (u.recall_calendar_id) { results.push({ user: u.id, via: "recall_calendar", armed: 0 }); continue; }
+        // Recall-Calendar users are handled by the calendar webhook (V2) — skip V1 to avoid
+        // duplicates. IGNORED in in-house mode: the own bot arms straight from Google Calendar.
+        if (u.recall_calendar_id && !process.env.BOT_ORCHESTRATOR_URL) { results.push({ user: u.id, via: "recall_calendar", armed: 0 }); continue; }
         const r = await armUserCalendar(u.id, { botName: u.notetaker_name || "OctoMeet AI", days: 7 });
         results.push({ user: u.id, ...r });
       } catch (e) {

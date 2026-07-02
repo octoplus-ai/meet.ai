@@ -7,6 +7,8 @@ import { syncRecallCalendar } from "../lib/schedule.js";
 
 export default async function handler(req, res) {
   try {
+    // KILL SWITCH: in-house bot active -> Recall may never schedule bots via this webhook.
+    if (process.env.BOT_ORCHESTRATOR_URL) return res.status(200).json({ ok: true, disabled: "inhouse_bot" });
     const key = new URL(req.url, "http://x").searchParams.get("key");
     if (process.env.RECALL_WEBHOOK_SECRET && key !== process.env.RECALL_WEBHOOK_SECRET) {
       return res.status(401).json({ error: "unauthorized" });
