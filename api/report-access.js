@@ -37,15 +37,21 @@ export default async function handler(req, res) {
     }
     if (req.method === "POST") {
       const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-      const { meetingId, email } = body;
-      if (!meetingId || !email) return res.status(400).json({ error: "bad request" });
+      const { meetingId } = body;
+      // Accept one email OR a batch. The shares column is a whole-array PATCH, so N parallel
+      // single-email POSTs race and drop entries - the batch form does one read-modify-write.
+      const emails = [...new Set((Array.isArray(body.emails) ? body.emails : [body.email]).map((x) => String(x || "").trim().toLowerCase()).filter(Boolean))];
+      if (!meetingId || !emails.length) return res.status(400).json({ error: "bad request" });
       const a = await authorize(req, meetingId, body.shareToken);
       if (!a) return res.status(401).json({ error: "not authorized" });
-      const e = String(email).trim().toLowerCase();
-      const existing = a.shares.find((s) => (s.email || "").toLowerCase() === e);
-      let shares = a.shares.filter((s) => (s.email || "").toLowerCase() !== e);
-      if (!body.remove) {
-        shares.push({ email: e, role: body.role === "Editor" ? "Editor" : "Viewer", name: body.name || (existing && existing.name) || "", picture: (existing && existing.picture) || "", token: (existing && existing.token) || randomToken(), magic: (existing && existing.magic) || randomToken() });
+      let shares = a.shares;
+      for (const e of emails) {
+        const existing = shares.find((s) => (s.email || "").toLowerCase() === e);
+        shares = shares.filter((s) => (s.email || "").toLowerCase() !== e);
+        if (!body.remove) {
+          // body.name only applies when a single address is being upserted.
+          shares.push({ email: e, role: body.role === "Editor" ? "Editor" : "Viewer", name: (emails.length === 1 && body.name) || (existing && existing.name) || "", picture: (existing && existing.picture) || "", token: (existing && existing.token) || randomToken(), magic: (existing && existing.magic) || randomToken() });
+        }
       }
       await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}`, { method: "PATCH", body: { shares } });
       return res.status(200).json({ ok: true, shares });

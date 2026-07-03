@@ -47,6 +47,8 @@ export default async function handler(req, res) {
 
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const messages = Array.isArray(body.messages) ? body.messages.filter((m) => (m.role === "user" || m.role === "assistant") && m.content).slice(-8) : [];
+    // The -8 window can start on an assistant turn, which the Messages API rejects (400).
+    while (messages.length && messages[0].role !== "user") messages.shift();
     const question = body.question || (messages.length ? messages[messages.length - 1].content : "");
     if (!question) return res.status(400).json({ error: "no question" });
 

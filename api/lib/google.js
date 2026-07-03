@@ -86,10 +86,19 @@ export async function listUpcomingEvents(userId, { days = 7 } = {}) {
   if (!token) return { error: "no token", events: [] };
   const now = new Date();
   const max = new Date(now.getTime() + days * 86400000);
-  const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=50&singleEvents=true&orderBy=startTime`;
-  const cal = await fetch(url, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
-  if (cal.error) return { error: "calendar auth failed", events: [] };
-  const events = (cal.items || []).map((e) => ({
+  const base = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=250&singleEvents=true&orderBy=startTime`;
+  // Follow nextPageToken: a busy calendar spans multiple pages, and a dropped page means
+  // auto-join silently never arms those meetings. Any failed page fails the whole fetch
+  // (callers must never treat a partial list as complete). Hard cap at 500 items.
+  const items = [];
+  let pageToken = null;
+  do {
+    const cal = await fetch(base + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""), { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+    if (cal.error) return { error: "calendar auth failed", events: [] };
+    items.push(...(cal.items || []));
+    pageToken = cal.nextPageToken || null;
+  } while (pageToken && items.length < 500);
+  const events = items.slice(0, 500).map((e) => ({
     id: e.id,
     title: e.summary || "(no title)",
     start: e.start?.dateTime || e.start?.date,
@@ -99,5 +108,7 @@ export async function listUpcomingEvents(userId, { days = 7 } = {}) {
     organizer: e.organizer?.email || null,
     selfDeclined: (e.attendees || []).some((a) => a.self && a.responseStatus === "declined"),
   }));
-  return { events };
+  // truncated = the cap cut a pending page: the list is INCOMPLETE. Arming can proceed, but
+  // the disarm pass must not treat missing-from-list as cancelled (mass-skip hazard).
+  return { events, truncated: !!pageToken, fetchedAt: now.getTime() };
 }

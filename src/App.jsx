@@ -520,7 +520,7 @@ function adaptReal(m) {
     topics: r.topics || [],
     keyQuestions: kq.map((k) => k.q),
     keyQA: kq,
-    actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", t: a.t || "", at: tsToSeconds(a.t), done: false })),
+    actionItems: (r.action_items || []).map((a) => ({ owner: a.owner || "", task: a.task || "", due: a.due || "", t: a.t || "", at: tsToSeconds(a.t), done: !!a.done })),
     chapters: (r.chapters || []).map((c) => (typeof c === "string"
       ? { title: c, summary: "", t: "", at: null, points: [] }
       : { title: c.title || "", summary: c.summary || "", t: c.t || "", at: tsToSeconds(c.t), points: Array.isArray(c.points) ? c.points : [] })),
@@ -534,6 +534,9 @@ function adaptReal(m) {
     subtitles: (r.subtitles && typeof r.subtitles === "object") ? r.subtitles : {},
     video: (done && m.capture_mode === "inhouse_bot" && m.recording_url) ? m.recording_url
       : ((done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null),
+    // Owner's Link Access choice; legacy rows with a minted token default to public (their
+    // links were already out in the wild), token-less rows default to restricted.
+    linkAccess: m.link_access || (m.share_token ? "public" : "restricted"),
     cover_url: m.cover_url || null,
     // Known emails for this meeting (calendar attendees + people it was shared with) - for
     // search, the participants popover and "copy emails".
@@ -848,7 +851,9 @@ function SharedReportView({ token }) {
         if (r.ok) {
           const d = await r.json();
           const m = adaptReal(d.meeting);
-          if (m.video) m.video += (m.video.includes("?") ? "&" : "?") + "share=" + encodeURIComponent(token);
+          // Only the same-origin media proxy understands ?share= - appending it to an absolute
+          // R2 presigned URL corrupts the SigV4 signature and breaks video playback entirely.
+          if (m.video && m.video.startsWith("/api/")) m.video += (m.video.includes("?") ? "&" : "?") + "share=" + encodeURIComponent(token);
           setRole(d.role === "Editor" ? "Editor" : "Viewer");
           setMeeting(m);
           return;
@@ -884,7 +889,9 @@ function SharedReportView({ token }) {
         <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noreferrer" className="ml-auto rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">Get OctoMeet</a>
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
-        <MeetingDetail meeting={meeting} meetings={[meeting]} shared role={role} shareTok={token} onBack={null} onUpdate={() => {}} />
+        {/* Real updater: Editor mutations (action-item toggles, speaker rename) must reflect in
+            this view too - a no-op left the UI stale and made unchecking items impossible. */}
+        <MeetingDetail meeting={meeting} meetings={[meeting]} shared role={role} shareTok={token} onBack={null} onUpdate={(list) => { const next = Array.isArray(list) && list.find((x) => x && x.id === meeting.id); if (next) setMeeting(next); }} />
       </div>
     </div>
   );
@@ -1008,7 +1015,9 @@ export default function App() {
   };
   // Real Google user (Santiago) sees ONLY their real measured meetings - no demo/seed clutter.
   // The demo/email login still sees seeded meetings so the app isn't empty for previews.
-  const allMeetings = useMemo(() => (user ? realMeetings : [...realMeetings, ...(meetings || [])]), [realMeetings, meetings, user]);
+  // Locally-created uploads (m.uploaded) must stay visible for signed-in users too, or the
+  // upload flow ends on a blank screen (active id points at a filtered-out meeting).
+  const allMeetings = useMemo(() => (user ? [...realMeetings, ...(meetings || []).filter((m) => m.uploaded)] : [...realMeetings, ...(meetings || [])]), [realMeetings, meetings, user]);
   const active = useMemo(() => allMeetings.find((m) => m.id === activeId), [allMeetings, activeId]);
   const [shareIntent, setShareIntent] = useState(false);
   const [gmailNudge, setGmailNudge] = useState(true);
@@ -2106,8 +2115,19 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   };
   const arm = (e, key, val) => {
     setArmed((s) => { const next = { ...s, [key]: val }; store.set(CAL_ARMED_KEY, next); return next; });
-    if (val) startBot(e.url, e.name, e.startIso, e.eventId);
-    else toast("OctoMeet won't join this one.");
+    if (val && e.eventId) {
+      // Re-enable through the per-event endpoint: it also revives a previously skipped row.
+      fetch("/api/event-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: e.eventId, enable: true }) })
+        .then((r) => r.json()).then((d) => toast(d && d.ok !== false ? "OctoMeet will join this meeting 🗓️" : "Couldn't arm: " + (d.detail || d.error || "failed")))
+        .catch(() => toast("Network error"));
+    } else if (val) startBot(e.url, e.name, e.startIso, e.eventId);
+    else if (e.eventId) {
+      // Server-side disarm: marks the meeting skipped AND cancels the orchestrator job -
+      // the localStorage flag alone never stopped an already-armed bot.
+      fetch("/api/event-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: e.eventId, enable: false }) })
+        .then((r) => r.json()).then((d) => toast(d && d.ok ? "OctoMeet won't join this one." : "Couldn't disarm: " + (d.error || "failed")))
+        .catch(() => toast("Network error"));
+    } else toast("OctoMeet won't join this one.");
   };
   const toggleAutoJoin = async (val) => {
     setAutoJoin(val);
@@ -2172,7 +2192,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
             {display.map((e, i) => {
               const key = e.eventId || (e.name + "|" + e.date);
               const mtg = e.eventId ? byEvent[e.eventId] : null;
-              const isArmed = mtg ? mtg.status !== "error" : (armed[key] ?? (autoJoin && !!e.url));
+              const isArmed = mtg ? !["error", "skipped"].includes(mtg.status) : (armed[key] ?? (autoJoin && !!e.url));
               const tt = e.startIso ? totalTime(e.startIso, e.endIso, e.ppl) : null;
               return (
                 <div key={i} className="grid grid-cols-[1.7fr_1fr_1.2fr_90px] items-center border-b border-slate-100 px-3 py-3.5">
@@ -4259,7 +4279,7 @@ function AskPanel({ meeting, shared, shareTok }) {
                   <Paperclip size={13} /> Attach
                   <input type="file" multiple accept="image/*,.txt,.md,.csv,text/*" className="hidden" onChange={(e) => onFiles(e.target.files)} />
                 </label>
-                <button onClick={generate} disabled={genBusy} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{genBusy ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate</>}</button>
+                <button onClick={() => generate(false)} disabled={genBusy} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{genBusy ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate</>}</button>
               </div>
             </div>
           </>
@@ -4516,7 +4536,14 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   const removeAccess = (email) => { setAccess((a) => a.filter((s) => s.email !== email)); fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email, remove: true, shareToken: shared ? shareTok : undefined }) }).catch(() => {}); };
   const [addPeople, setAddPeople] = useState([]); // people invited via the Share modal
   const [shareQuery, setShareQuery] = useState("");
-  const [linkAccess, setLinkAccess] = useState("restricted"); // "restricted" | "public"
+  const [linkAccess, setLinkAccess] = useState(meeting.linkAccess || "restricted"); // "restricted" | "public"
+  const changeLinkAccess = (k) => {
+    setLinkAccess(k);
+    // Persist: shared-report enforces this server-side (restricted = the public link 403s).
+    fetch("/api/share-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, setAccess: k }) })
+      .then((r) => { if (r.ok) toast(k === "public" ? "Anyone with the link can view" : "Public link disabled - only people with access"); })
+      .catch(() => {});
+  };
   const [accessOpen, setAccessOpen] = useState(false);
   const [shareStep, setShareStep] = useState(1);
   const [shareMsg, setShareMsg] = useState("");
@@ -4527,11 +4554,17 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   const closeShare = () => { setShareOpen(false); setShareStep(1); setShareQuery(""); setShareMsg(""); setAccessOpen(false); setRoleOpen(false); setAddPeople([]); };
   const doShare = async () => {
     const emails = addPeople.filter((p) => /.+@.+\..+/.test(p));
-    const n = addPeople.length, msg = shareMsg;
-    // Persist each added email into the per-person access list with the chosen role.
-    emails.forEach((em) => { fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, email: em, role: shareRole || "Viewer", shareToken: shared ? shareTok : undefined }) }).catch(() => {}); });
+    const dropped = addPeople.length - emails.length;
+    const msg = shareMsg;
     closeShare();
-    if (notify && emails.length) {
+    if (dropped > 0) toast(`${dropped} entrad${dropped > 1 ? "as" : "a"} sin email fueron omitidas`);
+    if (!emails.length) { if (!dropped) toast("Add an email first"); return; }
+    // ONE access write for all emails (parallel per-email writes raced on the shares array and
+    // silently dropped people); when notify is on, the access grant + email go together.
+    try {
+      await fetch("/api/report-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, emails, role: shareRole || "Viewer", shareToken: shared ? shareTok : undefined }) });
+    } catch (e) {}
+    if (notify) {
       toast("Sending email…");
       try {
         const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg, role: shareRole, shareToken: shared ? shareTok : undefined }) });
@@ -4541,7 +4574,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
         else toast("No se pudo enviar el email: " + (d.detail || d.error || ""));
       } catch (e) { toast("No se pudo enviar el email"); }
     } else {
-      toast(n ? `Report shared with ${n} ${n > 1 ? "people" : "person"}` : "Report shared");
+      toast(`Report shared with ${emails.length} ${emails.length > 1 ? "people" : "person"}`);
     }
   };
 
@@ -4569,9 +4602,10 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     toast(name + " connected"); doPush(k);
   };
   const shortSummary = (meeting.summary || "").split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
-  // People you can share with: meeting participants + a few company teammates.
+  // People you can share with: known attendee/share EMAILS (participant names are useless -
+  // doShare's email filter silently dropped them) + a few company teammates.
   const COMPANY = ["santiago@octoplusteam.com", "nicolas@octoplusteam.com", "team@octoplusteam.com"];
-  const shareCandidates = [...new Set([...meeting.participants.map((p) => p.name), ...COMPANY])].filter((n) => !addPeople.includes(n));
+  const shareCandidates = [...new Set([...(meeting.contacts || []).map((c) => c.email), ...COMPANY])].filter((n) => n && !addPeople.includes(n));
   const shareMatches = shareQuery.trim() ? shareCandidates.filter((n) => n.toLowerCase().includes(shareQuery.trim().toLowerCase())) : [];
 
   // Persist a manual edit to a report section (one item per line) + optimistic UI update.
@@ -4597,9 +4631,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   ].sort((a, b) => a.at - b.at), [meeting]);
 
   const toggleItem = (idx) => {
-    const next = meetings.map((m) => m.id === meeting.id
-      ? { ...m, actionItems: m.actionItems.map((it, i) => (i === idx ? { ...it, done: !it.done } : it)) } : m);
+    const items = meeting.actionItems.map((it, i) => (i === idx ? { ...it, done: !it.done } : it));
+    const next = meetings.map((m) => (m.id === meeting.id ? { ...m, actionItems: items } : m));
     onUpdate(next);
+    // Persist the done flag - the list re-syncs from the server every few seconds, so a
+    // local-only toggle silently reverts. Same field write path the inline editors use.
+    if (meeting.real) {
+      const value = items.map((it) => ({ owner: it.owner, task: it.task, due: it.due, t: it.t, done: !!it.done }));
+      fetch("/api/report-field", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, field: "action_items", value, shareToken: shared ? shareTok : undefined }) }).catch(() => {});
+    }
   };
   const filteredTurns = meeting.transcript.filter((t) => !q || (t.text + " " + t.speaker).toLowerCase().includes(q.toLowerCase()));
   const speakerIdx = {};
@@ -4698,7 +4738,10 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   const shareReport = async () => {
     let url = window.location.href;
     try { const r = await fetch("/api/share-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id }) }); const d = await r.json(); if (r.ok && d.url) url = d.url; } catch (e) {}
-    try { await navigator.clipboard.writeText(url); toast("Public report link copied"); } catch (e) { toast("Couldn't copy the link"); }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast(linkAccess === "public" ? "Public report link copied" : "Link copied - works when Link Access is set to Anyone");
+    } catch (e) { toast("Couldn't copy the link"); }
   };
 
   return (
@@ -4712,7 +4755,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           <div className="flex items-center gap-2">
             {/* AI Document - Claude builds a polished, well-structured doc (PDF + Word) */}
             <div className="group relative">
-              <button onClick={genDoc} disabled={docBusy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{docBusy ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <><Sparkles size={14} /> AI Doc</>}</button>
+              <button onClick={() => genDoc(false)} disabled={docBusy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{docBusy ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <><Sparkles size={14} /> AI Doc</>}</button>
               <div className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-64 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">
                 Turns this meeting into a polished, well-structured document (summary, decisions, action items) - download as <b>PDF</b> or <b>Word</b>.
               </div>
@@ -4844,7 +4887,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                   {accessOpen && (
                     <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
                       {[{ k: "restricted", t: "Restricted access", d: "Only people with access", ic: <Lock size={15} className="text-slate-500" /> }, { k: "public", t: "Anyone with the link", d: "Public to anyone with the link", ic: <Globe size={15} className="text-emerald-600" /> }].map((o) => (
-                        <button key={o.k} onClick={() => { setLinkAccess(o.k); setAccessOpen(false); }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
+                        <button key={o.k} onClick={() => { changeLinkAccess(o.k); setAccessOpen(false); }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50">
                           {o.ic}<div className="flex-1"><div className="text-[13px] font-medium text-slate-700">{o.t}</div><div className="text-[11px] text-slate-400">{o.d}</div></div>{linkAccess === o.k && <Check size={15} className="text-violet-600" />}
                         </button>
                       ))}
@@ -5060,11 +5103,31 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             <div className="space-y-3">
               {filteredTurns.map((t, i) => {
                 const ci = speakerIdx[t.speaker] ?? 0;
+                const canRename = meeting.real && (!shared || role === "Editor");
+                const renameSpeaker = () => {
+                  const to = (window.prompt(`Rename "${t.speaker}" everywhere in this report:`, t.speaker) || "").trim();
+                  if (!to || to === t.speaker) return;
+                  fetch("/api/speaker-rename", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, from: t.speaker, to, shareToken: shared ? shareTok : undefined }) })
+                    .then((r) => r.json()).then((d) => {
+                      if (!d.ok) { toast("Rename failed: " + (d.error || "")); return; }
+                      const fix = (m) => ({ ...m,
+                        transcript: (m.transcript || []).map((x) => (x.speaker === t.speaker ? { ...x, speaker: to } : x)),
+                        participants: (m.participants || []).map((p) => (p.name === t.speaker ? { ...p, name: to, initials: to.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() } : p)),
+                      });
+                      if (onUpdate) onUpdate(meetings.map((m) => (m.id === meeting.id ? fix(m) : m)));
+                      toast(`Renamed to ${to} ✓`);
+                    }).catch(() => toast("Rename failed"));
+                };
                 return (
                   <div key={i} className="flex gap-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: SPEAKER_COLORS[ci % SPEAKER_COLORS.length] }}>{initialsOf(t.speaker)}</span>
                     <div className="flex-1 rounded-xl border border-slate-100 bg-white p-3">
-                      <div className="mb-1 flex items-center gap-2"><span className="text-xs font-semibold text-slate-700">{t.speaker}</span>{t.at != null ? <TimeChip t={t.t} onClick={() => seekTo(t.at)} /> : (t.t && <span className="text-[10px] text-slate-300">{t.t}</span>)}</div>
+                      <div className="mb-1 flex items-center gap-2">
+                        {canRename
+                          ? <button onClick={renameSpeaker} title="Rename this speaker everywhere" className="group/spk flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-violet-700">{t.speaker}<Pencil size={10} className="opacity-0 transition group-hover/spk:opacity-60" /></button>
+                          : <span className="text-xs font-semibold text-slate-700">{t.speaker}</span>}
+                        {t.at != null ? <TimeChip t={t.t} onClick={() => seekTo(t.at)} /> : (t.t && <span className="text-[10px] text-slate-300">{t.t}</span>)}
+                      </div>
                       <p className="text-sm leading-relaxed text-slate-600">{t.text}</p>
                     </div>
                   </div>
@@ -5521,7 +5584,8 @@ function UploadModal({ onClose, onSave }) {
       const parsed = extractJSON(out);
       const turns = parseTranscript(transcript);
       const meeting = mk({
-        id: "m" + Date.now(), title: baseTitle, date: REF_TODAY, source: "Upload", folder: "Meetings",
+        // uploaded: keeps this local meeting visible for signed-in users (allMeetings filter).
+        id: "m" + Date.now(), title: baseTitle, date: REF_TODAY, source: "Upload", folder: "Meetings", uploaded: true,
         timeStart: "-", timeEnd: "-", owner: "NB", readScore: parsed.scores?.overall ?? 80,
         video: VIDEOS[(baseTitle.length) % VIDEOS.length],
         participantsCount: (parsed.participants || []).length || 2,

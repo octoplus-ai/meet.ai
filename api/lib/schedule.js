@@ -3,6 +3,7 @@
 import { sb } from "./supa.js";
 import { recallBase, transcriptProvider, CAPTIONS_PROVIDER } from "./recall.js";
 import { listUpcomingEvents, annotateEvent } from "./google.js";
+import { stopOrchestratorJob } from "./orch.js";
 import { OCTO_AVATAR_JPEG_B64 } from "./avatar.js";
 import { listCalendarEvents, scheduleBotForEvent, botIdFromEvent } from "./recall-calendar.js";
 
@@ -78,7 +79,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
   if (calendarEventId) {
     // Dedup on the calendar event (one row per event, enforced by a DB unique index). Include ALL
     // statuses so a past errored meeting doesn't trigger a duplicate INSERT (23505) on every sweep.
-    const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&select=id,bot_id,status,start_time,status_synced_at`);
+    const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&select=id,bot_id,status,start_time,status_synced_at,meeting_url`);
     if (ex && ex.length) {
       const m0 = ex[0];
       const evStart = joinAt ? new Date(joinAt) : null;
@@ -86,13 +87,15 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
       //  - it errored and the event was rescheduled to the future, OR
       //  - it errored, the meeting is still ongoing (<60 min in), and the last attempt ended >12 min
       //    ago (join-wait is 10 min, so cycles never overlap and a ghost meeting can't spam boots), OR
-      //  - it's still "scheduled" but the event time moved (user rescheduled before it ran).
+      //  - it's still "scheduled" but the event time moved (user rescheduled before it ran), OR
+      //  - it's still "scheduled" but the Meet link changed (the bot would join a dead room).
       const lastSync = m0.status_synced_at ? new Date(m0.status_synced_at).getTime() : 0;
       const futureEv = evStart && evStart.getTime() > Date.now() + 30000;
       const ongoingEv = evStart && evStart.getTime() > Date.now() - 60 * 60000;
       const cooledDown = Date.now() - lastSync > 12 * 60000;
       const timeChanged = evStart && m0.start_time && Math.abs(new Date(m0.start_time).getTime() - evStart.getTime()) > 120000;
-      const rearm = OWN && ((m0.status === "error" && (futureEv || (ongoingEv && cooledDown))) || (m0.status === "scheduled" && timeChanged));
+      const urlChanged = meetingUrl && m0.meeting_url && meetingUrl !== m0.meeting_url;
+      const rearm = OWN && ((m0.status === "error" && (futureEv || (ongoingEv && cooledDown))) || (m0.status === "scheduled" && (timeChanged || urlChanged)));
       if (!rearm) return { already: true, meeting: m0 };
       const schedOwn = futureEv;
       await sb(`meetings?id=eq.${m0.id}`, { method: "PATCH", body: { status: schedOwn ? "scheduled" : "joining", error: null, meeting_url: meetingUrl, start_time: schedOwn ? evStart.toISOString() : new Date().toISOString(), status_synced_at: new Date().toISOString() } });
@@ -165,7 +168,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
 
 // Schedule bots for ALL of a user's upcoming calendar events with a meeting link.
 export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
-  const { events, error } = await listUpcomingEvents(userId, { days });
+  const { events, error, truncated, fetchedAt } = await listUpcomingEvents(userId, { days });
   if (error) return { error, armed: 0 };
   let armed = 0, already = 0, skipped = 0;
   for (const e of events) {
@@ -177,5 +180,28 @@ export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
     else if (res.already) already++;
     else skipped++;
   }
-  return { armed, already, skipped, total: events.length };
+
+  // DISARM pass: armed rows whose calendar event vanished (cancelled/deleted) or was declined
+  // must not send a bot into a dead room. Skipped entirely when the fetch was TRUNCATED (cap
+  // hit with pages pending) - an incomplete list must never mass-skip meetings. The window is
+  // anchored to the FEED's own clock (fetchedAt) and shrunk on both ends: Google's timeMin
+  // filters on event END (imminent/started meetings can drop off the feed while still valid)
+  // and timeMax on event START, so only comfortably-inside-the-window FUTURE rows are judged.
+  let disarmed = 0;
+  if (!truncated) {
+    const base = fetchedAt || Date.now();
+    const winStart = new Date(base + 60000).toISOString();               // future events only
+    const winEnd = new Date(base + days * 86400000 - 10 * 60000).toISOString(); // 10 min inside timeMax
+    const armedRows = await sb(`meetings?user_id=eq.${userId}&status=in.(scheduled,joining)&calendar_event_id=not.is.null&start_time=gte.${encodeURIComponent(winStart)}&start_time=lte.${encodeURIComponent(winEnd)}&select=id,calendar_event_id,meeting_url`);
+    const liveEvents = new Map(events.map((e) => [e.id, e]));
+    for (const row of armedRows) {
+      if (!row.meeting_url) continue;
+      const ev = liveEvents.get(row.calendar_event_id);
+      if (ev && !ev.selfDeclined) continue;
+      await sb(`meetings?id=eq.${row.id}`, { method: "PATCH", body: { status: "skipped", error: "event cancelled or declined", status_synced_at: new Date().toISOString() } });
+      await stopOrchestratorJob(row.id);
+      disarmed++;
+    }
+  }
+  return { armed, already, skipped, disarmed, total: events.length };
 }

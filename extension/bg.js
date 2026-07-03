@@ -22,6 +22,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     if (msg.type === "state") {
       sendResponse(await api("/api/event-bot?eventId=" + encodeURIComponent(msg.eventId)));
+    } else if (msg.type === "states") {
+      const ids = (msg.eventIds || []).slice(0, 100).map(encodeURIComponent).join(",");
+      sendResponse(ids ? await api("/api/event-bot?eventIds=" + ids) : { states: {} });
     } else if (msg.type === "toggle") {
       sendResponse(await api("/api/event-bot", { method: "POST", body: JSON.stringify({ eventId: msg.eventId, enable: msg.enable }) }));
     } else if (msg.type === "save-token") {

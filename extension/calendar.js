@@ -1,6 +1,6 @@
 // OctoMeet AI - Google Calendar content script.
-// Injects a per-event notetaker toggle (before the meeting) and the Read Score +
-// report link (after) into the event popup, like Read.ai does.
+// Injects (1) a per-event notetaker toggle + Read Score + report link into the event popup and
+// (2) score chips onto the event blocks in the calendar grid - like Read.ai does.
 (() => {
   const APP = "https://meet.octoplusteam.com";
   let lastEventId = null; // most recently clicked event chip (fallback source of the event id)
@@ -34,6 +34,8 @@
           el.remove();
           if (dlg) inject(dlg); // re-render now that we're signed in
         });
+        stateCache.clear();
+        scanGrid();
       });
     }
   });
@@ -43,6 +45,18 @@
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
+  }
+
+  // ---------- Event popup: toggle before the meeting, score + report link after ----------
+
+  function costLine(state) {
+    // Read.ai's "1 hr x 4 guests = 4 hours total time" line.
+    if (!state || !state.durationMin || !state.guestCount) return null;
+    const mins = state.durationMin, g = Math.max(1, state.guestCount);
+    const each = mins >= 60 ? `${Math.round((mins / 60) * 10) / 10} hr` : `${mins} min`;
+    const totMin = mins * g;
+    const tot = totMin >= 60 ? `${Math.round((totMin / 60) * 10) / 10} hours` : `${totMin} minutes`;
+    return `${each} x ${g} guest${g > 1 ? "s" : ""} = ${tot} total time`;
   }
 
   function render(row, eventId, state) {
@@ -81,7 +95,7 @@
       return;
     }
 
-    // Pre-meeting: the toggle.
+    // Pre-meeting: the toggle (+ the total-time cost line when we know the event).
     const label = el("label", "octomeet-switch");
     const input = document.createElement("input");
     input.type = "checkbox";
@@ -104,6 +118,12 @@
       });
     });
     row.append(label, hint);
+    const cost = costLine(state);
+    if (cost) {
+      const line = el("div", "octomeet-cost", cost);
+      row.appendChild(line);
+      row.classList.add("octomeet-row-tall");
+    }
   }
 
   function inject(dialog) {
@@ -124,14 +144,55 @@
     });
   }
 
+  // ---------- Calendar grid: score chips on the event blocks (Read.ai parity) ----------
+
+  const stateCache = new Map(); // eventId -> { score, status } (session-lived; cleared on login)
+  let scanTimer = null;
+  let authKnownBad = false; // don't hammer the API while signed out; popup offers Connect
+
+  function paintChip(node, eventId) {
+    const st = stateCache.get(eventId);
+    if (!st || st.status !== "done" || st.score == null) return;
+    if (node.querySelector(":scope > .octomeet-grid-chip")) return;
+    const chip = el("span", "octomeet-grid-chip", String(st.score));
+    chip.title = "OctoMeet Read Score";
+    node.prepend(chip);
+  }
+
+  function scanGrid() {
+    if (authKnownBad) return;
+    const nodes = [...document.querySelectorAll("[data-eventid]")].filter((n) => n.offsetParent !== null);
+    const byId = new Map();
+    for (const n of nodes) {
+      const id = decodeEventId(n.getAttribute("data-eventid"));
+      if (!id) continue;
+      if (!byId.has(id)) byId.set(id, []);
+      byId.get(id).push(n);
+    }
+    const unknown = [...byId.keys()].filter((id) => !stateCache.has(id)).slice(0, 100);
+    const paintAll = () => { for (const [id, ns] of byId) ns.forEach((n) => paintChip(n, id)); };
+    if (!unknown.length) { paintAll(); return; }
+    chrome.runtime.sendMessage({ type: "states", eventIds: unknown }, (r) => {
+      if (!r || r.needAuth) { authKnownBad = !!(r && r.needAuth); return; }
+      const states = r.states || {};
+      for (const id of unknown) stateCache.set(id, states[id] || { status: "none" });
+      paintAll();
+    });
+  }
+  const queueScan = () => { clearTimeout(scanTimer); scanTimer = setTimeout(scanGrid, 900); };
+
   const mo = new MutationObserver((muts) => {
+    let sawGridChange = false;
     for (const m of muts) {
       for (const n of m.addedNodes) {
         if (!(n instanceof HTMLElement)) continue;
         const dlg = n.matches && n.matches('[role="dialog"]') ? n : n.querySelector && n.querySelector('[role="dialog"]');
         if (dlg) setTimeout(() => inject(dlg), 250); // let gcal finish painting the popup
+        if (n.matches && (n.matches("[data-eventid]") || (n.querySelector && n.querySelector("[data-eventid]")))) sawGridChange = true;
       }
     }
+    if (sawGridChange) queueScan();
   });
   mo.observe(document.body, { childList: true, subtree: true });
+  queueScan();
 })();

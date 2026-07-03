@@ -16,7 +16,7 @@ async function ownerMeeting(req, meetingId) {
   if (!t || !meetingId) return null;
   const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
   if (!s.length) return null;
-  const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${s[0].user_id}&select=id,bot_id,dubs,duration_min`);
+  const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${s[0].user_id}&select=id,bot_id,dubs,duration_min,recording_url,capture_mode`);
   return m.length ? { meeting: m[0], ownerId: s[0].user_id } : null;
 }
 // For media playback: owner session OR a valid share token.
@@ -69,9 +69,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ status, ready: status === "dubbed" });
     }
 
-    // action: start
-    const bot = m.bot_id ? await getBot(m.bot_id) : null;
-    const src = bot ? videoUrl(bot) : null;
+    // action: start. In-house recordings live at meetings.recording_url (R2) - getBot only
+    // resolves real Recall bot ids, so that path stays the fallback.
+    let src = null;
+    if (m.capture_mode === "inhouse_bot" && m.recording_url) src = m.recording_url;
+    else { const bot = m.bot_id ? await getBot(m.bot_id) : null; src = bot ? videoUrl(bot) : null; }
     if (!src) return res.status(400).json({ error: "no_recording", detail: "This meeting has no downloadable recording to dub." });
 
     const form = new FormData();

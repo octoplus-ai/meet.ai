@@ -7,6 +7,7 @@ import { parseCookies } from "./lib/session.js";
 import { listUpcomingEvents } from "./lib/google.js";
 import { scheduleBot } from "./lib/schedule.js";
 import { ensureShareToken } from "./lib/share.js";
+import { stopOrchestratorJob } from "./lib/orch.js";
 
 const enc = encodeURIComponent;
 const APP = (process.env.APP_URL || "https://meet.octoplusteam.com").replace(/\/+$/, "");
@@ -23,7 +24,7 @@ async function sessionUser(req, body) {
 
 // Latest meetings row linked to this calendar event (the DB enforces one per event, but be safe).
 async function rowFor(uid, eventId) {
-  const rows = await sb(`meetings?user_id=eq.${uid}&calendar_event_id=eq.${enc(eventId)}&select=id,status,start_time,title,meeting_url,bot_id&order=created_at.desc&limit=1`);
+  const rows = await sb(`meetings?user_id=eq.${uid}&calendar_event_id=eq.${enc(eventId)}&select=id,status,start_time,title,meeting_url,bot_id,attendees,duration_min&order=created_at.desc&limit=1`);
   return rows[0] || null;
 }
 
@@ -31,18 +32,6 @@ async function rowFor(uid, eventId) {
 async function findEvent(uid, eventId) {
   const { events } = await listUpcomingEvents(uid, { days: 14 }).catch(() => ({ events: [] }));
   return (events || []).find((e) => e.id === eventId) || null;
-}
-
-async function stopOrchestratorJob(meetingId) {
-  const OWN = process.env.BOT_ORCHESTRATOR_URL;
-  if (!OWN) return;
-  try {
-    await fetch(OWN.replace(/\/$/, "") + "/bots/stop-by-meeting", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-orch-secret": process.env.ORCH_SHARED_SECRET || "" },
-      body: JSON.stringify({ meetingId }),
-    });
-  } catch (e) { /* best-effort: pending.js won't re-arm a skipped row anyway */ }
 }
 
 export default async function handler(req, res) {
@@ -53,13 +42,43 @@ export default async function handler(req, res) {
     const uid = await sessionUser(req, body);
     if (!uid) return res.status(401).json({ error: "not authenticated" });
 
-    const eventId = req.method === "POST" ? body.eventId : new URL(req.url, "http://x").searchParams.get("eventId");
+    const url = new URL(req.url, "http://x");
+
+    // Batch: GET ?eventIds=a,b,c (up to 100) -> { states } in ONE query. Feeds the extension's
+    // whole calendar grid, so it must stay fast: no event lookups, no share-token minting.
+    if (req.method === "GET" && url.searchParams.get("eventIds")) {
+      const ids = url.searchParams.get("eventIds").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100);
+      if (!ids.length) return res.status(400).json({ error: "eventIds required" });
+      const inList = ids.map((i) => enc(`"${i.replace(/"/g, "")}"`)).join(",");
+      const rows = await sb(`meetings?user_id=eq.${uid}&calendar_event_id=in.(${inList})&select=id,calendar_event_id,status,reports(read_score)`);
+      const states = {};
+      for (const r of rows) {
+        // PostgREST embeds reports as a single object when meeting_id is unique - normalize both shapes.
+        const rep = Array.isArray(r.reports) ? r.reports[0] : r.reports;
+        states[r.calendar_event_id] = { status: r.status, score: rep && rep.read_score != null ? rep.read_score : null };
+      }
+      return res.status(200).json({ states });
+    }
+
+    const eventId = req.method === "POST" ? body.eventId : url.searchParams.get("eventId");
     if (!eventId) return res.status(400).json({ error: "eventId required" });
 
     if (req.method === "GET") {
       const m = await rowFor(uid, eventId);
-      if (!m) return res.status(200).json({ linked: false, enabled: true }); // default: auto-join will arm it
-      const out = { linked: true, status: m.status, enabled: m.status !== "skipped" && m.status !== "error" };
+      // Duration + guest count for the extension card: live event first, meetings row as fallback.
+      const ev = await findEvent(uid, eventId);
+      let durationMin = null;
+      if (ev && ev.start && ev.end) { const ms = new Date(ev.end) - new Date(ev.start); if (ms > 0) durationMin = Math.round(ms / 60000); }
+      else if (m && m.duration_min) durationMin = m.duration_min;
+      const guestCount = (ev && ev.attendees > 0) ? ev.attendees
+        : (m && Array.isArray(m.attendees) && m.attendees.length ? m.attendees.length : null);
+      if (!m) {
+        // Unlinked event: "enabled" means "auto-join WILL arm it", which is only true when the
+        // user's auto_join pref is on - never hardcode it.
+        const u = await sb(`app_users?id=eq.${uid}&select=auto_join`).catch(() => []);
+        return res.status(200).json({ linked: false, enabled: (u[0] || {}).auto_join !== false, durationMin, guestCount });
+      }
+      const out = { linked: true, status: m.status, enabled: m.status !== "skipped" && m.status !== "error", durationMin, guestCount };
       if (m.status === "done") {
         const rep = await sb(`reports?meeting_id=eq.${enc(m.id)}&select=read_score`).catch(() => []);
         out.score = rep && rep.length ? rep[0].read_score : null;

@@ -83,9 +83,10 @@
         const session = await window.meet.addon.createAddonSession({ cloudProjectNumber: CLOUD_PROJECT_NUMBER });
         const sidePanel = await session.createSidePanelClient();
         const info = await sidePanel.getMeetingInfo();
-        const code = info && (info.meetingCode || info.meetingId);
-        meetingCode = info && info.meetingCode ? String(info.meetingCode).replace(/^https?:\/\/meet\.google\.com\//, "") : null;
-        meetingUrl = code ? ("https://meet.google.com/" + String(code).replace(/^https?:\/\/meet\.google\.com\//, "")) : null;
+        // meetingCode is sometimes absent - meetingId carries the same code in those builds.
+        const raw = info && (info.meetingCode || info.meetingId);
+        meetingCode = raw ? String(raw).replace(/^https?:\/\/meet\.google\.com\//, "") : null;
+        meetingUrl = meetingCode ? ("https://meet.google.com/" + meetingCode) : null;
         $("ctx").textContent = meetingUrl ? "Connected to this meeting ✓" : "Open this from inside a Meet call.";
       } catch (e) {
         $("ctx").textContent = "Loaded.";
@@ -127,10 +128,12 @@
       });
     }
 
-    // ---- Botless path (Meet Media API): OctoMeet captures media directly, NO bot joins.
-    let pc = null, audioTracks = [];
-    async function startBotless() {
-      const tk = await ensureToken(false);                                  // OctoMeet session token
+    // ---- Botless path (Meet Media API): OctoMeet captures the call audio directly - NO bot
+    // joins. Google shows its native "media collection" consent to the participants, exactly
+    // like Read.ai. The received tracks are mixed and recorded IN THIS PANEL, then shipped to
+    // the orchestrator for diarized transcription (browsers hold no ASR key).
+    let pc = null, audioTracks = [], recorder = null, chunks = [], recStartedAt = 0, mode = null, audioCtx = null;
+    async function startBotless(tk) {
       const gt = await fetch(APP + "/api/media/google-token", { headers: { Authorization: "Bearer " + tk } }).then((r) => r.json()).catch(() => ({}));
       if (!gt.access_token) throw new Error("reconnect");                    // needs re-login w/ Media scopes
       const at = gt.access_token;
@@ -146,7 +149,7 @@
       pc.createDataChannel("session-control");
       pc.createDataChannel("media-stats");
       audioTracks = [];
-      pc.ontrack = (ev) => { if (ev.track && ev.track.kind === "audio") audioTracks.push(ev.track); };
+      pc.ontrack = (ev) => { if (ev.track && ev.track.kind === "audio") { audioTracks.push(ev.track); wireTrack(ev.track); } };
       const offer = await pc.createOffer({ offerToReceiveAudio: true });
       await pc.setLocalDescription(offer);
 
@@ -157,24 +160,123 @@
       const ans = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error("connect:" + ((ans.error && ans.error.message) || JSON.stringify(ans).slice(0, 100)));
       await pc.setRemoteDescription({ type: "answer", sdp: ans.answer });
-      return true; // Google now shows the native "OctoMeet is collecting media" consent + banner — no participant.
+
+      // Mix every inbound audio track into ONE stream and record it (opus/webm, 15s slices).
+      audioCtx = new AudioContext();
+      const dest = audioCtx.createMediaStreamDestination();
+      window.__octoMixDest = dest; // wireTrack needs it for tracks that arrive later
+      audioTracks.forEach(wireTrack);
+      chunks = [];
+      recorder = new MediaRecorder(dest.stream, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 48000 });
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      recorder.start(15000);
+      recStartedAt = Date.now();
+      return true; // Google now shows the native consent dialog + persistent sharing banner - no participant joins.
+    }
+    const wired = new WeakSet();
+    function wireTrack(track) {
+      const dest = window.__octoMixDest;
+      if (!dest || !audioCtx || wired.has(track)) return;
+      wired.add(track);
+      try { audioCtx.createMediaStreamSource(new MediaStream([track])).connect(dest); } catch (e) { console.warn("wire track", e); }
     }
 
-    // Primary action: send OUR bot into this call right now (the botless Media API path above is
-    // kept for the future - it's gated behind Google's developer preview and only added noise).
+    // Retry-safe stop: the captured audio is the ONLY copy, so every step caches its result
+    // (blob, finish pass) and a failed attempt leaves mode='botless' - clicking Stop again
+    // retries only what's missing instead of losing the meeting.
+    let pendingBlob = null, pendingFin = null;
+    async function stopBotless() {
+      if (!pendingBlob) {
+        if (recorder && recorder.state !== "inactive") {
+          pendingBlob = await new Promise((resolve) => {
+            recorder.onstop = () => resolve(new Blob(chunks, { type: "audio/webm" }));
+            try { recorder.stop(); } catch (_) { resolve(new Blob(chunks, { type: "audio/webm" })); }
+          });
+        } else pendingBlob = new Blob(chunks, { type: "audio/webm" });
+        try { if (pc) pc.close(); } catch (_) {}
+        try { if (audioCtx) audioCtx.close(); } catch (_) {}
+      }
+      if (!pendingBlob.size) throw new Error("no audio captured");
+      // 1) Register the meeting -> get the one-shot upload pass (the audio can't go through
+      //    Vercel: ~4.5MB body cap). Re-auth once on 401. Cached so a retry never creates a
+      //    second meetings row.
+      if (!pendingFin) {
+        const durationMin = Math.max(1, Math.round((Date.now() - recStartedAt) / 60000));
+        const finBody = JSON.stringify({ meetingCode, title: meetingCode ? "Meet " + meetingCode : "Live meeting", durationMin });
+        let tk = await ensureToken(false);
+        let fr = await fetch(APP + "/api/media/finish", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + tk }, body: finBody });
+        if (fr.status === 401) { localStorage.removeItem(TOK_KEY); tk = await ensureToken(true); fr = await fetch(APP + "/api/media/finish", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + tk }, body: finBody }); }
+        const fin = await fr.json().catch(() => ({}));
+        if (!fin.ok || !fin.uploadUrl) throw new Error(fin.error || "finish failed");
+        pendingFin = fin;
+      }
+      // 2) POST the blob straight to the orchestrator.
+      const up = await fetch(pendingFin.uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "audio/webm", "x-octomeet-meeting": pendingFin.meetingId, "x-octomeet-pass": pendingFin.pass },
+        body: pendingBlob,
+      });
+      if (!up.ok) throw new Error("upload " + up.status);
+      const id = pendingFin.meetingId;
+      pendingBlob = null; pendingFin = null; chunks = [];
+      return id;
+    }
+
+    // Start: botless FIRST (Read.ai-style native capture); if Google gates the Media API for
+    // this account/project (developer preview) or anything fails, fall back to sending the bot.
     $("startBtn").onclick = async () => {
       if (!meetingUrl) { $("ctx").textContent = "Open this from inside a Google Meet call."; return; }
-      setRecording(true, "Adding OctoMeet to this call…");
+      if (pendingBlob || pendingFin) { setRecording(true, "Upload pending - click Stop to retry"); return; } // never wipe an undelivered capture
+      setRecording(true, "Starting…");
+      let tk;
+      try { tk = await ensureToken(false); } catch (_) { setRecording(false); return; }
       try {
-        let tk = await ensureToken(false);
+        await startBotless(tk);
+        mode = "botless";
+        setRecording(true, "Recording (botless) 🔴");
+        $("ctx").textContent = "Participants see Google's sharing banner. Stop to generate the report.";
+        return;
+      } catch (e) {
+        console.warn("botless unavailable -> bot fallback:", e && e.message);
+        if (String(e && e.message) === "reconnect") $("ctx").textContent = "Re-login needed for botless - sending the notetaker instead.";
+      }
+      try {
         let r = await callBotStart(tk);
         if (r.status === 401) { localStorage.removeItem(TOK_KEY); tk = await ensureToken(true); r = await callBotStart(tk); }
         const d = await r.json().catch(() => ({}));
-        if (r.ok) { setRecording(true, "OctoMeet is joining 🔴 — admit it when it knocks"); $("ctx").textContent = "The notetaker will ask to join in ~30-60s."; }
+        if (r.ok) { mode = "bot"; setRecording(true, "OctoMeet is joining 🔴 - admit it when it knocks"); $("ctx").textContent = "The notetaker will ask to join in ~30-60s."; }
         else setRecording(false, "Couldn't start" + (d && d.error ? ": " + String(d.error).slice(0, 60) : ""));
-      } catch (e2) { setRecording(false, "Couldn't start — try again"); }
+      } catch (e2) { setRecording(false, "Couldn't start - try again"); }
     };
-    $("stopBtn").onclick = () => { try { if (pc) pc.close(); } catch (_) {} setRecording(false, "Recording stopped"); };
+    $("stopBtn").onclick = async () => {
+      if (mode === "botless") {
+        setRecording(true, "Uploading & processing…");
+        try {
+          await stopBotless();
+          mode = null;
+          setRecording(false, "Report is being generated ✓");
+          $("ctx").textContent = "The report (summary, transcript, scores) will appear in OctoMeet in a few minutes.";
+        } catch (e) {
+          // Keep mode='botless': the blob/pass are cached, so Stop can be clicked again to
+          // retry the upload - failing here must never discard the only copy of the audio.
+          setRecording(true, "Upload failed - click Stop to retry");
+          $("ctx").textContent = String(e && e.message).slice(0, 80);
+        }
+        return;
+      }
+      if (mode === "bot") {
+        setRecording(false, "Stopping the notetaker…");
+        try {
+          const tk = await ensureToken(false);
+          await fetch(APP + "/api/bot/stop", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + tk }, body: JSON.stringify({ meetingUrl }) });
+          setRecording(false, "Notetaker stopped");
+        } catch (e) { setRecording(false, "Couldn't stop - remove the bot from the call"); }
+      } else {
+        try { if (pc) pc.close(); } catch (_) {}
+        setRecording(false, "Recording stopped");
+      }
+      mode = null;
+    };
 
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
     else init();
