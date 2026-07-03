@@ -3,7 +3,7 @@
 // the Recall path uses and write a full report - so the whole app works identically, at ~$0.20/h.
 // POST { secret, meetingId?|botId?, title?, meetingUrl?, durationMin?, recordingUrl?, turns:[{speaker,text,t}] }
 import { sb } from "../lib/supa.js";
-import { analyzeTranscript, ANALYSIS_VERSION } from "../lib/process.js";
+import { analyzeTranscript, ANALYSIS_VERSION, sanitizeSpeakerMap, notifyParticipants } from "../lib/process.js";
 
 const enc = encodeURIComponent;
 
@@ -39,17 +39,29 @@ export default async function handler(req, res) {
     }
     const title = body.title || meeting.title || "Meeting";
 
-    // Talk-time per speaker (deterministic) from the diarized turns.
-    const byName = {};
-    turns.forEach((t) => { const n = t.speaker || "Speaker"; const w = (t.text || "").split(/\s+/).filter(Boolean).length; (byName[n] = byName[n] || { name: n, words: 0 }).words += w; });
-    const totalW = Object.values(byName).reduce((a, b) => a + b.words, 0) || 1;
-    const names = Object.keys(byName);
+    // Real-people hints for the speaker-identification pass: the calendar invite carries the
+    // ACTUAL names/emails, which lets the analysis map "Speaker A" -> the real person.
+    const hintNames = [...new Set([
+      ...(Array.isArray(meeting.attendees) ? meeting.attendees.map((a) => a && (a.name || a.email)).filter(Boolean) : []),
+      ...(Array.isArray(meeting.participants) ? meeting.participants.filter((x) => typeof x === "string") : []),
+    ])];
 
-    const ai = await analyzeTranscript(text, title, names);
+    const ai = await analyzeTranscript(text, title, hintNames);
     if (!(ai.summary && ai.summary.trim())) {
       await sb(`meetings?id=eq.${enc(meeting.id)}`, { method: "PATCH", body: { status: "processing", status_synced_at: new Date().toISOString() } });
       return res.status(200).json({ ok: false, skipped: "analysis empty - retry" });
     }
+
+    // Swap diarization labels for the real names the analysis identified, and persist the RENAMED
+    // dialog - so the transcript view, subtitles and every analysis show real people.
+    const spkMap = sanitizeSpeakerMap(ai.speakerMap);
+    turns.forEach((tn) => { if (spkMap[tn.speaker]) tn.speaker = spkMap[tn.speaker]; });
+    const finalText = turns.map((t) => `[${t.t || ""}] ${t.speaker || "Speaker"}: ${t.text || ""}`).join("\n").trim();
+
+    // Talk-time per speaker (deterministic) from the renamed diarized turns.
+    const byName = {};
+    turns.forEach((t) => { const n = t.speaker || "Speaker"; const w = (t.text || "").split(/\s+/).filter(Boolean).length; (byName[n] = byName[n] || { name: n, words: 0 }).words += w; });
+    const totalW = Object.values(byName).reduce((a, b) => a + b.words, 0) || 1;
     const aiParts = {}; (ai.participants || []).forEach((p) => { if (p && p.name) aiParts[p.name.toLowerCase()] = p; });
     const participants = Object.values(byName).map((s) => {
       const x = aiParts[s.name.toLowerCase()] || {};
@@ -57,24 +69,28 @@ export default async function handler(req, res) {
     });
     const sc = ai.scores || {};
 
+    const reportRow = {
+      meeting_id: meeting.id, user_id: uid,
+      summary: ai.summary || "", action_items: ai.actionItems || [], next_steps: ai.nextSteps || [],
+      key_questions: ai.keyQuestions || [], topics: ai.topics || [], chapters: ai.chapters || [],
+      highlights: ai.highlights || [], coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null }, participants,
+      sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
+      transcript: finalText, scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
+      read_score: sc.overall || 0, category: ai.category || null, report_version: ANALYSIS_VERSION,
+    };
     await sb(`reports?meeting_id=eq.${enc(meeting.id)}`, { method: "DELETE" });
-    await sb("reports", {
-      method: "POST",
-      body: {
-        meeting_id: meeting.id, user_id: uid,
-        summary: ai.summary || "", action_items: ai.actionItems || [], next_steps: ai.nextSteps || [],
-        key_questions: ai.keyQuestions || [], topics: ai.topics || [], chapters: ai.chapters || [],
-        highlights: ai.highlights || [], coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null }, participants,
-        sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
-        transcript: text, scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
-        read_score: sc.overall || 0, category: ai.category || null, report_version: ANALYSIS_VERSION,
-      },
-    });
+    await sb("reports", { method: "POST", body: reportRow });
     const patch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString(), participants: participants.map((p) => p.name), capture_mode: "inhouse_bot" };
     if (body.durationMin) patch.duration_min = body.durationMin;
     if (body.recordingUrl) patch.recording_url = body.recordingUrl;
     if (body.coverUrl) patch.cover_url = body.coverUrl; // real frame extracted by the worker -> report + recap email thumbnail
     await sb(`meetings?id=eq.${enc(meeting.id)}`, { method: "PATCH", body: patch });
+
+    // Auto-recap email THE MOMENT the meeting ends (this path never sent it - only the Recall
+    // pipeline did). Recipients: all attendees + owner if the owner's autoRecap pref is on (the
+    // default), owner only otherwise. Sender: the bot mailbox when connected. Idempotent
+    // (notified_at claim) and best-effort - a mail failure never breaks delivery.
+    await notifyParticipants({ ...meeting, ...patch, id: meeting.id }, ai, reportRow);
 
     res.status(200).json({ ok: true, meeting_id: meeting.id });
   } catch (e) {

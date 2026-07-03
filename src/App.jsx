@@ -200,6 +200,12 @@ function parseTranscript(raw) {
     const tm = line.match(/^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*(.*)$/);
     let t = "", rest = line;
     if (tm) { t = tm[1]; rest = tm[2]; }
+    else {
+      // Bare-seconds stamp ("[125] Name: ...") from early in-house-bot transcripts -> normalize to m:ss
+      // so these render as proper dialog turns (and subtitles get timings) instead of one giant blob.
+      const bs = line.match(/^\[(\d{1,5})\]\s*(.*)$/);
+      if (bs) { const s = parseInt(bs[1], 10); t = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); rest = bs[2]; }
+    }
     // Anchor on the FIRST colon and validate the left side as a speaker label. This
     // handles "Speaker 1:" (Recall's fallback for unresolved guests) and long names,
     // which the old fixed-width letters-only regex silently dropped (collapsing the

@@ -1,7 +1,25 @@
-// Central email sender + branded report template. All OctoMeet mail is sent from the
-// system mailbox octoplus.aisolutions@gmail.com via Gmail SMTP (app password), shown as
-// "<Name> via OctoMeet AI". No per-user OAuth needed.
+// Central email sender + branded report template. Outgoing mail prefers the DEDICATED BOT
+// mailbox (octomeetnotetaker@gmail.com) as the sender - log into the app once with that
+// account (granting the Gmail permission) and every recap/share/follow-up sends from it,
+// shown as "<Name> via OctoMeet AI". Falls back to the owner's own Gmail until then.
 import nodemailer from "nodemailer";
+import { sb } from "./supa.js";
+import { getValidToken } from "./google.js";
+
+const BOT_SENDER_EMAIL = (process.env.BOT_SENDER_EMAIL || "octomeetnotetaker@gmail.com").toLowerCase();
+
+// Resolve the bot mailbox's Gmail OAuth token (the bot account simply logs into the app once,
+// like any user - its tokens land in oauth_tokens). Memoized per invocation; null if not connected.
+let _botSender;
+export async function getBotSender() {
+  if (_botSender !== undefined) return _botSender;
+  try {
+    const u = (await sb(`app_users?email=eq.${encodeURIComponent(BOT_SENDER_EMAIL)}&select=id,email`))[0];
+    const token = u ? await getValidToken(u.id) : null;
+    _botSender = token ? { token, fromAddress: u.email } : null;
+  } catch (e) { _botSender = null; }
+  return _botSender;
+}
 
 const APP = "https://meet-ai-three-beige.vercel.app/";
 const LOGO = APP + "email-logo.png";

@@ -5,7 +5,7 @@
 import { sb } from "./lib/supa.js";
 import { resolveShareToken } from "./lib/share.js";
 import { getValidToken } from "./lib/google.js";
-import { sendViaGmail } from "./lib/email.js";
+import { sendViaGmail, getBotSender } from "./lib/email.js";
 
 const enc = encodeURIComponent;
 const maskEmail = (e) => { const [u, d] = String(e).split("@"); return (u ? u[0] + "•••" : "•••") + "@" + (d || ""); };
@@ -28,10 +28,12 @@ export default async function handler(req, res) {
       await sb("share_otps", { method: "POST", body: { token, email, code, expires_at } });
       const ownerId = r.meeting.user_id;
       const o = (await sb(`app_users?id=eq.${ownerId}&select=name,email`))[0] || {};
-      const gToken = await getValidToken(ownerId);
-      if (gToken && o.email) {
+      const bot = await getBotSender();
+      const gToken = (bot && bot.token) || await getValidToken(ownerId);
+      const fromAddr = (bot && bot.fromAddress) || o.email;
+      if (gToken && fromAddr) {
         const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1e1b2e;max-width:460px"><p>Your OctoMeet access code for <b>${(r.meeting.title || "the report").replace(/[<>&]/g, "")}</b>:</p><div style="font-size:30px;font-weight:800;letter-spacing:6px;color:#6d28d9;margin:14px 0">${code}</div><p style="color:#64748b;font-size:13px">It expires in 10 minutes. If you didn't request this, ignore it.</p></div>`;
-        await sendViaGmail(gToken, { to: email, subject: `${code} is your OctoMeet access code`, html, text: `Your OctoMeet access code: ${code} (expires in 10 minutes).`, fromName: `${o.name || "OctoMeet"} via OctoMeet AI`, fromAddress: o.email });
+        await sendViaGmail(gToken, { to: email, subject: `${code} is your OctoMeet access code`, html, text: `Your OctoMeet access code: ${code} (expires in 10 minutes).`, fromName: `${o.name || "OctoMeet"} via OctoMeet AI`, fromAddress: fromAddr });
       }
       return res.status(200).json({ ok: true, emailHint: maskEmail(email) });
     }

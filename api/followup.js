@@ -3,7 +3,7 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { getValidToken } from "./lib/google.js";
-import { sendViaGmail } from "./lib/email.js";
+import { sendViaGmail, getBotSender } from "./lib/email.js";
 
 export const config = { maxDuration: 60 }; // Claude draft call needs headroom past the default timeout
 
@@ -29,15 +29,17 @@ export default async function handler(req, res) {
     const m = a.meeting;
 
     if (body.action === "send") {
-      const token = await getValidToken(a.ownerId);
+      const bot = await getBotSender(); // sender = bot mailbox when connected, else the owner's Gmail
+      const token = (bot && bot.token) || await getValidToken(a.ownerId);
       const u = (await sb(`app_users?id=eq.${a.ownerId}&select=name,email`))[0] || {};
-      if (!token || !u.email) return res.status(403).json({ error: "needScope", detail: "Reconnect Google (email permission)." });
+      const fromAddr = (bot && bot.fromAddress) || u.email;
+      if (!token || !fromAddr) return res.status(403).json({ error: "needScope", detail: "Reconnect Google (email permission)." });
       const to = [...new Set((body.to || []).map((e) => String(e).trim().toLowerCase()).filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e)))];
       if (!to.length) return res.status(400).json({ error: "no recipients" });
       const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1e1b2e;font-size:14.5px;line-height:1.6">${esc(body.body || "").replace(/\n/g, "<br>")}</div>`;
       let sent = 0, lastErr = "";
       for (const email of to) {
-        const r = await sendViaGmail(token, { to: email, subject: body.subject || ("Follow-up: " + (m.title || "our meeting")), html, text: body.body || "", fromName: `${u.name || "OctoMeet"} via OctoMeet AI`, fromAddress: u.email });
+        const r = await sendViaGmail(token, { to: email, subject: body.subject || ("Follow-up: " + (m.title || "our meeting")), html, text: body.body || "", fromName: `${u.name || "OctoMeet"} via OctoMeet AI`, fromAddress: fromAddr });
         if (r.ok) sent++; else lastErr = r.error || "send failed";
       }
       if (!sent) return res.status(502).json({ error: "send_failed", detail: lastErr });

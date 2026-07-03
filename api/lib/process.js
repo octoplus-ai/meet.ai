@@ -4,7 +4,7 @@ import { sb } from "./supa.js";
 import { getBot, getTranscript, durationMin } from "./recall.js";
 import { annotateEvent, getValidToken } from "./google.js";
 import { randomToken } from "./session.js";
-import { sendViaGmail, reportEmail } from "./email.js";
+import { sendViaGmail, reportEmail, getBotSender } from "./email.js";
 import { deliverReport } from "./deliver.js";
 
 const APP_URL = "https://meet-ai-three-beige.vercel.app/";
@@ -13,7 +13,7 @@ const arr = (x) => (Array.isArray(x) ? x : []);
 // Auto-recap: when a report is ready, email everyone involved (calendar attendees + owner)
 // from the OWNER's Gmail - unless the owner turned it off in Report Sharing preferences.
 // Idempotent via meetings.notified_at. Best-effort; never throws into the pipeline.
-async function notifyParticipants(meeting, ai, rep) {
+export async function notifyParticipants(meeting, ai, rep) {
   try {
     // ATOMIC CLAIM: only ONE run may send the recap. A conditional PATCH (notified_at IS NULL)
     // is resolved atomically by Postgres row-locking, so concurrent processMeeting runs
@@ -46,15 +46,21 @@ async function notifyParticipants(meeting, ai, rep) {
         attendeeList = arr(ev && ev.attendees).filter((at) => at && at.email && !at.resource).map((at) => ({ email: String(at.email).toLowerCase(), name: at.displayName || "", response: at.responseStatus || "" }));
       } catch (e) { /* ignore */ }
     }
-    if (prefs.autoRecap !== false && token && u.email) {
+    // Recipients: autoRecap ON (default) -> calendar attendees + owner; OFF -> owner ONLY (the
+    // owner always gets their recap the moment the meeting ends). Sender: ALWAYS the dedicated
+    // bot mailbox when it's connected (log in once with it); falls back to the owner's Gmail.
+    const bot = await getBotSender();
+    const sendToken = (bot && bot.token) || token;
+    const sendFrom = (bot && bot.fromAddress) || u.email;
+    if (sendToken && u.email) {
       const recips = new Set([u.email.toLowerCase()]);
-      (attendeeList || []).forEach((at) => { if (at.response !== "declined") recips.add(at.email); });
+      if (prefs.autoRecap !== false) (attendeeList || []).forEach((at) => { if (at.response !== "declined") recips.add(at.email); });
       const to = [...recips].filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e));
       for (const email of to) {
         const e = entryFor(email);
         const coverUrl = meeting.cover_url || (meeting.bot_id ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + e.token : "");
         const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: APP_URL + "?share=" + e.token, coverUrl, sharerName: sharer, kind: "auto" });
-        const r = await sendViaGmail(token, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: u.email });
+        const r = await sendViaGmail(sendToken, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: sendFrom });
         if (r.ok) sent++;
       }
     }
@@ -68,17 +74,45 @@ async function notifyParticipants(meeting, ai, rep) {
 // Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
 // with a lower report_version are re-analyzed automatically (from their STORED transcript,
 // no Recall needed) so every past meeting reflects the latest improvements without re-recording.
-export const ANALYSIS_VERSION = 8;
+export const ANALYSIS_VERSION = 9;
 
-// Parse a stored transcript string ("[mm:ss] Name: text") into {t,text} turns.
+// Parse a stored transcript string ("[mm:ss] Name: text" - also tolerates early in-house-bot
+// bare-second stamps "[125] Name: text") into {t,text} turns.
 function parseStoredTurns(text) {
   return String(text || "").split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
     const m = line.match(/^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*(.*)$/);
     let t = "", rest = line;
     if (m) { t = m[1]; rest = m[2]; }
+    else { const bs = line.match(/^\[(\d{1,5})\]\s*(.*)$/); if (bs) { const s = parseInt(bs[1], 10); t = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; rest = bs[2]; } }
     const ci = rest.indexOf(":");
     return { t, text: ci > 0 && ci < 40 ? rest.slice(ci + 1).trim() : rest };
   });
+}
+
+// ---- Diarization-label -> real-name mapping (from the analysis' speakerMap) ----
+const SPK_LABEL = /^Speaker [A-Z]{1,2}$/;
+// Keep only sane mappings: label keys like "Speaker A", non-empty human values, never label->label.
+export function sanitizeSpeakerMap(m) {
+  const out = {};
+  if (m && typeof m === "object" && !Array.isArray(m)) {
+    for (const k of Object.keys(m)) {
+      const v = String(m[k] == null ? "" : m[k]).trim();
+      if (SPK_LABEL.test(k) && v && v.length <= 60 && !SPK_LABEL.test(v)) out[k] = v;
+    }
+  }
+  return out;
+}
+// Rewrite a stored transcript: normalize bare-second stamps to m:ss and swap diarization labels
+// for real names ("[125] Speaker A: hi" -> "[2:05] Santiago: hi"). Used by reanalyzeStored so old
+// reports get real dialog + working subtitles retroactively.
+export function normalizeStoredTranscript(text, map = {}) {
+  return String(text || "").split("\n").map((line) => {
+    let l = line;
+    const bs = l.match(/^\[(\d{1,5})\]\s*(.*)$/);
+    if (bs) { const s = parseInt(bs[1], 10); l = `[${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}] ${bs[2]}`; }
+    for (const k of Object.keys(map)) { if (l.includes(k + ":")) { l = l.replace(k + ":", map[k] + ":"); break; } }
+    return l;
+  }).join("\n");
 }
 const _tok = (s) => (String(s || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length > 3);
 // Find the timestamp of the transcript turn that best matches a piece of AI text
@@ -128,6 +162,7 @@ export async function analyzeTranscript(text, title, participantNames) {
   "chapters": [{"title": string, "summary": string, "t": string, "points": string[]}] (3-7 chronological chapters; t = "mm:ss" or "h:mm:ss" start time; summary = 1-2 sentence description; points = 1-4 short key topics/takeaways covered in that chapter),
   "highlights": [{"text": string, "t": string}] (3-6 standout quotes/moments; t = approximate timestamp in the meeting when it happened, format "mm:ss" or "h:mm:ss"),
   "participants": [{"name": string, "role": string, "sentiment": "Positive"|"Neutral"|"Negative"}] (one per distinct speaker),
+  "speakerMap": {"Speaker A": "Real Name"} (ONLY when the transcript uses anonymous diarization labels like "Speaker A"/"Speaker B": map each label to that person's REAL name, worked out from the conversation itself - self-introductions, people addressing each other by name, plus the Known participants list. Include only labels you can identify with reasonable confidence; {} when none apply),
   "coaching": {"strengths": string[] (2-4), "improvements": string[] (2-4), "tips": string[] (2-4)},
   "pitchAnalysis": {"overall": string (2-3 sentences on how compelling/persuasive the overall pitch & messaging was in this meeting), "speakers": [{"name": string, "score": int (0-100 pitch/delivery strength), "worked": string[] (1-3 specific things this speaker did WELL, with brief evidence), "improve": string[] (2-4 specific, actionable ways to sharpen their pitch & delivery), "sayNextTime": string (ONE concrete, rewritten line they could actually say next time to be more persuasive - in the meeting's language)}]} (analyze each speaker who spoke a meaningful amount; skip near-silent speakers),
   "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int, "charisma": int} (0-100; overall = meeting quality/Read Score, balance = how evenly people talked, clarity = how clear the communication was, charisma = speaker presence/persuasiveness),
@@ -136,6 +171,7 @@ export async function analyzeTranscript(text, title, participantNames) {
   "category": string (classify the meeting into ONE concise folder category, Title Case, 1-3 words. Prefer one of: "Sales Call", "Sales Strategy", "Customer Success", "Customer Support", "Customer Feedback", "Onboarding", "One-on-One", "Planning Meeting", "Partnership Alignment", "Product Demo", "Job Interview", "Program Interview", "Professional Consultation", "Technical Troubleshooting", "Training", "Educational", "Standup", "Kickoff", "Team Meeting"; if none fits, invent a fitting concise category. This is the meeting TYPE, used to auto-file it into a folder.)
 }\n` +
     "Infer speaker names/roles from the transcript. If the transcript is very short or empty, still return the object with best-effort/empty values and low scores. Keep every string concise.\n\n" +
+    "SPEAKER NAMES - IMPORTANT: when the transcript uses anonymous diarization labels (Speaker A, Speaker B...), figure out who each one actually IS (see speakerMap above) and use the REAL names - never the raw labels - in EVERY human-readable field: participants, pitchAnalysis.speakers, coaching, keyQuestions, highlights and the summary. Only keep a label for a speaker who genuinely cannot be identified from the conversation.\n\n" +
     "LANGUAGE — CRITICAL: First detect the dominant language actually spoken in the transcript (it can be ANY language). Write EVERY human-readable text value (summary, topics, keyQuestions q & a, actionItems owner/task/due, nextSteps, chapters title/summary, highlights, coaching strengths/improvements/tips, participants role) in THAT SAME language as the meeting. Examples: a Portuguese meeting → the whole report in Portuguese; English → English; Spanish → Spanish; French → French; etc. NEVER translate the content to another language — always match the meeting. " +
     "EXCEPTION — keep these machine-read classification values EXACTLY in English regardless of the meeting language: every \"sentiment\" and the \"sentimentLabel\" must be exactly one of Positive | Neutral | Negative. The JSON keys themselves stay exactly as specified above (in English).\n\n" +
     "TRANSCRIPTION ERRORS: the speech-to-text may mis-hear well-known proper nouns, product names, brands and technical terms (e.g. it may write \"CLOCOD\" for \"Claude Code\", \"Versel\" for \"Vercel\", \"Superbase\" for \"Supabase\", \"chat gpt\" for \"ChatGPT\", \"get hub\" for \"GitHub\"). When the surrounding context makes the intended well-known term obvious, use the CORRECT term in your analysis. Be conservative: only fix clear mishearings of widely-known terms where context strongly supports it; if you are unsure, keep the original. Do NOT alter legitimate but uncommon names, company names, or people's names just because they are unfamiliar.\n\n" +
@@ -283,7 +319,12 @@ export async function reanalyzeStored(meeting) {
     if (rep) await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION } }); // bump so we don't loop
     return { skipped: "no transcript" };
   }
-  const names = Array.isArray(rep.participants) ? rep.participants.map((p) => p && p.name).filter(Boolean) : [];
+  // Name hints for the speaker-identification pass: existing report participants + the real
+  // people on the calendar invite (names/emails) - this is how "Speaker A" becomes "Santiago".
+  const names = [...new Set([
+    ...(Array.isArray(rep.participants) ? rep.participants.map((p) => p && p.name).filter(Boolean) : []),
+    ...(Array.isArray(meeting.attendees) ? meeting.attendees.map((a) => a && (a.name || a.email)).filter(Boolean) : []),
+  ])];
   const ai = await analyzeTranscript(text, meeting.title, names);
   // If the analysis came back empty, keep the existing report but still bump the version
   // so we don't re-try in a loop every poll.
@@ -293,6 +334,11 @@ export async function reanalyzeStored(meeting) {
   }
   assignTimestamps(ai, parseStoredTurns(text)); // accurate per-item timestamps from the stored transcript
   const sc = ai.scores || {};
+  // Rewrite the STORED transcript too: swap diarization labels for the real names the analysis
+  // identified and normalize bare-second stamps to m:ss - fixes the dialog view + subtitles for
+  // meetings recorded before those fixes, not just future ones.
+  const spkMap = sanitizeSpeakerMap(ai.speakerMap);
+  const newText = normalizeStoredTranscript(text, spkMap);
   const patch = {
     summary: ai.summary || rep.summary || "",
     topics: ai.topics || [], key_questions: ai.keyQuestions || [], action_items: ai.actionItems || [],
@@ -303,10 +349,20 @@ export async function reanalyzeStored(meeting) {
     category: ai.category || rep.category || null,
     report_version: ANALYSIS_VERSION,
   };
-  // Keep existing per-speaker talk-time; refresh role/sentiment from the new analysis.
+  if (newText !== text) patch.transcript = newText;
+  // Keep existing per-speaker talk-time; refresh name (via speakerMap) + role/sentiment from the
+  // new analysis. Match AI participants by the RENAMED name first (the AI answers in real names).
   if (Array.isArray(rep.participants) && rep.participants.length) {
     const aiP = {}; (ai.participants || []).forEach((p) => { if (p && p.name) aiP[p.name.toLowerCase()] = p; });
-    patch.participants = rep.participants.map((p) => { const x = aiP[(p.name || "").toLowerCase()] || {}; return { ...p, role: x.role || p.role, sentiment: x.sentiment || p.sentiment }; });
+    patch.participants = rep.participants.map((p) => {
+      const name = spkMap[p.name] || p.name;
+      const x = aiP[(name || "").toLowerCase()] || aiP[(p.name || "").toLowerCase()] || {};
+      return { ...p, name, role: x.role || p.role, sentiment: x.sentiment || p.sentiment };
+    });
+    // Meeting card shows meetings.participants (names array) - keep it in sync with the renames.
+    if (Object.keys(spkMap).length) {
+      sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { participants: patch.participants.map((p) => p.name) } }).catch(() => {});
+    }
   }
   await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: patch });
   return { ok: true, version: ANALYSIS_VERSION };

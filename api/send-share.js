@@ -4,7 +4,7 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies, randomToken } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
-import { reportEmail, sendViaGmail } from "./lib/email.js";
+import { reportEmail, sendViaGmail, getBotSender } from "./lib/email.js";
 import { getValidToken } from "./lib/google.js";
 
 const APP = "https://meet-ai-three-beige.vercel.app/";
@@ -61,6 +61,10 @@ export default async function handler(req, res) {
       return e;
     };
 
+    // Sender: ALWAYS the dedicated bot mailbox when it's connected; else the owner's Gmail.
+    const bot = await getBotSender();
+    const sendTok = (bot && bot.token) || gToken;
+    const sendFrom = (bot && bot.fromAddress) || a.ownerEmail;
     let sent = 0, lastErr = "";
     for (const email of to) {
       const e = entryFor(email);
@@ -70,7 +74,7 @@ export default async function handler(req, res) {
         title, whenText, summary: rep.summary || "", chapters: rep.chapters || [], actionItems: rep.action_items || [],
         viewUrl, coverUrl, sharerName: a.sharer, kind: "share", message: body.message || "",
       });
-      const r = await sendViaGmail(gToken, { to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI`, fromAddress: a.ownerEmail });
+      const r = await sendViaGmail(sendTok, { to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI`, fromAddress: sendFrom });
       if (r.ok) sent++;
       else { lastErr = r.error || "send failed"; if (r.error === "needScope") return res.status(403).json({ error: "needScope", detail: "Reconnect Google (email permission)." }); }
     }
