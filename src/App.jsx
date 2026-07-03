@@ -1654,11 +1654,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
     filtered.forEach((m) => { const b = bucketOf(m.date); (by[b] = by[b] || []).push(m); });
     return order.filter((o) => by[o]).map((o) => ({ label: o, items: by[o] }));
   }, [filtered]);
-  // GENUINELY live only: a joining/in_call/recording row whose last status heartbeat is recent.
-  // The worker beats every 5 min while recording and posts on join, so no real live meeting goes
-  // >13 min without an update - a stale row (bot never admitted, meeting long over, worker died,
-  // or a rescheduled row that never ran) must NOT keep the "recording live" banner up forever.
-  const live = useMemo(() => meetings.filter((m) => m.real && ["joining", "in_call", "recording"].includes(m.status) && (Date.now() - (m.syncedAt || 0)) < 13 * 60000), [meetings]);
+  // GENUINELY recording only: in_call/recording (the bot is IN and capturing) with a recent
+  // heartbeat. "joining" (bot still waiting in the lobby, up to 10 min) is NOT shown - it caused
+  // a stuck "joining: X" banner when a rescheduled meeting was never held. The heartbeat gate
+  // (<13 min; worker beats every 5 min) drops any row a dead worker left behind.
+  const live = useMemo(() => meetings.filter((m) => m.real && ["in_call", "recording"].includes(m.status) && (Date.now() - (m.syncedAt || 0)) < 13 * 60000), [meetings]);
   const proc = useMemo(() => meetings.filter((m) => m.real && m.status === "processing"), [meetings]);
   const selectedMeetings = filtered.filter((m) => sel.has(m.id));
   const allSelected = filtered.length > 0 && filtered.every((m) => sel.has(m.id));
@@ -1715,9 +1715,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 ) : <Loader2 size={15} className="animate-spin text-violet-600" />}
                 <span className="flex-1 text-sm font-medium text-slate-700">
                   {live.length
-                    ? (live[0].status === "recording"
-                        ? <>OctoMeet is <b className="text-rose-700">recording live</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - the AI report will appear here automatically.</>
-                        : <>OctoMeet is <b className="text-rose-700">{live[0].status === "in_call" ? "in the meeting" : "joining"}</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - recording starts once it's admitted.</>)
+                    ? <>OctoMeet is <b className="text-rose-700">recording</b> “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - the AI report will appear here automatically.</>
                     : <>Generating <b className="text-violet-700">{proc.length}</b> AI report{proc.length > 1 ? "s" : ""} from your meeting{proc.length > 1 ? "s" : ""}… this updates automatically.</>}
                 </span>
                 <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> Refresh</button>

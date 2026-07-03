@@ -95,12 +95,16 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
       const lastSync = m0.status_synced_at ? new Date(m0.status_synced_at).getTime() : 0;
       const futureEv = evStart && evStart.getTime() > Date.now() + 30000;
       const ongoingEv = evStart && evStart.getTime() > Date.now() - 60 * 60000;
+      // A meeting whose start is well in the past and never got admitted is OVER - stop arming it
+      // (join-wait is 10 min; 20 min past = the window closed). Prevents the perpetual re-arm loop
+      // that kept a rescheduled-but-never-held meeting stuck "joining" forever.
+      const windowOpen = evStart && evStart.getTime() > Date.now() - 20 * 60000;
       const cooledDown = Date.now() - lastSync > 12 * 60000;
       const timeChanged = evStart && m0.start_time && Math.abs(new Date(m0.start_time).getTime() - evStart.getTime()) > 120000;
       const urlChanged = meetingUrl && m0.meeting_url && meetingUrl !== m0.meeting_url;
       const rearm = OWN && (
         (m0.status === "error" && (futureEv || (ongoingEv && (cooledDown || timeChanged)))) ||
-        ((m0.status === "scheduled" || m0.status === "joining") && (timeChanged || urlChanged)) ||
+        ((m0.status === "scheduled" || m0.status === "joining") && windowOpen && (timeChanged || urlChanged)) ||
         (m0.status === "skipped" && /cancelled or declined/i.test(m0.error || "") && futureEv)
       );
       // REUSED EVENT: the meeting already recorded (done) and the user re-scheduled the SAME
@@ -111,7 +115,10 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
       } else if (!rearm) return { already: true, meeting: m0 };
       if (rearm) {
         const schedOwn = futureEv;
-        await sb(`meetings?id=eq.${m0.id}`, { method: "PATCH", body: { status: schedOwn ? "scheduled" : "joining", error: null, meeting_url: meetingUrl, start_time: schedOwn ? evStart.toISOString() : new Date().toISOString(), status_synced_at: new Date().toISOString() } });
+        // start_time is ALWAYS the event's real start (never now()): overwriting it to now() made
+        // timeChanged permanently true on the next sweep -> infinite re-arm loop for past events.
+        const startIso = evStart ? evStart.toISOString() : new Date().toISOString();
+        await sb(`meetings?id=eq.${m0.id}`, { method: "PATCH", body: { status: schedOwn ? "scheduled" : "joining", error: null, meeting_url: meetingUrl, start_time: startIso, status_synced_at: new Date().toISOString() } });
         const APP0 = (process.env.APP_URL || "https://meet-ai-three-beige.vercel.app").replace(/\/+$/, "");
         try {
           await fetch(OWN.replace(/\/$/, "") + "/bots", {

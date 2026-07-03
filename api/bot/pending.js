@@ -13,15 +13,18 @@ export default async function handler(req, res) {
     const from = new Date(Date.now() - 60 * 60000).toISOString(); // cover meetings that started up to 1h ago (still ongoing)
     const to = new Date(Date.now() + 7 * 86400000).toISOString();
     const staleJoin = Date.now() - 11 * 60000; // a "joining" row older than this = the worker died (join-wait is 10 min)
+    const giveUp = Date.now() - 20 * 60000;    // a meeting >20 min past its start never got held - stop re-arming it
     const raw = await sb(
       `meetings?capture_mode=eq.inhouse_bot&status=in.(scheduled,joining)&start_time=gte.${encodeURIComponent(from)}&start_time=lte.${encodeURIComponent(to)}` +
       `&select=id,user_id,meeting_url,start_time,title,bot_id,status,status_synced_at&order=start_time.asc&limit=100`
     );
     // Re-arm scheduled meetings, plus "joining" meetings whose worker DIED (stale) so a failed initial
     // arm POST is self-healed. A fresh/ongoing "joining" (worker still in the lobby) is skipped to avoid
-    // booting a duplicate bot; the orchestrator also dedups by meetingId within its lifetime.
+    // booting a duplicate bot. NEVER re-arm a joining row whose start is >20 min past - that meeting was
+    // never held (or was rescheduled and abandoned); re-arming it looped a bot into an empty room forever.
     const rows = (raw || []).filter((r) => r.status === "scheduled" ||
-      (r.status === "joining" && (!r.status_synced_at || new Date(r.status_synced_at).getTime() < staleJoin)));
+      (r.status === "joining" && (r.start_time ? new Date(r.start_time).getTime() > giveUp : true)
+        && (!r.status_synced_at || new Date(r.status_synced_at).getTime() < staleJoin)));
 
     // Resolve each owner's notetaker display name (best-effort).
     const uids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
