@@ -4,8 +4,9 @@
 import { sb } from "../../lib/supa.js";
 import { randomToken } from "../../lib/session.js";
 
-// Free test access: only this email gets in for now.
-const ALLOWLIST = ["santiago@octoplusteam.com"];
+// Free test access: only these emails get in for now. The bot mailbox logs in ONCE so its Gmail
+// tokens land in oauth_tokens - it is the official sender for every outgoing meeting email.
+const ALLOWLIST = ["santiago@octoplusteam.com", (process.env.BOT_SENDER_EMAIL || "octomeetnotetaker@gmail.com").toLowerCase()];
 
 export default async function handler(req, res) {
   try {
