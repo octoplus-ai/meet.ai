@@ -100,6 +100,9 @@ export default async function handler(req, res) {
     try { await sb("reports", { method: "POST", body: reportRow }); }
     catch (e) { if (!/23505|duplicate/i.test(String(e.message || ""))) throw e; }
     const patch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString(), participants: participants.map((p) => p.name), capture_mode: "inhouse_bot" };
+    // Queryable stage verification from the worker ({spotlight: true/false}): confirms the
+    // active-speaker layout was applied for THIS recording without digging through fly logs.
+    if (body.stage && typeof body.stage === "object") { patch.stage_info = body.stage; console.log("stage verification for", meeting.id, JSON.stringify(body.stage)); }
     if (body.durationMin) patch.duration_min = body.durationMin;
     if (body.recordingUrl) patch.recording_url = body.recordingUrl;
     if (body.coverUrl) patch.cover_url = body.coverUrl; // real frame extracted by the worker -> report + recap email thumbnail
