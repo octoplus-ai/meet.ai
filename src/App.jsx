@@ -756,54 +756,22 @@ const NAV = [
 ];
 const BUCKET_TKEY = { TODAY: "today", "THIS WEEK": "thisWeek", "THIS MONTH": "thisMonth", EARLIER: "earlier" };
 
-// Email-OTP gate: the invited person verifies the code we email them before the report loads.
-// Restricted-report access gate (Read.ai style): primary path is "Continue with Google" via
-// Google Identity Services (id_token only, no scopes - works for any external Google user) with
-// One Tap auto-detect when the visitor is already signed into Google. Email-code is the fallback.
-function ShareSignInGate({ token, emailHint, onVerified }) {
+// Restricted-report access gate (Read.ai style): primary path is "Continue with Google" via the
+// SERVER-SIDE OAuth redirect (identity-only scopes). GIS/One-Tap was dropped: it requires the
+// domain in GCP "Authorized JavaScript origins" and broke with origin_mismatch on the branded
+// domain; the redirect flow reuses the already-registered redirect_uri, so it works for any
+// external Google user with zero console changes. Email-code stays as the fallback.
+function ShareSignInGate({ token, emailHint, wrongAccount, onVerified }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [hint, setHint] = useState(emailHint || "");
   const [mode, setMode] = useState("google"); // "google" | "code"
-  const [denied, setDenied] = useState(null);  // { account, invited }
-  const btnRef = useRef(null);
-
-  const onGoogle = useCallback(async (credential) => {
-    if (!credential) return;
-    setBusy(true); setMsg(""); setDenied(null);
-    try {
-      const r = await fetch("/api/share-auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, credential }) });
-      if (r.ok) { onVerified(); return; }
-      const d = await r.json().catch(() => ({}));
-      if (d.error === "no_access") setDenied({ account: d.account, invited: d.invited });
-      else setMsg("Couldn't verify that account - try the email code instead.");
-    } catch (e) { setMsg("Couldn't verify - try the email code instead."); }
-    setBusy(false);
-  }, [token, onVerified]);
-
-  // Load Google Identity Services, render the button + try One Tap (silent auto-detect).
-  useEffect(() => {
-    let cancelled = false;
-    const init = (clientId) => {
-      if (cancelled || !window.google || !window.google.accounts || !clientId) return;
-      try {
-        window.google.accounts.id.initialize({ client_id: clientId, callback: (resp) => onGoogle(resp.credential), auto_select: true, cancel_on_tap_outside: false });
-        if (btnRef.current) window.google.accounts.id.renderButton(btnRef.current, { type: "standard", theme: "outline", size: "large", text: "continue_with", shape: "pill", logo_alignment: "center", width: 280 });
-        window.google.accounts.id.prompt(); // One Tap: signs the visitor in automatically if already in their Google account
-      } catch (e) {}
-    };
-    (async () => {
-      let clientId = "";
-      try { const r = await fetch("/api/share-auth"); const d = await r.json(); clientId = d.clientId; } catch (e) {}
-      if (window.google && window.google.accounts) return init(clientId);
-      const s = document.createElement("script");
-      s.src = "https://accounts.google.com/gsi/client"; s.async = true; s.defer = true;
-      s.onload = () => init(clientId);
-      document.head.appendChild(s);
-    })();
-    return () => { cancelled = true; };
-  }, [onGoogle]);
+  const denied = wrongAccount ? { account: wrongAccount, invited: emailHint || "the invited email" } : null;
+  const googleSignIn = () => {
+    setBusy(true);
+    window.location.href = "/api/auth/google/start?share=" + encodeURIComponent(token);
+  };
 
   const request = async () => { setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "request" }) }); const d = await r.json(); if (r.ok) { if (d.emailHint) setHint(d.emailHint); setMsg("We sent a 6-digit code to " + (d.emailHint || hint)); } else setMsg("Couldn't send the code - try again"); } catch (e) { setMsg("Couldn't send the code"); } setBusy(false); };
   const verify = async () => { if (!/^\d{6}$/.test(code)) { setMsg("Enter the 6-digit code"); return; } setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "verify", code }) }); if (r.ok) { onVerified(); return; } const d = await r.json().catch(() => ({})); setMsg(d.error === "expired" ? "Code expired - tap Resend" : "Incorrect code"); } catch (e) { setMsg("Something went wrong"); } setBusy(false); };
@@ -818,10 +786,12 @@ function ShareSignInGate({ token, emailHint, onVerified }) {
         {denied && <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-left text-[12px] text-amber-700"><b>{denied.account}</b> doesn't have access. This report was shared with {denied.invited}. Switch accounts or use the email code below.</div>}
         {mode === "google" ? (
           <>
-            <div ref={btnRef} className="mt-4 flex min-h-[44px] justify-center" />
-            {busy && <p className="mt-2 text-[12px] text-slate-400">Checking access…</p>}
+            <button onClick={googleSignIn} disabled={busy} className="mt-4 inline-flex w-full items-center justify-center gap-2.5 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60">
+              <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+              {busy ? "Redirecting…" : "Continuar con Google"}
+            </button>
             <div className="my-4 flex items-center gap-3 text-[11px] text-slate-300"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div>
-            <button onClick={() => { setMode("code"); setMsg(""); setDenied(null); request(); }} disabled={busy} className="text-[13px] font-medium text-violet-600 hover:text-violet-700">Email me a code instead</button>
+            <button onClick={() => { setMode("code"); setMsg(""); request(); }} disabled={busy} className="text-[13px] font-medium text-violet-600 hover:text-violet-700">Email me a code instead</button>
           </>
         ) : (
           <>
@@ -858,14 +828,32 @@ function SharedReportView({ token }) {
           setMeeting(m);
           return;
         }
-        if (r.status === 403) { const d = await r.json().catch(() => ({})); if (d.needOtp) { setOtp({ emailHint: d.emailHint || "" }); return; } }
+        if (r.status === 403) {
+          const d = await r.json().catch(() => ({}));
+          if (d.needOtp) {
+            // ZERO-CLICK path: silently try Google sign-in (prompt=none) ONCE - if the invited
+            // account is already signed into this browser, the report opens directly. Failed or
+            // wrong-account attempts bounce back with ?gate=1 and land on the gate below.
+            const sp = new URLSearchParams(window.location.search);
+            const bounced = sp.get("gate") === "1" || sp.get("wrong");
+            let tried = false;
+            try { tried = sessionStorage.getItem("om_share_auto") === token; } catch (e) {}
+            if (!bounced && !tried) {
+              try { sessionStorage.setItem("om_share_auto", token); } catch (e) {}
+              window.location.href = "/api/auth/google/start?share=" + encodeURIComponent(token) + "&auto=1";
+              return;
+            }
+            setOtp({ emailHint: d.emailHint || "", wrong: sp.get("wrong") || "" });
+            return;
+          }
+        }
         setErr(true);
       })
       .catch(() => setErr(true));
   };
   useEffect(() => { loadReport(); /* eslint-disable-next-line */ }, [token]);
 
-  if (otp) return <ShareSignInGate token={token} emailHint={otp.emailHint} onVerified={() => { setMeeting(null); loadReport(); }} />;
+  if (otp) return <ShareSignInGate token={token} emailHint={otp.emailHint} wrongAccount={otp.wrong} onVerified={() => { setMeeting(null); loadReport(); }} />;
   if (err) return (
     <div className="rai-body flex h-screen flex-col items-center justify-center gap-3 bg-[#F4F5FA] text-center text-slate-500">
       <StyleInject /><OctoLogo size={40} />
