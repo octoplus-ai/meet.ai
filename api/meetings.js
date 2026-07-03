@@ -77,6 +77,21 @@ export default async function handler(req, res) {
     // not an array. Normalize to an array so the client (m.reports[0]) and the checks below work.
     for (const x of m) x.reports = x.reports ? (Array.isArray(x.reports) ? x.reports : [x.reports]) : [];
 
+    // Expire STALE live rows: the in-house worker beats status every 5 min while recording and
+    // posts on every transition, so a joining/in_call/recording row untouched for >15 min is dead
+    // (bot never admitted, meeting long over, worker died, or a rescheduled row that never ran).
+    // Flip it to error so it stops driving the "recording live" banner and the incomplete count.
+    const staleCut = Date.now() - 15 * 60000;
+    const stale = m.filter((x) => ["joining", "in_call", "recording"].includes(x.status)
+      && x.capture_mode === "inhouse_bot"
+      && (!x.status_synced_at || Date.parse(x.status_synced_at) < staleCut));
+    for (const x of stale) {
+      try {
+        await sb(`meetings?id=eq.${x.id}`, { method: "PATCH", body: { status: "error", error: "Recording did not complete (bot never joined or the meeting was rescheduled).", status_synced_at: new Date().toISOString() } });
+        x.status = "error";
+      } catch (e) { /* next load retries */ }
+    }
+
     const active = m.filter((x) => ACTIVE.has(x.status) && x.bot_id).slice(0, 8);
     if (active.length && process.env.RECALL_API_KEY) {
       const synced = await Promise.all(active.map(syncOne));

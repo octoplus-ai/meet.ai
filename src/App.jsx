@@ -511,6 +511,7 @@ function adaptReal(m) {
     id: m.id, title: m.title || "Meeting", source: platformFromUrl(m.meeting_url) || m.source || "Google Meet",
     date: localDateISO(start), // viewer-local day (UTC slicing put late-evening meetings on the wrong day)
     at: start ? new Date(start).getTime() : 0, // real epoch for exact sorting
+    syncedAt: m.status_synced_at ? Date.parse(m.status_synced_at) : (start ? new Date(start).getTime() : 0), // last status heartbeat -> staleness
     timeStart: hhmm(start), timeEnd: hhmm(m.end_time), durationMin: m.duration_min || 0,
     folder: mFolders[0], folders: mFolders, folderLocked: false, owner: "NB", participantsCount: richParts.length,
     scores: { overall, engagement, sentiment, balance, clarity, charisma: sc.charisma || 0 },
@@ -1422,9 +1423,9 @@ function PeoplePopover({ meeting, emailBook = {} }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
-  const { withEmail, noEmail } = meetingPeople(meeting, emailBook);
+  const { people, withEmail } = meetingPeople(meeting, emailBook);
   const emails = withEmail.map((p) => p.email);
-  const count = meeting.participantsCount != null ? meeting.participantsCount : (withEmail.length + noEmail.length);
+  const count = people.length;
   const openMenu = (e) => { e.stopPropagation(); const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } setOpen(true); };
   const copyEmails = async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(emails.join(", ")); toast(emails.length ? `Copied ${emails.length} email${emails.length > 1 ? "s" : ""}` : "No emails on file for this meeting"); } catch (err) {} };
   return (
@@ -1439,19 +1440,16 @@ function PeoplePopover({ meeting, emailBook = {} }) {
               {emails.length > 0 && <button onClick={copyEmails} className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"><Copy size={11} /> Copy emails</button>}
             </div>
             <div className="max-h-64 overflow-y-auto">
-              {withEmail.map((p, i) => (
-                <div key={"e" + i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+              {people.map((p, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
                   <Avatar name={p.name || p.email} email={p.email} size={22} />
-                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{p.name || p.email}</div>{p.name && <div className="truncate text-[11px] text-slate-400">{p.email}</div>}</div>
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] text-slate-700">{p.name || p.email}</div>
+                    {p.name && <div className="truncate text-[11px] text-slate-400">{p.email || "no email on file"}</div>}
+                  </div>
                 </div>
               ))}
-              {noEmail.map((p, i) => (
-                <div key={"n" + i} className="flex items-center gap-2 rounded-lg px-2 py-1.5">
-                  <Avatar name={p.name} size={22} />
-                  <div className="min-w-0"><div className="truncate text-[13px] text-slate-700">{p.name}</div><div className="truncate text-[11px] text-slate-300">no email on file</div></div>
-                </div>
-              ))}
-              {!withEmail.length && !noEmail.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">No participant data.</div>}
+              {!people.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">No participant data.</div>}
             </div>
           </div>
         </>
@@ -1468,25 +1466,63 @@ const isEmail = (e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e);
 //      directory when we know it.
 // We deliberately do NOT use the report's share recipients (people it was shared with != who was
 // in the meeting). Returns { withEmail:[{name,email}], noEmail:[{name}] } deduped by email.
+// Unresolved diarization labels ("Speaker C", "Guest 2", "Participant") are NOT real people -
+// they must never appear in any participant list (popover, share dialog, cards, count).
+const isPlaceholderName = (n) => {
+  const s = String(n || "").trim();
+  return !s || /^(speaker|guest|participant|unknown|user|persona|invitado|orador)\s*[a-z0-9]{0,3}$/i.test(s);
+};
+const firstToken = (n) => String(n || "").trim().toLowerCase().split(/[\s(]+/)[0] || "";
+const emailLocalTokens = (e) => String(e || "").toLowerCase().split("@")[0].replace(/[._\-0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+const nameFromEmail = (e) => { const t = emailLocalTokens(e)[0] || String(e || "").split("@")[0]; return t ? t[0].toUpperCase() + t.slice(1) : String(e || ""); };
+// A diarized speaker name is the SAME person as an invited attendee when their first name
+// matches the attendee's name or is contained in the email local-part.
+const samePerson = (speakerName, att) => {
+  const ft = firstToken(speakerName);
+  if (!ft || ft.length < 2) return false;
+  if (att.name && firstToken(att.name) === ft) return true;
+  return emailLocalTokens(att.email).some((tok) => tok === ft || tok.startsWith(ft) || ft.startsWith(tok));
+};
+const fullerName = (a, b) => {
+  const A = String(a || "").trim(), B = String(b || "").trim();
+  if (!A) return B; if (!B) return A;
+  return (B.split(/\s+/).length > A.split(/\s+/).length || B.length > A.length) ? B : A;
+};
+
+// Build ONE deduped person list. Invited attendees are the source of truth (name + email);
+// diarized speakers only add people who did not have an invite, and upgrade a blank invite
+// name with the fuller diarized one. Placeholder labels are dropped everywhere.
 function meetingPeople(meeting, emailBook = {}) {
-  const byEmail = new Map(); const noEmail = [];
-  const addEmail = (email, name) => {
-    const e = String(email || "").toLowerCase();
-    if (!isEmail(e)) return;
-    const cur = byEmail.get(e);
-    if (!cur) byEmail.set(e, { name: name || "", email: e });
-    else if (!cur.name && name) cur.name = name; // upgrade a blank name if a better one shows up
-  };
-  (meeting.participants || []).forEach((p) => {
-    const nm = p && p.name; if (!nm) return;
-    const e = emailBook[normName(nm)];
-    if (e) addEmail(e, nm); else if (nm.toLowerCase() !== "speaker") noEmail.push({ name: nm });
-  });
+  const attByEmail = new Map();
   (meeting.attendees || []).forEach((a) => {
-    const e = typeof a === "string" ? a : (a && a.email);
-    if (e) addEmail(e, (a && a.name) || "");
+    const email = String((typeof a === "string" ? a : (a && a.email)) || "").toLowerCase();
+    if (!isEmail(email)) return;
+    const name = (a && typeof a === "object" && a.name) || "";
+    const cur = attByEmail.get(email);
+    if (!cur) attByEmail.set(email, { email, name });
+    else if (!cur.name && name) cur.name = name;
   });
-  return { withEmail: [...byEmail.values()], noEmail };
+  const atts = [...attByEmail.values()];
+  const speakers = (meeting.participants || []).map((p) => p && p.name).filter((n) => n && !isPlaceholderName(n));
+
+  const used = new Set();
+  const people = atts.map((a) => {
+    let name = a.name;
+    const si = speakers.findIndex((s, idx) => !used.has(idx) && samePerson(s, a));
+    if (si >= 0) { used.add(si); name = fullerName(name, speakers[si]); }
+    return { name: name || nameFromEmail(a.email), email: a.email };
+  });
+  // Speakers with no matching invite = real extra guests (resolve an email from the book if we have one).
+  speakers.forEach((s, idx) => {
+    if (used.has(idx)) return;
+    const e = emailBook[normName(s)];
+    if (e && people.some((p) => p.email === e)) return; // already listed via attendee
+    people.push({ name: s, email: isEmail(e) ? e : "" });
+  });
+
+  const withEmail = people.filter((p) => p.email);
+  const noEmail = people.filter((p) => !p.email);
+  return { people, withEmail, noEmail };
 }
 function meetingParticipantEmails(meeting, emailBook = {}) {
   return meetingPeople(meeting, emailBook).withEmail.map((p) => p.email);
@@ -1618,7 +1654,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
     filtered.forEach((m) => { const b = bucketOf(m.date); (by[b] = by[b] || []).push(m); });
     return order.filter((o) => by[o]).map((o) => ({ label: o, items: by[o] }));
   }, [filtered]);
-  const live = useMemo(() => meetings.filter((m) => m.real && ["joining", "in_call", "recording"].includes(m.status)), [meetings]);
+  // GENUINELY live only: a joining/in_call/recording row whose last status heartbeat is recent.
+  // The worker beats every 5 min while recording and posts on join, so no real live meeting goes
+  // >13 min without an update - a stale row (bot never admitted, meeting long over, worker died,
+  // or a rescheduled row that never ran) must NOT keep the "recording live" banner up forever.
+  const live = useMemo(() => meetings.filter((m) => m.real && ["joining", "in_call", "recording"].includes(m.status) && (Date.now() - (m.syncedAt || 0)) < 13 * 60000), [meetings]);
   const proc = useMemo(() => meetings.filter((m) => m.real && m.status === "processing"), [meetings]);
   const selectedMeetings = filtered.filter((m) => sel.has(m.id));
   const allSelected = filtered.length > 0 && filtered.every((m) => sel.has(m.id));
@@ -1675,7 +1715,9 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 ) : <Loader2 size={15} className="animate-spin text-violet-600" />}
                 <span className="flex-1 text-sm font-medium text-slate-700">
                   {live.length
-                    ? <>OctoMeet is <b className="text-rose-700">recording live</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - the AI report will appear here automatically.</>
+                    ? (live[0].status === "recording"
+                        ? <>OctoMeet is <b className="text-rose-700">recording live</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - the AI report will appear here automatically.</>
+                        : <>OctoMeet is <b className="text-rose-700">{live[0].status === "in_call" ? "in the meeting" : "joining"}</b>: “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - recording starts once it's admitted.</>)
                     : <>Generating <b className="text-violet-700">{proc.length}</b> AI report{proc.length > 1 ? "s" : ""} from your meeting{proc.length > 1 ? "s" : ""}… this updates automatically.</>}
                 </span>
                 <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> Refresh</button>
@@ -4629,6 +4671,10 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       fetch("/api/report-field", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, field: "action_items", value, shareToken: shared ? shareTok : undefined }) }).catch(() => {});
     }
   };
+  // Participant displays drop unresolved "Speaker X"/"Guest" placeholders; if EVERY participant
+  // is a placeholder, fall back to the raw list so the section is never blank.
+  const realParts = (meeting.participants || []).filter((p) => p && !isPlaceholderName(p.name));
+  const displayParts = realParts.length ? realParts : (meeting.participants || []);
   const filteredTurns = meeting.transcript.filter((t) => !q || (t.text + " " + t.speaker).toLowerCase().includes(q.toLowerCase()));
   const speakerIdx = {};
   meeting.participants.forEach((p, i) => (speakerIdx[p.name] = i));
@@ -4793,7 +4839,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           <span className="flex items-center gap-1"><Calendar size={12} /> {fmtDateShort(meeting.date)}</span>
           <span className="flex items-center gap-1"><Clock size={12} /> {meeting.timeStart} - {meeting.timeEnd}</span>
           <span className="flex items-center gap-1"><Video size={12} /> {meeting.source}</span>
-          <span className="flex items-center gap-1"><Users size={12} /> {meeting.participants.map((p) => p.name).join(", ")}</span>
+          <span className="flex items-center gap-1"><Users size={12} /> {displayParts.map((p) => p.name).join(", ")}</span>
         </div>
       </div>
 
@@ -4842,12 +4888,17 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                     <span className="text-[12px] text-slate-400">Owner</span>
                   </div>
                   {(() => {
-                    // Individuals = meeting participants (default Viewer) merged with the
-                    // explicitly-shared people (persisted roles override). The owner (connected user)
-                    // is already shown above, so skip them here. Each gets a role dropdown.
+                    // Individuals = the DEDUPED meeting people (name + email, no "Speaker X"
+                    // placeholders, no invite/speaker duplicates) merged with the explicitly-
+                    // shared people (persisted roles/tokens override). Owner is shown above.
                     const map = {};
-                    (meeting.participants || []).forEach((p) => { if (p.name && p.name !== (user && user.name)) map[p.name] = { key: p.name, name: p.name, sub: "Participant", role: "Viewer", token: null }; });
-                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, email: s.email, picture: s.picture || "", sub: s.name ? s.email : "", role: s.role || "Viewer", token: s.token }; });
+                    meetingPeople(meeting).people.forEach((p) => {
+                      if (p.email && user && p.email === user.email) return;
+                      if (!p.email && user && p.name === user.name) return;
+                      const key = p.email || p.name;
+                      map[key] = { key, name: p.name || p.email, email: p.email || "", sub: p.email || "no email on file", role: "Viewer", token: null };
+                    });
+                    (access || []).forEach((s) => { map[s.email] = { key: s.email, name: s.name || s.email, email: s.email, picture: s.picture || "", sub: s.email, role: s.role || "Viewer", token: s.token }; });
                     const list = Object.values(map);
                     if (!list.length) return null;
                     return (
@@ -5130,9 +5181,9 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
         {tab === "deepdive" && (
           <div className="space-y-5">
             <Card title={tr("participationTalk")} icon={Users}>
-              <TalkRibbon participants={meeting.participants} />
+              <TalkRibbon participants={displayParts} />
               <div className="mt-4 space-y-2">
-                {meeting.participants.map((p, i) => (
+                {displayParts.map((p, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     <span className="h-3 w-3 rounded-sm" style={{ background: SPEAKER_COLORS[i % SPEAKER_COLORS.length] }} />
                     <span className="flex-1 text-slate-600">{p.name}</span>
@@ -5234,7 +5285,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             {meeting.participants && meeting.participants.length > 0 && (
               <Card title="Per-speaker breakdown" icon={Users}>
                 <div className="space-y-2">
-                  {meeting.participants.map((p, i) => (
+                  {displayParts.map((p, i) => (
                     <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3">
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: SPEAKER_COLORS[i % SPEAKER_COLORS.length] }}>{p.initials || initialsOf(p.name)}</span>
                       <div className="min-w-0 flex-1"><div className="text-sm font-semibold text-slate-700">{p.name}</div><div className="text-[11px] text-slate-400">{p.role || "Participant"}</div></div>
