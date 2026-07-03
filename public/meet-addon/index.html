@@ -64,7 +64,9 @@
 
   <script>
     const CLOUD_PROJECT_NUMBER = "540014435995";
-    const APP = "https://meet-ai-three-beige.vercel.app";
+    const APP = "https://meet.octoplusteam.com";
+    // The OAuth popup can land on either domain (the Google redirect_uri is fixed) - accept both.
+    const ORIGINS = [APP, "https://meet-ai-three-beige.vercel.app"];
     const TOK_KEY = "octomeet_addon_token";
     const $ = (id) => document.getElementById(id);
     let meetingUrl = null, meetingCode = null;
@@ -97,7 +99,7 @@
         const w = window.open(APP + "/api/auth/google/start?addon=1", "octoauth", "width=480,height=660,menubar=no,toolbar=no");
         let done = false;
         function onMsg(e) {
-          if (e.origin !== APP) return;
+          if (!ORIGINS.includes(e.origin)) return;
           if (e.data && e.data.type === "octomeet-token" && e.data.token) {
             done = true; window.removeEventListener("message", onMsg);
             try { w && w.close(); } catch (_) {}
@@ -158,25 +160,19 @@
       return true; // Google now shows the native "OctoMeet is collecting media" consent + banner — no participant.
     }
 
+    // Primary action: send OUR bot into this call right now (the botless Media API path above is
+    // kept for the future - it's gated behind Google's developer preview and only added noise).
     $("startBtn").onclick = async () => {
       if (!meetingUrl) { $("ctx").textContent = "Open this from inside a Google Meet call."; return; }
-      setRecording(true, "Connecting (botless)…");
+      setRecording(true, "Adding OctoMeet to this call…");
       try {
-        await startBotless();
-        setRecording(true, "OctoMeet is recording 🔴 (botless — no participant)");
-        $("ctx").textContent = "Connected via Meet Media API ✓";
-      } catch (e) {
-        const msg = String((e && e.message) || e);
-        if (msg === "reconnect") { setRecording(false, "Re-connect Google to enable botless (new permissions) — open OctoMeet & sign in again"); return; }
-        // Fallback: use the bot so recording still works while we debug botless.
-        setRecording(true, "Botless unavailable (" + msg.slice(0, 70) + ") — joining with notetaker…");
-        try {
-          let tk = await ensureToken(false);
-          let r = await callBotStart(tk);
-          if (r.status === 401) { localStorage.removeItem(TOK_KEY); tk = await ensureToken(true); r = await callBotStart(tk); }
-          setRecording(r.ok, r.ok ? "OctoMeet is recording this meeting 🔴" : "Couldn't start");
-        } catch (e2) { setRecording(false, "Couldn't start — try again"); }
-      }
+        let tk = await ensureToken(false);
+        let r = await callBotStart(tk);
+        if (r.status === 401) { localStorage.removeItem(TOK_KEY); tk = await ensureToken(true); r = await callBotStart(tk); }
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) { setRecording(true, "OctoMeet is joining 🔴 — admit it when it knocks"); $("ctx").textContent = "The notetaker will ask to join in ~30-60s."; }
+        else setRecording(false, "Couldn't start" + (d && d.error ? ": " + String(d.error).slice(0, 60) : ""));
+      } catch (e2) { setRecording(false, "Couldn't start — try again"); }
     };
     $("stopBtn").onclick = () => { try { if (pc) pc.close(); } catch (_) {} setRecording(false, "Recording stopped"); };
 
