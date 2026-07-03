@@ -3984,7 +3984,14 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
                     className={"relative h-3 w-3 rounded-full transition " + (rate === r ? "bg-violet-400 ring-4 ring-violet-400/30" : "bg-white/40 hover:bg-white/70")} />
                 ))}
               </div>
-              <div className="mx-3 mb-1 flex justify-between text-[10px] text-white/40"><span>.5x</span><span>Normal</span><span>2x</span></div>
+              {/* Labels anchored to their ACTUAL dots (7 dots -> 1x sits at 2/6 of the track, not the
+                  center). The old justify-between row put "Normal" under the 1.25x dot, which made the
+                  default (1x, correctly selected) look like a wrong speed. */}
+              <div className="relative mx-4 mb-1 h-4 text-[10px] text-white/40">
+                <span className="absolute left-0">.5x</span>
+                <span className="absolute -translate-x-1/2" style={{ left: `${(2 / 6) * 100}%` }}>Normal</span>
+                <span className="absolute right-0">2x</span>
+              </div>
             </div>
           </>
         )}
