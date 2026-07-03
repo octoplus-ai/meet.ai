@@ -2,6 +2,7 @@
 // Runs even when nobody has the app open. Recall then joins each at its start time.
 import { sb } from "../lib/supa.js";
 import { armUserCalendar } from "../lib/schedule.js";
+import { ensureWatch } from "../lib/calendar-watch.js";
 
 export const config = { maxDuration: 60 };
 
@@ -26,7 +27,10 @@ export default async function handler(req, res) {
         // duplicates. IGNORED in in-house mode: the own bot arms straight from Google Calendar.
         if (u.recall_calendar_id && !process.env.BOT_ORCHESTRATOR_URL) { results.push({ user: u.id, via: "recall_calendar", armed: 0 }); continue; }
         const r = await armUserCalendar(u.id, { botName: u.notetaker_name || "OctoMeet AI", days: 7 });
-        results.push({ user: u.id, ...r });
+        // Keep a live Google Calendar push channel so new meetings arm INSTANTLY (not just on the
+        // next sweep). Cheap no-op unless the channel is missing or about to expire.
+        const w = await ensureWatch(u.id);
+        results.push({ user: u.id, ...r, watch: w && (w.registered ? "registered" : w.fresh ? "fresh" : (w.error ? "error" : w.skipped)) });
       } catch (e) {
         results.push({ user: u.id, error: String(e.message || e) });
       }
