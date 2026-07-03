@@ -18,12 +18,16 @@ export default async function handler(req, res) {
     if (!process.env.ANTHROPIC_API_KEY) return res.status(200).json({ updated: 0, remaining: 0 });
     const uid = s[0].user_id;
 
-    const rows = await sb(`meetings?user_id=eq.${uid}&status=eq.done&select=id,title,reports(report_version)&order=created_at.desc`);
+    // attendees included: reanalyzeStored uses the calendar invitees as real-name hints
+    // for the Speaker A/B -> person mapping.
+    const rows = await sb(`meetings?user_id=eq.${uid}&status=eq.done&select=id,title,attendees,reports(report_version)&order=created_at.desc`);
     const stale = rows.filter((m) => {
       const rep = Array.isArray(m.reports) ? m.reports[0] : m.reports;
       return rep && (rep.report_version || 0) < ANALYSIS_VERSION;
     });
-    const batch = stale.slice(0, 3); // bounded per call (fits maxDuration); client loops
+    // 2 per call: each V9 re-analysis takes ~20-40s of Claude time; 3 overflowed the 60s
+    // function cap (observed 504). The client loops until remaining=0, so throughput is fine.
+    const batch = stale.slice(0, 2);
     let updated = 0;
     for (const m of batch) {
       try { await reanalyzeStored(m); updated++; } catch (e) { console.error("reanalyze failed", m.id, e && (e.message || e)); }
