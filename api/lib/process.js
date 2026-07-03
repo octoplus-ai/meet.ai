@@ -107,6 +107,15 @@ export function sanitizeSpeakerMap(m) {
       const v = m[k].trim();
       if (SPK_LABEL.test(k) && v && v.length <= 60 && !SPK_LABEL.test(v)) out[k] = v;
     }
+    // Two DIFFERENT speakers must never collapse into one person: when the model maps two labels
+    // to the same name (e.g. owner "Santiago" + guest "Santiago"), keep only the first mapping and
+    // leave the later speakers on their diarization label - otherwise their talk-time merges and
+    // the participant count comes out wrong (seen in prod: a 2-person meeting showing 1).
+    const used = new Set();
+    for (const k of Object.keys(out)) {
+      const val = out[k].toLowerCase();
+      if (used.has(val)) delete out[k]; else used.add(val);
+    }
   }
   return out;
 }
@@ -174,7 +183,7 @@ export async function analyzeTranscript(text, title, participantNames) {
   "chapters": [{"title": string, "summary": string, "t": string, "points": string[]}] (3-7 chronological chapters; t = "mm:ss" or "h:mm:ss" start time; summary = 1-2 sentence description; points = 1-4 short key topics/takeaways covered in that chapter),
   "highlights": [{"text": string, "t": string}] (3-6 standout quotes/moments; t = approximate timestamp in the meeting when it happened, format "mm:ss" or "h:mm:ss"),
   "participants": [{"name": string, "role": string, "sentiment": "Positive"|"Neutral"|"Negative"}] (one per distinct speaker),
-  "speakerMap": {"Speaker A": "Real Name"} (ONLY when the transcript uses anonymous diarization labels like "Speaker A"/"Speaker B": map each label to that person's REAL name, worked out from the conversation itself - self-introductions, people addressing each other by name, plus the Known participants list. Include only labels you can identify with reasonable confidence; {} when none apply),
+  "speakerMap": {"Speaker A": "Real Name"} (ONLY when the transcript uses anonymous diarization labels like "Speaker A"/"Speaker B": map each label to that person's REAL name, worked out from the conversation itself - self-introductions, people addressing each other by name, plus the Known participants list. Every mapped name MUST be DIFFERENT: two speakers can never share the same string - if two people share a first name, disambiguate with full names (first + last) from Known participants, and if you cannot tell them apart, map only one and leave the other label unmapped. Include only labels you can identify with reasonable confidence; {} when none apply),
   "coaching": {"strengths": string[] (2-4), "improvements": string[] (2-4), "tips": string[] (2-4)},
   "pitchAnalysis": {"overall": string (2-3 sentences on how compelling/persuasive the overall pitch & messaging was in this meeting), "speakers": [{"name": string, "score": int (0-100 pitch/delivery strength), "worked": string[] (1-3 specific things this speaker did WELL, with brief evidence), "improve": string[] (2-4 specific, actionable ways to sharpen their pitch & delivery), "sayNextTime": string (ONE concrete, rewritten line they could actually say next time to be more persuasive - in the meeting's language)}]} (analyze each speaker who spoke a meaningful amount; skip near-silent speakers),
   "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int, "charisma": int} (0-100; overall = meeting quality/Read Score, balance = how evenly people talked, clarity = how clear the communication was, charisma = speaker presence/persuasiveness),

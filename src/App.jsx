@@ -22,7 +22,9 @@ import {
 /* ------------------------------------------------------------------ */
 
 const SPEAKER_COLORS = ["#7C3AED", "#0EA5E9", "#10B981", "#F59E0B", "#F43F5E", "#14B8A6", "#8B5CF6", "#EC4899"];
-const REF_TODAY = "2026-06-26";
+// LOCAL "today" (computed at load) - this was a hardcoded demo date, which broke the
+// TODAY/THIS WEEK buckets and the "Today" filter for every real meeting.
+const REF_TODAY = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
 
 const VIDEOS = [
   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
@@ -426,6 +428,13 @@ function seedMeetings() {
 
 // Adapt a real meeting+report row from Supabase into the UI meeting shape.
 const hhmm = (iso) => { try { return iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : ""; } catch { return ""; } };
+// Local calendar date (YYYY-MM-DD) of an ISO timestamp. List dates + buckets must follow the
+// VIEWER's day, not UTC - a 23:25 local meeting was showing as "tomorrow" via the UTC date.
+const localDateISO = (iso) => {
+  const d = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(d.getTime())) return REF_TODAY;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 function statusSummary(status) {
   switch (status) {
     case "scheduled": return "🗓️ OctoMeet is scheduled to join this meeting and will start recording automatically at the start time.";
@@ -500,7 +509,8 @@ function adaptReal(m) {
   const mFolders = (Array.isArray(m.folders) && m.folders.length) ? m.folders : (m.folder ? [m.folder] : (r.category ? [r.category] : ["Meetings"]));
   return {
     id: m.id, title: m.title || "Meeting", source: platformFromUrl(m.meeting_url) || m.source || "Google Meet",
-    date: String(start || REF_TODAY).slice(0, 10),
+    date: localDateISO(start), // viewer-local day (UTC slicing put late-evening meetings on the wrong day)
+    at: start ? new Date(start).getTime() : 0, // real epoch for exact sorting
     timeStart: hhmm(start), timeEnd: hhmm(m.end_time), durationMin: m.duration_min || 0,
     folder: mFolders[0], folders: mFolders, folderLocked: false, owner: "NB", participantsCount: richParts.length,
     scores: { overall, engagement, sentiment, balance, clarity, charisma: sc.charisma || 0 },
@@ -549,6 +559,17 @@ const bucketOf = (iso) => {
   if (d <= 7) return "THIS WEEK";
   if (d <= 31) return "THIS MONTH";
   return "EARLIER";
+};
+// Real timestamp for sorting the reports list: real meetings carry an epoch `at`; demo/seed rows
+// fall back to parsing their "YYYY-MM-DD" + "h:mm AM/PM" strings. (The old sort compared the
+// concatenated STRINGS lexicographically - "11:25 PM" vs "1:36 AM" - producing a shuffled list.)
+const whenMs = (m) => {
+  if (m.at) return m.at;
+  let base = Date.parse((m.date || REF_TODAY) + "T00:00:00");
+  if (!Number.isFinite(base)) base = 0;
+  const tm = String(m.timeStart || "").match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (tm) { let h = (+tm[1]) % 12; if (/pm/i.test(tm[3] || "")) h += 12; base += (h * 60 + (+tm[2])) * 60000; }
+  return base;
 };
 const fmtDateFull = (iso) => {
   try { return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }); }
@@ -1572,6 +1593,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const dateOpts = [{ value: "all", label: "Anytime" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }];
   const ownerOpts = [{ value: "all", label: "All Reports" }, { value: "mine", label: "My reports" }, { value: "real", label: "Recorded by OctoMeet" }];
 
+  // Date & Time column sort direction - newest first by default; the header toggles it.
+  const [sortDir, setSortDir] = useState("desc");
   const filtered = useMemo(
     () => (tab === "incomplete"
       ? meetings.filter((m) => m.real && INCOMPLETE.includes(m.status))
@@ -1589,8 +1612,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
         const hay = (m.title + " " + (m.summary || "") + " " + (m.participants || []).map((p) => p.name).join(" ") + " " + (m.contacts || []).map((c) => c.name + " " + c.email).join(" ")).toLowerCase();
         return hay.includes(s);
       })
-      .sort((a, b) => (b.date + b.timeStart).localeCompare(a.date + a.timeStart)),
-    [meetings, q, tab, folderFilter, fOwner, fDate, fType, fSource, fFolder]
+      .sort((a, b) => (sortDir === "asc" ? whenMs(a) - whenMs(b) : whenMs(b) - whenMs(a))),
+    [meetings, q, tab, folderFilter, fOwner, fDate, fType, fSource, fFolder, sortDir]
   );
   const groups = useMemo(() => {
     const order = ["TODAY", "THIS WEEK", "THIS MONTH", "EARLIER"];
@@ -1723,7 +1746,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
             <div className="mt-4 overflow-hidden">
               <div className="grid grid-cols-[1.4fr_1fr_0.9fr_0.8fr_0.5fr_40px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
                 <div className="flex items-center gap-6"><span>{t("source")}</span><span>{t("report")}</span></div>
-                <div className="flex items-center gap-1">{t("dateTime")} <ArrowDown size={12} /></div>
+                <button onClick={() => setSortDir((s) => (s === "desc" ? "asc" : "desc"))}
+                  title={sortDir === "desc" ? "Newest first - click for oldest first" : "Oldest first - click for newest first"}
+                  className="flex items-center gap-1 uppercase hover:text-violet-600">
+                  {t("dateTime")} <ArrowDown size={12} className={"transition-transform " + (sortDir === "asc" ? "rotate-180" : "")} />
+                </button>
                 <div>{t("folders")}</div>
                 <div>Participants</div>
                 <div>{t("owner")}</div>
