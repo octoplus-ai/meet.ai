@@ -71,7 +71,8 @@ export default async function handler(req, res) {
     const t = parseCookies(req).om_session;
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t || "")}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (!s.length) return res.status(401).json({ meetings: [], error: "not authenticated" });
-    const m = await sb(`meetings?user_id=eq.${s[0].user_id}&select=*,reports(*)&order=created_at.desc`);
+    // status=neq.skipped: per-event "disable notetaker" placeholders (calendar extension) never show in the app.
+    const m = await sb(`meetings?user_id=eq.${s[0].user_id}&status=neq.skipped&select=*,reports(*)&order=created_at.desc`);
     // PostgREST embeds `reports` as a single OBJECT (reports.meeting_id is unique → to-one),
     // not an array. Normalize to an array so the client (m.reports[0]) and the checks below work.
     for (const x of m) x.reports = x.reports ? (Array.isArray(x.reports) ? x.reports : [x.reports]) : [];
