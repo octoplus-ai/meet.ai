@@ -85,7 +85,7 @@ const EXTRA = {
   en: {
     // video player
     audioTranslation: "Audio translation", translatingAudio: "Translating audio to", dubKeepsVoices: "AI voices, keeps each speaker", original: "Original",
-    subtitles: "Subtitles", off: "Off", translatingSubs: tr("translatingSubs"), play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
+    subtitles: "Subtitles", off: "Off", translatingSubs: "Translating subtitles…", play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
     settings: "Settings", playbackSpeed: "Playback speed", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
     recordingWillAppear: "Recording will appear here once processed.",
     // report tabs
