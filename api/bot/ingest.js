@@ -39,9 +39,16 @@ export default async function handler(req, res) {
     }
     const title = body.title || meeting.title || "Meeting";
 
+    // Who actually JOINED the call (People panel + join toasts, scraped by the worker). These are
+    // the strongest identity hints (real in-call display names) AND the source of truth for the
+    // guest count - two people talking through one mic diarize as ONE voice, but both joined.
+    const roster = Array.isArray(body.rosterNames)
+      ? [...new Set(body.rosterNames.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))]
+      : [];
     // Real-people hints for the speaker-identification pass: the calendar invite carries the
     // ACTUAL names/emails, which lets the analysis map "Speaker A" -> the real person.
     const hintNames = [...new Set([
+      ...roster,
       ...(Array.isArray(meeting.attendees) ? meeting.attendees.map((a) => a && (a.name || a.email)).filter(Boolean) : []),
       ...(Array.isArray(meeting.participants) ? meeting.participants.filter((x) => typeof x === "string") : []),
     ])];
@@ -68,6 +75,15 @@ export default async function handler(req, res) {
       const x = aiParts[s.name.toLowerCase()] || {};
       return { name: s.name, role: x.role || "Participant", talkPct: Math.round((s.words / totalW) * 100), wpm: 0, sentiment: x.sentiment || "Neutral", isHost: !!x.isHost };
     });
+    // Roster members with no diarized voice of their own (never spoke, or shared a mic) still
+    // COUNT as participants - like Read.ai, guests = who was in the call. Fuzzy match so
+    // "Santiago" (roster) doesn't duplicate "Santiago Llorach" (mapped speaker).
+    const overlap = (a, b) => a.includes(b) || b.includes(a);
+    for (const n of roster) {
+      const ln = n.toLowerCase();
+      if (participants.some((p) => overlap(p.name.toLowerCase(), ln))) continue;
+      participants.push({ name: n, role: "Participant", talkPct: 0, wpm: 0, sentiment: "Neutral", isHost: false });
+    }
     const sc = ai.scores || {};
 
     const reportRow = {
