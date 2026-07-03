@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1e1b2e;font-size:14.5px;line-height:1.6">${esc(body.body || "").replace(/\n/g, "<br>")}</div>`;
       let sent = 0, lastErr = "";
       for (const email of to) {
-        const r = await sendViaGmail(token, { to: email, subject: body.subject || ("Follow-up: " + (m.title || "our meeting")), html, text: body.body || "", fromName: `${u.name || "OctoMeet"} via OctoMeet AI`, fromAddress: fromAddr });
+        const r = await sendViaGmail(token, { to: email, subject: body.subject || ("Follow-up: " + (m.title || "our meeting")), html, text: body.body || "", fromName: `${u.name || "OctoMeet"} via OctoMeet AI`, fromAddress: fromAddr, replyTo: u.email });
         if (r.ok) sent++; else lastErr = r.error || "send failed";
       }
       if (!sent) return res.status(502).json({ error: "send_failed", detail: lastErr });

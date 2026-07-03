@@ -7,7 +7,7 @@ import { randomToken } from "./session.js";
 import { sendViaGmail, reportEmail, getBotSender } from "./email.js";
 import { deliverReport } from "./deliver.js";
 
-const APP_URL = "https://meet-ai-three-beige.vercel.app/";
+const APP_URL = "https://meet.octoplusteam.com/"; // branded domain (same deployment; better email deliverability)
 const arr = (x) => (Array.isArray(x) ? x : []);
 
 // Auto-recap: when a report is ready, email everyone involved (calendar attendees + owner)
@@ -65,7 +65,7 @@ export async function notifyParticipants(meeting, ai, rep) {
         // recall/thumb only resolves for real Recall bot ids - never for the in-house bot.
         const coverUrl = meeting.cover_url || (meeting.bot_id && meeting.capture_mode !== "inhouse_bot" ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + e.token : "");
         const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: APP_URL + "?share=" + e.token, coverUrl, sharerName: sharer, kind: "auto" });
-        const r = await sendViaGmail(sendToken, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: sendFrom });
+        const r = await sendViaGmail(sendToken, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: sendFrom, replyTo: u.email });
         if (r.ok) sent++;
       }
     }

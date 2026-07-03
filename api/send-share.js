@@ -74,7 +74,7 @@ export default async function handler(req, res) {
         title, whenText, summary: rep.summary || "", chapters: rep.chapters || [], actionItems: rep.action_items || [],
         viewUrl, coverUrl, sharerName: a.sharer, kind: "share", message: body.message || "",
       });
-      const r = await sendViaGmail(gToken, { to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI`, fromAddress: fromAddr });
+      const r = await sendViaGmail(gToken, { to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI`, fromAddress: fromAddr, replyTo: a.ownerEmail });
       if (r.ok) sent++;
       else {
         lastErr = r.error || "send failed";

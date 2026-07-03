@@ -30,7 +30,9 @@ export async function getBotSender() {
   }
 }
 
-const APP = "https://meet-ai-three-beige.vercel.app/";
+// Branded domain for every link + asset in outgoing mail: bare *.vercel.app links are a classic
+// spam-filter signal, and the custom domain serves the same deployment.
+const APP = "https://meet.octoplusteam.com/";
 const LOGO = APP + "email-logo.png";
 const esc = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
@@ -45,7 +47,7 @@ function transport() {
 
 // Send via the user's OWN Gmail (Gmail API messages.send + their OAuth access token).
 // From = the user's address with a friendly display name. No app password needed.
-export async function sendViaGmail(token, { to, subject, html, text, fromName, fromAddress }) {
+export async function sendViaGmail(token, { to, subject, html, text, fromName, fromAddress, replyTo }) {
   if (!token) return { ok: false, error: "no_token", needScope: true };
   const list = (Array.isArray(to) ? to : [to]).filter(Boolean);
   if (!list.length) return { ok: false, error: "no recipients" };
@@ -55,6 +57,8 @@ export async function sendViaGmail(token, { to, subject, html, text, fromName, f
   const raw = [
     `To: ${list.join(", ")}`,
     `From: ${nm}<${fromAddress}>`,
+    // Replies should reach the MEETING OWNER, not the bot mailbox.
+    ...(replyTo && replyTo !== fromAddress ? [`Reply-To: ${replyTo}`] : []),
     `Subject: =?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/alternative; boundary="${B}"`, "",

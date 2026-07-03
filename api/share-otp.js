@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       const fromAddr = (bot && bot.fromAddress) || o.email;
       if (gToken && fromAddr) {
         const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1e1b2e;max-width:460px"><p>Your OctoMeet access code for <b>${(r.meeting.title || "the report").replace(/[<>&]/g, "")}</b>:</p><div style="font-size:30px;font-weight:800;letter-spacing:6px;color:#6d28d9;margin:14px 0">${code}</div><p style="color:#64748b;font-size:13px">It expires in 10 minutes. If you didn't request this, ignore it.</p></div>`;
-        await sendViaGmail(gToken, { to: email, subject: `${code} is your OctoMeet access code`, html, text: `Your OctoMeet access code: ${code} (expires in 10 minutes).`, fromName: `${o.name || "OctoMeet"} via OctoMeet AI`, fromAddress: fromAddr });
+        await sendViaGmail(gToken, { to: email, subject: `${code} is your OctoMeet access code`, html, text: `Your OctoMeet access code: ${code} (expires in 10 minutes).`, fromName: `${o.name || "OctoMeet"} via OctoMeet AI`, fromAddress: fromAddr, replyTo: o.email });
       }
       return res.status(200).json({ ok: true, emailHint: maskEmail(email) });
     }
