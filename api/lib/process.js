@@ -15,17 +15,25 @@ const arr = (x) => (Array.isArray(x) ? x : []);
 // Idempotent via meetings.notified_at. Best-effort; never throws into the pipeline.
 export async function notifyParticipants(meeting, ai, rep) {
   try {
-    // ATOMIC CLAIM: only ONE run may send the recap. A conditional PATCH (notified_at IS NULL)
-    // is resolved atomically by Postgres row-locking, so concurrent processMeeting runs
-    // (webhook retry + poll/reprocess) can never double-send. If we don't win, bail.
     if (meeting.notified_at) return;
-    const claim = await sb(`meetings?id=eq.${meeting.id}&notified_at=is.null`, { method: "PATCH", body: { notified_at: new Date().toISOString() }, prefer: "return=representation" });
-    if (!Array.isArray(claim) || !claim.length) return;
     const ownerId = meeting.user_id;
     const u = (await sb(`app_users?id=eq.${ownerId}&select=name,email,sharing_prefs,integrations`))[0] || {};
     const prefs = (u.sharing_prefs && typeof u.sharing_prefs === "object") ? u.sharing_prefs : {};
     const ints = (u.integrations && typeof u.integrations === "object") ? u.integrations : {};
     const token = await getValidToken(ownerId);
+    // Resolve the sender BEFORE claiming: if we can't deliver ANYTHING right now (no bot sender,
+    // no owner Gmail, no auto-push integration), leave notified_at null so a later retry - after
+    // the bot mailbox or the owner's Google reconnects - still sends the recap instead of losing it.
+    const bot = await getBotSender();
+    const sendToken = (bot && bot.token) || token;
+    const sendFrom = (bot && bot.fromAddress) || u.email;
+    const hasPush = Object.keys(ints).some((k) => ints[k] && ints[k].autoPush && (ints[k].url || ints[k].token));
+    if (!(sendToken && u.email) && !hasPush) return;
+    // ATOMIC CLAIM: only ONE run may send the recap. A conditional PATCH (notified_at IS NULL)
+    // is resolved atomically by Postgres row-locking, so concurrent processMeeting runs
+    // (webhook retry + poll/reprocess) can never double-send. If we don't win, bail.
+    const claim = await sb(`meetings?id=eq.${meeting.id}&notified_at=is.null`, { method: "PATCH", body: { notified_at: new Date().toISOString() }, prefer: "return=representation" });
+    if (!Array.isArray(claim) || !claim.length) return;
     const title = meeting.title || "Meeting report";
     let whenText = "";
     if (meeting.start_time) { try { whenText = new Date(meeting.start_time).toLocaleString("en-US", { month: "long", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) {} }
@@ -47,18 +55,15 @@ export async function notifyParticipants(meeting, ai, rep) {
       } catch (e) { /* ignore */ }
     }
     // Recipients: autoRecap ON (default) -> calendar attendees + owner; OFF -> owner ONLY (the
-    // owner always gets their recap the moment the meeting ends). Sender: ALWAYS the dedicated
-    // bot mailbox when it's connected (log in once with it); falls back to the owner's Gmail.
-    const bot = await getBotSender();
-    const sendToken = (bot && bot.token) || token;
-    const sendFrom = (bot && bot.fromAddress) || u.email;
+    // owner always gets their recap the moment the meeting ends). Sender resolved above.
     if (sendToken && u.email) {
       const recips = new Set([u.email.toLowerCase()]);
       if (prefs.autoRecap !== false) (attendeeList || []).forEach((at) => { if (at.response !== "declined") recips.add(at.email); });
       const to = [...recips].filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e));
       for (const email of to) {
         const e = entryFor(email);
-        const coverUrl = meeting.cover_url || (meeting.bot_id ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + e.token : "");
+        // recall/thumb only resolves for real Recall bot ids - never for the in-house bot.
+        const coverUrl = meeting.cover_url || (meeting.bot_id && meeting.capture_mode !== "inhouse_bot" ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + e.token : "");
         const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: APP_URL + "?share=" + e.token, coverUrl, sharerName: sharer, kind: "auto" });
         const r = await sendViaGmail(sendToken, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: sendFrom });
         if (r.ok) sent++;
@@ -91,26 +96,33 @@ function parseStoredTurns(text) {
 
 // ---- Diarization-label -> real-name mapping (from the analysis' speakerMap) ----
 const SPK_LABEL = /^Speaker [A-Z]{1,2}$/;
-// Keep only sane mappings: label keys like "Speaker A", non-empty human values, never label->label.
+// Keep only sane mappings: label keys like "Speaker A", non-empty STRING values (the model can
+// return nested objects - never coerce those), never label->label. Null-prototype so a speaker
+// literally named "constructor"/"toString" can't collide with Object.prototype on lookups.
 export function sanitizeSpeakerMap(m) {
-  const out = {};
+  const out = Object.create(null);
   if (m && typeof m === "object" && !Array.isArray(m)) {
     for (const k of Object.keys(m)) {
-      const v = String(m[k] == null ? "" : m[k]).trim();
+      if (typeof m[k] !== "string") continue;
+      const v = m[k].trim();
       if (SPK_LABEL.test(k) && v && v.length <= 60 && !SPK_LABEL.test(v)) out[k] = v;
     }
   }
   return out;
 }
 // Rewrite a stored transcript: normalize bare-second stamps to m:ss and swap diarization labels
-// for real names ("[125] Speaker A: hi" -> "[2:05] Santiago: hi"). Used by reanalyzeStored so old
-// reports get real dialog + working subtitles retroactively.
+// for real names ("[125] Speaker A: hi" -> "[2:05] Santiago: hi"). The rename is anchored to the
+// SPEAKER PREFIX (start of line, after the optional stamp) and rebuilt by concatenation - a quoted
+// "Speaker X:" inside the spoken text must never be touched, and names with $ can't expand as
+// replacement metacharacters. Used by reanalyzeStored so old reports get real dialog + working
+// subtitles retroactively.
 export function normalizeStoredTranscript(text, map = {}) {
   return String(text || "").split("\n").map((line) => {
     let l = line;
     const bs = l.match(/^\[(\d{1,5})\]\s*(.*)$/);
     if (bs) { const s = parseInt(bs[1], 10); l = `[${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}] ${bs[2]}`; }
-    for (const k of Object.keys(map)) { if (l.includes(k + ":")) { l = l.replace(k + ":", map[k] + ":"); break; } }
+    const pm = l.match(/^(\[[^\]]*\]\s*)?(Speaker [A-Z]{1,2}):/);
+    if (pm && map[pm[2]]) l = (pm[1] || "") + map[pm[2]] + l.slice((pm[1] || "").length + pm[2].length);
     return l;
   }).join("\n");
 }
@@ -349,7 +361,9 @@ export async function reanalyzeStored(meeting) {
     category: ai.category || rep.category || null,
     report_version: ANALYSIS_VERSION,
   };
-  if (newText !== text) patch.transcript = newText;
+  // Rewriting the transcript changes turn boundaries/names -> the cached per-turn subtitle
+  // translations no longer line up. Clear them so the next viewing re-translates cleanly.
+  if (newText !== text) { patch.transcript = newText; patch.subtitles = {}; }
   // Keep existing per-speaker talk-time; refresh name (via speakerMap) + role/sentiment from the
   // new analysis. Match AI participants by the RENAMED name first (the AI answers in real names).
   if (Array.isArray(rep.participants) && rep.participants.length) {

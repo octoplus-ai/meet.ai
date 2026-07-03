@@ -9,16 +9,25 @@ import { getValidToken } from "./google.js";
 const BOT_SENDER_EMAIL = (process.env.BOT_SENDER_EMAIL || "octomeetnotetaker@gmail.com").toLowerCase();
 
 // Resolve the bot mailbox's Gmail OAuth token (the bot account simply logs into the app once,
-// like any user - its tokens land in oauth_tokens). Memoized per invocation; null if not connected.
-let _botSender;
+// like any user - its tokens land in oauth_tokens). We memoize ONLY the identity lookup (with a
+// short TTL so a just-connected bot is picked up by warm instances) and fetch a FRESH token on
+// every call - Gmail access tokens expire in ~1h while warm serverless instances live longer, so
+// caching the token itself would eventually 401 every outgoing mail. null = not connected.
+let _botUser, _botUserAt = 0;
 export async function getBotSender() {
-  if (_botSender !== undefined) return _botSender;
   try {
-    const u = (await sb(`app_users?email=eq.${encodeURIComponent(BOT_SENDER_EMAIL)}&select=id,email`))[0];
-    const token = u ? await getValidToken(u.id) : null;
-    _botSender = token ? { token, fromAddress: u.email } : null;
-  } catch (e) { _botSender = null; }
-  return _botSender;
+    if (_botUser === undefined || Date.now() - _botUserAt > 5 * 60000) {
+      // ilike (no wildcards) = case-insensitive equality, in case the login stored mixed case.
+      _botUser = (await sb(`app_users?email=ilike.${encodeURIComponent(BOT_SENDER_EMAIL)}&select=id,email`))[0] || null;
+      _botUserAt = Date.now();
+    }
+    if (!_botUser) return null;
+    const token = await getValidToken(_botUser.id); // refreshed per call, never cached
+    return token ? { token, fromAddress: _botUser.email } : null;
+  } catch (e) {
+    _botUser = undefined; // transient failure: don't pin "no bot" for the life of the instance
+    return null;
+  }
 }
 
 const APP = "https://meet-ai-three-beige.vercel.app/";

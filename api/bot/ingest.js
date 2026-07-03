@@ -56,7 +56,8 @@ export default async function handler(req, res) {
     // dialog - so the transcript view, subtitles and every analysis show real people.
     const spkMap = sanitizeSpeakerMap(ai.speakerMap);
     turns.forEach((tn) => { if (spkMap[tn.speaker]) tn.speaker = spkMap[tn.speaker]; });
-    const finalText = turns.map((t) => `[${t.t || ""}] ${t.speaker || "Speaker"}: ${t.text || ""}`).join("\n").trim();
+    // Omit the stamp entirely when a turn has no time - "[] Name:" would break the dialog parser.
+    const finalText = turns.map((t) => `${t.t ? `[${t.t}] ` : ""}${t.speaker || "Speaker"}: ${t.text || ""}`).join("\n").trim();
 
     // Talk-time per speaker (deterministic) from the renamed diarized turns.
     const byName = {};
@@ -79,7 +80,9 @@ export default async function handler(req, res) {
       read_score: sc.overall || 0, category: ai.category || null, report_version: ANALYSIS_VERSION,
     };
     await sb(`reports?meeting_id=eq.${enc(meeting.id)}`, { method: "DELETE" });
-    await sb("reports", { method: "POST", body: reportRow });
+    // Unique meeting_id dedupes concurrent deliveries (worker retry + poll): losing the race is fine.
+    try { await sb("reports", { method: "POST", body: reportRow }); }
+    catch (e) { if (!/23505|duplicate/i.test(String(e.message || ""))) throw e; }
     const patch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString(), participants: participants.map((p) => p.name), capture_mode: "inhouse_bot" };
     if (body.durationMin) patch.duration_min = body.durationMin;
     if (body.recordingUrl) patch.recording_url = body.recordingUrl;

@@ -26,7 +26,12 @@ export async function getValidToken(userId) {
       });
     } else {
       console.error("[google] token refresh failed:", JSON.stringify(nt));
+      // Do NOT hand back the stale token: callers treat any truthy token as "connected" and
+      // would send doomed 401 requests instead of falling back (e.g. bot sender -> owner Gmail).
+      return null;
     }
+  } else if (expired) {
+    return null; // expired and no refresh token -> effectively disconnected
   }
   return tk.access_token || null;
 }

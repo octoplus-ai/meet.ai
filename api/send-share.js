@@ -40,9 +40,13 @@ export default async function handler(req, res) {
     const a = await authMeeting(req, body.meetingId, body.shareToken);
     if (!a) return res.status(401).json({ error: "not authorized" });
 
-    // Send from the report OWNER's own Gmail (their OAuth token). No app password needed.
-    const gToken = await getValidToken(a.ownerId);
-    if (!gToken || !a.ownerEmail) return res.status(403).json({ error: "needScope", detail: "Owner must reconnect Google (email permission)." });
+    // Sender: the dedicated bot mailbox when connected; else the report OWNER's own Gmail. The
+    // scope check must accept EITHER - an owner who never granted gmail.send can still share
+    // via the bot sender.
+    const bot = await getBotSender();
+    const gToken = (bot && bot.token) || await getValidToken(a.ownerId);
+    const fromAddr = (bot && bot.fromAddress) || a.ownerEmail;
+    if (!gToken || !fromAddr) return res.status(403).json({ error: "needScope", detail: "Owner must reconnect Google (email permission)." });
 
     const m = a.meeting;
     const rep = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
@@ -61,22 +65,25 @@ export default async function handler(req, res) {
       return e;
     };
 
-    // Sender: ALWAYS the dedicated bot mailbox when it's connected; else the owner's Gmail.
-    const bot = await getBotSender();
-    const sendTok = (bot && bot.token) || gToken;
-    const sendFrom = (bot && bot.fromAddress) || a.ownerEmail;
     let sent = 0, lastErr = "";
     for (const email of to) {
       const e = entryFor(email);
       const viewUrl = APP + "?share=" + e.token;
-      const coverUrl = m.cover_url || (m.bot_id ? APP + "api/recall/thumb?botId=" + encodeURIComponent(m.bot_id) + "&share=" + e.token : "");
+      const coverUrl = m.cover_url || (m.bot_id && m.capture_mode !== "inhouse_bot" ? APP + "api/recall/thumb?botId=" + encodeURIComponent(m.bot_id) + "&share=" + e.token : "");
       const { subject, html, text } = reportEmail({
         title, whenText, summary: rep.summary || "", chapters: rep.chapters || [], actionItems: rep.action_items || [],
         viewUrl, coverUrl, sharerName: a.sharer, kind: "share", message: body.message || "",
       });
-      const r = await sendViaGmail(sendTok, { to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI`, fromAddress: sendFrom });
+      const r = await sendViaGmail(gToken, { to: email, subject, html, text, fromName: `${a.sharer} via OctoMeet AI`, fromAddress: fromAddr });
       if (r.ok) sent++;
-      else { lastErr = r.error || "send failed"; if (r.error === "needScope") return res.status(403).json({ error: "needScope", detail: "Reconnect Google (email permission)." }); }
+      else {
+        lastErr = r.error || "send failed";
+        if (r.error === "needScope") {
+          // Persist share entries FIRST: recipients already emailed got ?share= links that must resolve.
+          try { await sb(`meetings?id=eq.${encodeURIComponent(body.meetingId)}`, { method: "PATCH", body: { shares } }); } catch (e2) {}
+          return res.status(403).json({ error: "needScope", detail: "Reconnect Google (email permission)." });
+        }
+      }
     }
     try { await sb(`meetings?id=eq.${encodeURIComponent(body.meetingId)}`, { method: "PATCH", body: { shares } }); } catch (e) {}
     console.log("send-share sent " + sent + "/" + to.length + (lastErr ? " err=" + lastErr : ""));
