@@ -584,6 +584,19 @@ const localDateISO = (iso) => {
   if (Number.isNaN(d.getTime())) return REF_TODAY;
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+// mm:ss (e.g. 01:26) or h:mm:ss (e.g. 1:24:40) for a duration in seconds.
+const fmtDur = (sec) => {
+  sec = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const p2 = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${p2(m)}:${p2(s)}` : `${p2(m)}:${p2(s)}`;
+};
+// Meeting length in SECONDS. The stored duration_min is minute-rounded, so for real mm:ss precision
+// we prefer the last transcript timestamp (second-accurate); fall back to duration_min * 60.
+const meetingDurationSec = (m) => {
+  const lastAt = (m.transcript || []).reduce((mx, t) => Math.max(mx, (t && t.at) || 0), 0);
+  return lastAt > 1 ? Math.round(lastAt) : Math.round((m.durationMin || 0) * 60);
+};
 function statusSummary(status) {
   switch (status) {
     case "scheduled": return tr("statusScheduled");
@@ -1490,13 +1503,13 @@ const monthCells = (year, month) => {
 };
 const weekdayLabels = () => [...Array(7)].map((_, i) => new Date(2024, 0, 1 + i).toLocaleDateString(LOC(), { weekday: "short" })); // 2024-01-01 = Monday
 
-function MonthGrid({ year, month, start, end, onPick }) {
+function MonthGrid({ year, month, start, end, onPick, hideCaption }) {
   const cells = monthCells(year, month);
   const caption = new Date(year, month, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" });
   const hasRange = start && end && end !== start;
   return (
-    <div className="w-[252px]">
-      <div className="mb-2 text-[13px] font-semibold text-slate-500">{caption}</div>
+    <div className="w-full">
+      {!hideCaption && <div className="mb-2 text-[13px] font-semibold text-slate-500">{caption}</div>}
       <div className="grid grid-cols-7">
         {weekdayLabels().map((w, i) => <div key={"w" + i} className="flex h-7 items-center justify-center text-[11px] font-medium text-slate-400">{w}</div>)}
         {cells.map((c, i) => {
@@ -1538,7 +1551,6 @@ function DateFilterDropdown({ label, value, range, onChange, options }) {
   const shift = (delta) => setView((v) => { const d = new Date(v.y, v.m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const apply = () => { if (!start) return; onChange("custom", { start, end: end || start }); close(); };
   const clearCal = () => { setStart(null); setEnd(null); onChange("all", null); close(); };
-  const nm = new Date(view.y, view.m + 1, 1);
   return (
     <div className="relative">
       <button onClick={() => (open ? close() : setOpen(true))} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (active ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
@@ -1560,19 +1572,17 @@ function DateFilterDropdown({ label, value, range, onChange, options }) {
               </button>
             </div>
           ) : (
-            <div className="absolute left-0 z-20 mt-1 w-[580px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+            <div className="absolute left-0 z-20 mt-1 w-[300px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
               <div className="mb-3 flex gap-2">
-                <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center text-[13px] text-slate-600">{start ? fmtDateShort(start) : tr("dateStart")}</div>
-                <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center text-[13px] text-slate-600">{end ? fmtDateShort(end) : (start ? fmtDateShort(start) : tr("dateEnd"))}</div>
+                <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-[12px] text-slate-600">{start ? fmtDateShort(start) : tr("dateStart")}</div>
+                <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-[12px] text-slate-600">{end ? fmtDateShort(end) : (start ? fmtDateShort(start) : tr("dateEnd"))}</div>
               </div>
               <div className="mb-1 flex items-center justify-between">
                 <button onClick={() => shift(-1)} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"><ChevronLeft size={16} /></button>
+                <span className="text-[13px] font-semibold text-slate-700">{new Date(view.y, view.m, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" })}</span>
                 <button onClick={() => shift(1)} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"><ChevronRight size={16} /></button>
               </div>
-              <div className="flex justify-between gap-6">
-                <MonthGrid year={view.y} month={view.m} start={start} end={end} onPick={pick} />
-                <MonthGrid year={nm.getFullYear()} month={nm.getMonth()} start={start} end={end} onPick={pick} />
-              </div>
+              <MonthGrid year={view.y} month={view.m} start={start} end={end} onPick={pick} hideCaption />
               <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
                 <button onClick={clearCal} className="rounded-lg px-3 py-2 text-[13px] font-medium text-slate-500 hover:bg-slate-50">{tr("dateClear")}</button>
                 <button onClick={apply} disabled={!start} className={"rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition " + (start ? "bg-violet-600 hover:bg-violet-700" : "cursor-not-allowed bg-violet-300")}>{tr("dateApply")}</button>
@@ -2157,7 +2167,12 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                           <div className="truncate text-sm font-semibold text-slate-800">{m.title}</div>
                           <div className="mt-1 flex items-center gap-2">
                             <PeoplePopover meeting={m} emailBook={emailBook} />
-                            {m.real && m.status && m.status !== "done" ? <StatusBadge status={m.status} /> : <ScoreChip value={m.scores.overall} />}
+                            {m.real && m.status && m.status !== "done" ? <StatusBadge status={m.status} /> : (
+                              <>
+                                <ScoreChip value={m.scores.overall} />
+                                {meetingDurationSec(m) > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-1.5 py-0.5 text-[12px] font-semibold text-slate-500" title="Meeting duration"><Clock size={11} className="text-slate-400" />{fmtDur(meetingDurationSec(m))}</span>}
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
