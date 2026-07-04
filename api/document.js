@@ -6,6 +6,7 @@ import { resolveShareToken } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
 import { extractJson } from "./lib/aijson.js";
 import { noDashes } from "./lib/nodash.js";
+import { CLASSIFY_INTRO, DOC_GUIDANCE } from "./lib/meetingType.js";
 
 // The Claude call that builds the doc can run ~15-25s; without this it would hit the
 // platform's short default timeout and the generation would fail mid-flight.
@@ -104,13 +105,19 @@ WHAT MAKES IT "AMAZING" (do all of this):
 - Make it REUSABLE. Where the content supports it, surface the durable value: the key topics explained clearly, the strongest arguments/talking points, the questions that mattered (and the answers), objections raised and how they were handled, useful data/numbers, and any framework or approach worth repeating. This is source material for future similar meetings.
 - Be CONCRETE and faithful. Use real names, numbers, decisions and short verbatim quotes from the transcript. NEVER invent facts, figures, owners or dates that are not in the source. If the meeting was thin, produce a shorter honest document rather than padding.
 - Be PRESENTATION-READY: confident, well-structured, skimmable. Each section heading gets a fitting emoji.
-- Decide the perfect structure YOURSELF based on what was actually discussed (a sales call, a 1:1, a planning session and a training session each deserve different sections). Prefer sections that will still be useful weeks later.
+- Decide the perfect structure YOURSELF based on the meeting TYPE you classify (see below) and what was actually discussed. Prefer sections that will still be useful weeks later.
 - Write in the SAME language the meeting was held in (detect it).
+
+${CLASSIFY_INTRO}
+
+${DOC_GUIDANCE}
 
 Return ONLY valid JSON (no markdown fences) with EXACTLY this shape:
 {
   "title": "string - punchy, specific document title (not just the meeting name)",
   "subtitle": "string - one line on what this doc gives the reader",
+  "meetingType": "one of: sales | informative | training | decision | other - your classification of this meeting",
+  "meetingTypeLabel": "short 1-3 word label for that type IN THE DOCUMENT'S LANGUAGE (e.g. 'Reunion de ventas', 'Sales call', 'Capacitacion', 'Estrategia')",
   "summaryLabel": "string - heading for the summary box IN THE DOCUMENT'S LANGUAGE, e.g. 'Resumen ejecutivo' or 'Executive summary' (NOT 'TL;DR')",
   "tldr": "string - 2-3 sentence executive summary a busy person could read alone and be caught up",
   "tags": ["3-5 short topic tags"],
@@ -141,7 +148,7 @@ NEVER use em dashes or en dashes (the "—" or "–" characters) anywhere in any
     // Strip any em/en dashes the model produced anyway (belt-and-suspenders on top of the prompt rule).
     const doc = noDashes(extractJson(text));
     if (!doc || typeof doc !== "object") return res.status(502).json({ error: "doc_parse_failed", stop: data.stop_reason || "" });
-    const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "" };
+    const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "", meetingType: doc.meetingType || "", meetingTypeLabel: doc.meetingTypeLabel || "" };
     if (ownerId) await saveArtifact(ownerId, "doc", akey, doc, meta);
     return res.status(200).json({ doc, meta, cached: false });
   } catch (e) {

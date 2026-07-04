@@ -5220,11 +5220,12 @@ function docHTML(doc, meta) {
     + ((s.bullets && s.bullets.length) ? `<ul>${s.bullets.map((b) => `<li>${escD(b)}</li>`).join("")}</ul>` : "")
   ).join("");
   const decisions = (doc.decisions && doc.decisions.length) ? `<h2>✅ Decisions</h2><ul>${doc.decisions.map((d) => `<li>${escD(d)}</li>`).join("")}</ul>` : "";
-  const aitems = (doc.actionItems && doc.actionItems.length) ? `<h2>📋 Action Items</h2><ul class="ai">${doc.actionItems.map((a) => `<li><b>${escD(a.task)}</b>${a.owner ? ` — ${escD(a.owner)}` : ""}${a.due ? ` <span style="color:#7c3aed;font-weight:600">(${escD(a.due)})</span>` : ""}</li>`).join("")}</ul>` : "";
+  const aitems = (doc.actionItems && doc.actionItems.length) ? `<h2>📋 Action Items</h2><ul class="ai">${doc.actionItems.map((a) => `<li><b>${escD(a.task)}</b>${a.owner ? ` - ${escD(a.owner)}` : ""}${a.due ? ` <span style="color:#7c3aed;font-weight:600">(${escD(a.due)})</span>` : ""}</li>`).join("")}</ul>` : "";
   const next = (doc.nextSteps && doc.nextSteps.length) ? `<h2>➡️ Next Steps</h2><ul>${doc.nextSteps.map((n) => `<li>${escD(n)}</li>`).join("")}</ul>` : "";
-  const quote = (doc.quote && doc.quote.text) ? `<div class="quote">“${escD(doc.quote.text)}”${doc.quote.who ? `<br><span style="font-style:normal;font-weight:700;color:#7c3aed">— ${escD(doc.quote.who)}</span>` : ""}</div>` : "";
+  const quote = (doc.quote && doc.quote.text) ? `<div class="quote">“${escD(doc.quote.text)}”${doc.quote.who ? `<br><span style="font-style:normal;font-weight:700;color:#7c3aed">- ${escD(doc.quote.who)}</span>` : ""}</div>` : "";
   let dateStr = ""; try { if (meta.date) dateStr = new Date(meta.date).toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" }); } catch (e) {}
   const body = `<div class="title">${escD(doc.title || meta.title || "Meeting")}</div>`
+    + ((doc.meetingTypeLabel || meta.meetingTypeLabel) ? `<div style="display:inline-block;margin:8px 0 2px;padding:3px 11px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">${escD(doc.meetingTypeLabel || meta.meetingTypeLabel)}</div>` : "")
     + (doc.subtitle ? `<div class="subtitle">${escD(doc.subtitle)}</div>` : "")
     + (dateStr ? `<div class="subtitle">${escD(dateStr)}</div>` : "")
     + (tags ? `<div class="tags">${tags}</div>` : "")
@@ -5295,7 +5296,7 @@ function SlidesModal({ deck, theme, imgUrls, meta, onClose, onRegenerate, regene
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-3 sm:p-6" onClick={onClose}>
       <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-          <div className="flex items-center gap-2 truncate text-sm font-bold text-slate-800"><Presentation size={16} className="text-violet-600" /> {deck.title}</div>
+          <div className="flex items-center gap-2 truncate text-sm font-bold text-slate-800"><Presentation size={16} className="text-violet-600" /> {deck.title}{deck.meetingTypeLabel ? <span className="ml-1 shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">{deck.meetingTypeLabel}</span> : null}</div>
           <div className="flex items-center gap-2">
             {onRegenerate && <button onClick={onRegenerate} disabled={regenerating} title="Generate a fresh version" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">{regenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Regenerate</button>}
             <button onClick={dlPDF} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-semibold text-slate-600 hover:bg-slate-50"><Download size={14} /> PDF</button>

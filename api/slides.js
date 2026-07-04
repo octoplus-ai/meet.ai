@@ -7,6 +7,7 @@ import { resolveShareToken } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
 import { extractJson } from "./lib/aijson.js";
 import { noDashes } from "./lib/nodash.js";
+import { CLASSIFY_INTRO, DECK_GUIDANCE } from "./lib/meetingType.js";
 
 export const config = { maxDuration: 60 };
 
@@ -154,8 +155,12 @@ HARD RULES
 - Write ALL text in the SAME language the meeting was held in.
 - The deck must be designed for theme "${themeId}" (clean, high-contrast, minimal).${imageManifest}${withImages ? `\n- IMAGES: add an "imagePrompt" field to the COVER, the CLOSING, and 2-3 of the most visual content slides. imagePrompt = a vivid, literal ENGLISH description of a professional, cinematic photo/illustration with NO text, letters, words, logos, charts or UI in the image, relevant to that slide's topic. These become full-bleed backgrounds behind a dark scrim, so favor images with clear negative space and a focal subject off-center. Keep ONE consistent art direction across every image (same medium, palette, and lighting - e.g. "cinematic wide-angle photo, soft natural light, muted palette with a violet accent") so the deck looks designed by one hand. Do NOT add imagePrompt to dense data/bullet slides that need a clean background. At most 5 imagePrompts total.` : ""}
 
+${CLASSIFY_INTRO}
+
+${DECK_GUIDANCE}
+
 Return ONLY valid JSON (no markdown fences), EXACTLY:
-{"title":"...","slides":[
+{"title":"...","meetingType":"one of: sales | informative | training | decision | other - your classification","meetingTypeLabel":"short 1-3 word label for that type IN THE DECK'S LANGUAGE","slides":[
   {"layout":"cover","title":"...","subtitle":"...","eyebrow":"..."},
   {"layout":"agenda","title":"...","items":["..."]},
   {"layout":"bullets","title":"...","bullets":["..."]},
@@ -194,7 +199,7 @@ NEVER use em dashes or en dashes (the "—" or "–" characters) in any slide te
       const userCount = images.length;
       picks.forEach((s, i) => { if (results[i]) { genImages.push(results[i]); s.bgImage = userCount + genImages.length - 1; } });
     }
-    const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "", themeId, slideCount: N, withImages };
+    const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "", themeId, slideCount: N, withImages, meetingType: deck.meetingType || "", meetingTypeLabel: deck.meetingTypeLabel || "" };
     if (ownerId) await saveArtifact(ownerId, kind, akey, { deck, genImages }, meta);
     return res.status(200).json({ deck, genImages, themeId, meta, cached: false });
   } catch (e) {
