@@ -5,6 +5,7 @@ import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
 import { extractJson } from "./lib/aijson.js";
+import { noDashes } from "./lib/nodash.js";
 
 // The Claude call that builds the doc can run ~15-25s; without this it would hit the
 // platform's short default timeout and the generation would fail mid-flight.
@@ -121,7 +122,8 @@ Return ONLY valid JSON (no markdown fences) with EXACTLY this shape:
   "nextSteps": ["concrete next steps"],
   "quote": { "text": "a memorable verbatim quote", "who": "speaker name" }
 }
-Rules: 4-7 sections, each earning its place. Prefer tight bullets over long paragraphs; paragraphs are 1-2 sentences max. bullets/paragraphs may be empty arrays where not needed. Omit "quote" if nothing stands out. Only include owners/dues that were actually stated.`;
+Rules: 4-7 sections, each earning its place. Prefer tight bullets over long paragraphs; paragraphs are 1-2 sentences max. bullets/paragraphs may be empty arrays where not needed. Omit "quote" if nothing stands out. Only include owners/dues that were actually stated.
+NEVER use em dashes or en dashes (the "—" or "–" characters) anywhere in any text value - use a normal hyphen "-", a comma, or rewrite. Em dashes make a document look AI-written, which we never want.`;
 
     const up = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -136,7 +138,8 @@ Rules: 4-7 sections, each earning its place. Prefer tight bullets over long para
     const text = (data.content && data.content[0] && data.content[0].text) || "";
     // Truncation-proof parse: never throw a 500 on imperfect model output. A 502 tells the client
     // to simply retry (it already shows a friendly toast) instead of surfacing a crash.
-    const doc = extractJson(text);
+    // Strip any em/en dashes the model produced anyway (belt-and-suspenders on top of the prompt rule).
+    const doc = noDashes(extractJson(text));
     if (!doc || typeof doc !== "object") return res.status(502).json({ error: "doc_parse_failed", stop: data.stop_reason || "" });
     const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "" };
     if (ownerId) await saveArtifact(ownerId, "doc", akey, doc, meta);

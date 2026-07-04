@@ -4,6 +4,7 @@ import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { getValidToken } from "./lib/google.js";
 import { sendViaGmail, getBotSender } from "./lib/email.js";
+import { stripDashes } from "./lib/nodash.js";
 
 export const config = { maxDuration: 60 }; // Claude draft call needs headroom past the default timeout
 
@@ -89,6 +90,7 @@ Then write it so it feels real:
 - Never invent facts; use only what's in the meeting. Sign off naturally with the sender's first name.
 
 The subject line must be specific and human (e.g. referencing the topic or next step) - never "Meeting Recap" or "Follow-up".
+NEVER use em dashes or en dashes (the "—" or "–" characters) anywhere in the subject or body - use a normal hyphen "-", a comma, or rewrite the sentence. Em dashes make an email look AI-written, which we never want.
 Return ONLY JSON: {"subject":"...","body":"..."} where body is plain text with line breaks (\\n). No markdown, no fences.`;
     const up = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -104,7 +106,7 @@ Return ONLY JSON: {"subject":"...","body":"..."} where body is plain text with l
     (Array.isArray(m.attendees) ? m.attendees : []).forEach((x) => { const e = typeof x === "string" ? x : (x && x.email); if (e) to.push(String(e).toLowerCase()); });
     (Array.isArray(m.shares) ? m.shares : []).forEach((s) => { if (s && s.email && !s.revoked) to.push(String(s.email).toLowerCase()); });
     const recipients = [...new Set(to)].filter((e) => e && e !== (u.email || "").toLowerCase());
-    return res.status(200).json({ subject: draft.subject || ("Follow-up: " + (m.title || "our meeting")), body: draft.body || "", to: recipients });
+    return res.status(200).json({ subject: stripDashes(draft.subject || ("Follow-up: " + (m.title || "our meeting"))), body: stripDashes(draft.body || ""), to: recipients });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

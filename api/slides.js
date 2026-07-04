@@ -6,6 +6,7 @@ import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
 import { extractJson } from "./lib/aijson.js";
+import { noDashes } from "./lib/nodash.js";
 
 export const config = { maxDuration: 60 };
 
@@ -165,7 +166,8 @@ Return ONLY valid JSON (no markdown fences), EXACTLY:
   {"layout":"timeline","title":"...","events":[{"when":"...","what":"..."}]},
   {"layout":"closing","title":"...","headline":"...","bullets":["..."],"contact":"..."}
 ]}
-Allowed layouts: ${VALID_LAYOUTS.join(", ")}. Add no other fields.`;
+Allowed layouts: ${VALID_LAYOUTS.join(", ")}. Add no other fields.
+NEVER use em dashes or en dashes (the "—" or "–" characters) in any slide text - use a normal hyphen "-" or rewrite. Em dashes look AI-generated.`;
 
     const userContent = [{ type: "text", text: ctxText + fileText }, ...imageBlocks];
 
@@ -179,7 +181,8 @@ Allowed layouts: ${VALID_LAYOUTS.join(", ")}. Add no other fields.`;
     if (!up.ok) { const tx = await up.text().catch(() => ""); return res.status(502).json({ error: "claude_failed", detail: tx.slice(0, 300) }); }
     const data = await up.json();
     const text = (data.content && data.content[0] && data.content[0].text) || "";
-    const deck = extractJson(text);
+    // Strip any em/en dashes the model produced anyway (belt-and-suspenders on top of the prompt rule).
+    const deck = noDashes(extractJson(text));
     if (!deck || typeof deck !== "object" || !Array.isArray(deck.slides)) return res.status(502).json({ error: "deck_parse_failed", stop: data.stop_reason || "" });
     deck.themeId = themeId;
 

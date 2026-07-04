@@ -109,7 +109,9 @@ export default async function handler(req, res) {
         if (!s.startsWith("data:")) continue;
         const data = s.slice(5).trim();
         if (!data || data === "[DONE]") continue;
-        try { const ev = JSON.parse(data); if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") { full += ev.delta.text; res.write(ev.delta.text); } } catch (e) {}
+        // Strip em/en dashes from each streamed piece - they read as an AI tell. The unicode dash
+        // chars are single code points, so they never straddle two text deltas.
+        try { const ev = JSON.parse(data); if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") { const piece = ev.delta.text.replace(/[—–]/g, "-"); full += piece; res.write(piece); } } catch (e) {}
       }
     }
     const refs = corpus.filter((m) => m.title && full.toLowerCase().includes(m.title.toLowerCase())).map((m) => m.id);

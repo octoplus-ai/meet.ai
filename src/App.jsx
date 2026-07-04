@@ -325,7 +325,9 @@ async function callClaude(messages, system) {
   });
   if (!res.ok) throw new Error("API request failed (" + res.status + ")");
   const data = await res.json();
-  return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  // Strip em/en dashes from every client-side Claude output (chat answers, uploaded-report JSON) -
+  // they read as an AI tell. Safe for the JSON path too (JSON syntax never uses these characters).
+  return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").replace(/[—–]/g, "-");
 }
 function extractJSON(text) {
   let t = (text || "").trim();
@@ -4848,7 +4850,7 @@ function AskPanel({ meeting, shared, shareTok, savedDeck }) {
     const history = [...msgs, { role: "user", text: question }];
     setInput(""); setMsgs(history); setBusy(true);
     try {
-      const sys = "You are Octo, answering questions about ONE meeting. Use ONLY the meeting data below. Be concise and specific; mention who said what when useful. Reply in the SAME language as the question. If the answer isn't in the meeting, say you couldn't find it in this meeting.\n\n=== MEETING ===\n" + buildContext();
+      const sys = "You are Octo, answering questions about ONE meeting. Use ONLY the meeting data below. Be concise and specific; mention who said what when useful. Reply in the SAME language as the question. If the answer isn't in the meeting, say you couldn't find it in this meeting. Never use em dashes or en dashes (the — or – characters), only a normal hyphen (-).\n\n=== MEETING ===\n" + buildContext();
       const apiMsgs = history.filter((m) => m.role === "user" || m.role === "assistant").slice(-8).map((m) => ({ role: m.role, content: m.text }));
       const ans = await callClaude(apiMsgs, sys);
       setMsgs((m) => [...m, { role: "assistant", text: ans || "-" }]);
@@ -6270,7 +6272,7 @@ function UploadModal({ onClose, onSave }) {
     try {
       const sys = "You are a meeting-intelligence analyst. Read the transcript and return ONLY a JSON object (no markdown) with this shape:\n" +
         `{"summary": string (2-3 sentences), "topics": string[] (max 5), "keyQuestions": string[] (max 4), "actionItems": [{"owner": string, "task": string, "due": string}] (max 6), "nextSteps": string[] (max 3), "participants": [{"name": string, "role": string, "talkPct": integer, "sentiment": "Positive"|"Neutral"|"Negative"}], "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int} (0-100), "sentimentLabel": "Positive"|"Neutral"|"Negative", "sentimentTimeline": number[] (8 values -1..1)}.\n` +
-        "Infer speaker names from the transcript. Keep strings short.";
+        "Infer speaker names from the transcript. Keep strings short. Never use em dashes or en dashes (the — or – characters) in any value, only a normal hyphen (-).";
       const baseTitle = (fileName || "Uploaded meeting").replace(/\.[^.]+$/, "");
       const out = await callClaude([{ role: "user", content: "Title: " + baseTitle + "\n\nTranscript:\n" + transcript }], sys);
       const parsed = extractJSON(out);
