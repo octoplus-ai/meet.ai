@@ -601,6 +601,35 @@ const meetingDurationSec = (m) => {
   const lastAt = (m.transcript || []).reduce((mx, t) => Math.max(mx, (t && t.at) || 0), 0);
   return lastAt > 1 ? Math.round(lastAt) : Math.round((m.durationMin || 0) * 60);
 };
+// Exact recorded-video length, read from the mp4's metadata (the transcript-derived value above only
+// marks the last spoken word, which under-reports the true video length). preload="metadata" fetches
+// just the small header (with +faststart it is at the front), NOT the video data, so it stays cheap;
+// results are cached per src so the reports list probes each file at most once.
+const _vidDurCache = new Map();
+function useVideoDuration(src) {
+  const [d, setD] = useState(() => (src && _vidDurCache.get(src)) || 0);
+  useEffect(() => {
+    if (!src) { setD(0); return; }
+    if (_vidDurCache.has(src)) { setD(_vidDurCache.get(src)); return; }
+    let alive = true;
+    const v = document.createElement("video");
+    v.preload = "metadata"; v.muted = true;
+    const cleanup = () => { v.removeEventListener("loadedmetadata", onMeta); v.removeEventListener("error", cleanup); try { v.removeAttribute("src"); v.load(); } catch (e) {} };
+    function onMeta() { const dur = v.duration; if (dur && isFinite(dur) && dur > 0) { _vidDurCache.set(src, dur); if (alive) setD(dur); } cleanup(); }
+    v.addEventListener("loadedmetadata", onMeta); v.addEventListener("error", cleanup);
+    v.src = src;
+    return () => { alive = false; cleanup(); };
+  }, [src]);
+  return d;
+}
+// Shows the ACTUAL recorded-video duration once the mp4 metadata loads, falling back to the
+// transcript estimate until then. Only renders when there is a real duration to show.
+function MeetingDuration({ meeting }) {
+  const real = useVideoDuration(meeting && meeting.video);
+  const sec = real > 0 ? real : meetingDurationSec(meeting);
+  if (!(sec > 0)) return null;
+  return <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-1.5 py-0.5 text-[12px] font-semibold text-slate-500" title="Meeting duration"><Clock size={11} className="text-slate-400" />{fmtDur(sec)}</span>;
+}
 function statusSummary(status) {
   switch (status) {
     case "scheduled": return tr("statusScheduled");
@@ -2194,7 +2223,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                             {m.real && m.status && m.status !== "done" ? <StatusBadge status={m.status} /> : (
                               <>
                                 <ScoreChip value={m.scores.overall} />
-                                {meetingDurationSec(m) > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-1.5 py-0.5 text-[12px] font-semibold text-slate-500" title="Meeting duration"><Clock size={11} className="text-slate-400" />{fmtDur(meetingDurationSec(m))}</span>}
+                                <MeetingDuration meeting={m} />
                               </>
                             )}
                           </div>
