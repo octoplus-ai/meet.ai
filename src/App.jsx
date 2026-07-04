@@ -2127,7 +2127,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                     ? tf("liveRecordingBanner", { title: live[0].title, more: live.length > 1 ? ` +${live.length - 1} more` : "" })
                     : tf("generatingReportsBanner", { n: proc.length, s: proc.length > 1 ? "s" : "" })}
                 </span>
-                <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> {tr("refreshBtn")}</button>
+                <button onClick={() => window.location.reload()} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> {tr("refreshBtn")}</button>
               </div>
             )}
             {tab === "reports" && showCrm && (
