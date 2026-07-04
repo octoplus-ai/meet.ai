@@ -814,11 +814,16 @@ function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge 
   const [live, setLive] = useState(false);
   useEffect(() => {
     if (!posterSrc || live) return;
+    // When a poster (server cover frame) exists on a HOVER-PLAY thumb (the reports list cards), the
+    // poster IS the resting image - don't load the mp4 at all until hover. That makes the list paint
+    // instantly instead of each card fetching the recording to seek a frame. Highlights (hoverPlay
+    // false) still lazily attach in-view so they refine to the per-moment frame.
+    if (poster && hoverPlay) return;
     const el = boxRef.current; if (!el) return;
     if (typeof IntersectionObserver === "undefined") { setLive(true); return; }
     const io = new IntersectionObserver((ents) => { if (ents.some((e) => e.isIntersecting)) { setLive(true); io.disconnect(); } }, { rootMargin: "250px" });
     io.observe(el); return () => io.disconnect();
-  }, [posterSrc, live]);
+  }, [posterSrc, live, poster, hoverPlay]);
   const seek = () => { const v = ref.current; if (v) { try { v.currentTime = seekT; } catch (e) {} } };
   const onEnter = () => { setLive(true); if (!hoverPlay) return; const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
   const onLeave = () => { if (!hoverPlay) return; const v = ref.current; if (v) { try { v.pause(); seek(); } catch (e) {} } };
@@ -2147,7 +2152,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                       className="grid w-full cursor-pointer grid-cols-[1.4fr_1fr_0.9fr_0.8fr_0.5fr_40px] items-center border-b border-slate-100 px-3 py-3 text-left transition hover:bg-violet-50/40">
                       <div className="flex min-w-0 items-center gap-3">
                         <button onClick={(e) => { e.stopPropagation(); toggleSel(m.id); }} title="Select" className={"flex h-5 w-5 shrink-0 items-center justify-center rounded border transition " + (sel.has(m.id) ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 text-transparent hover:border-violet-400")}><Check size={13} /></button>
-                        <VideoThumb src={m.video} source={m.source} size={44} at={m.coverAt} />
+                        <VideoThumb src={m.video} source={m.source} size={44} at={m.coverAt} poster={m.cover_url} />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-slate-800">{m.title}</div>
                           <div className="mt-1 flex items-center gap-2">
