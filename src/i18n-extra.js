@@ -290,7 +290,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Link público desativado - somente pessoas com acesso",
     "reportEmailedTo": "Relatório enviado por e-mail para {n} {people} ✓",
     "reportSharedWith": "Relatório compartilhado com {n} {people}",
-    "saved": "Salvo"
+    "saved": "Salvo",
+    "invitedDidntJoin": "Convidado - não entrou",
+    "dateCustom": "Personalizado",
+    "dateApply": "Aplicar",
+    "dateClear": "Limpar",
+    "dateStart": "Data inicial",
+    "dateEnd": "Data final"
   },
   "fr": {
     "audioTranslation": "Traduction audio",
@@ -580,7 +586,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Lien public désactivé - uniquement les personnes ayant accès",
     "reportEmailedTo": "Rapport envoyé par e-mail à {n} {people} ✓",
     "reportSharedWith": "Rapport partagé avec {n} {people}",
-    "saved": "Enregistré"
+    "saved": "Enregistré",
+    "invitedDidntJoin": "Invité - non présent",
+    "dateCustom": "Personnalisé",
+    "dateApply": "Appliquer",
+    "dateClear": "Effacer",
+    "dateStart": "Date de début",
+    "dateEnd": "Date de fin"
   },
   "hi": {
     "audioTranslation": "ऑडियो अनुवाद",
@@ -870,7 +882,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "सार्वजनिक लिंक अक्षम - केवल एक्सेस वाले लोग",
     "reportEmailedTo": "रिपोर्ट {n} {people} को ईमेल की गई ✓",
     "reportSharedWith": "रिपोर्ट {n} {people} के साथ शेयर की गई",
-    "saved": "सेव किया गया"
+    "saved": "सेव किया गया",
+    "invitedDidntJoin": "आमंत्रित - शामिल नहीं हुए",
+    "dateCustom": "कस्टम",
+    "dateApply": "लागू करें",
+    "dateClear": "साफ़ करें",
+    "dateStart": "आरंभ तिथि",
+    "dateEnd": "समाप्ति तिथि"
   },
   "it": {
     "audioTranslation": "Traduzione audio",
@@ -1160,7 +1178,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Link pubblico disattivato - solo le persone con accesso",
     "reportEmailedTo": "Report inviato via email a {n} {people} ✓",
     "reportSharedWith": "Report condiviso con {n} {people}",
-    "saved": "Salvato"
+    "saved": "Salvato",
+    "invitedDidntJoin": "Invitato - non partecipato",
+    "dateCustom": "Personalizzato",
+    "dateApply": "Applica",
+    "dateClear": "Cancella",
+    "dateStart": "Data inizio",
+    "dateEnd": "Data fine"
   },
   "ru": {
     "audioTranslation": "Перевод аудио",
@@ -1450,7 +1474,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Публичная ссылка отключена - только люди с доступом",
     "reportEmailedTo": "Отчёт отправлен на почту {n} {people} ✓",
     "reportSharedWith": "Отчёт предоставлен {n} {people}",
-    "saved": "Сохранено"
+    "saved": "Сохранено",
+    "invitedDidntJoin": "Приглашён - не присоединился",
+    "dateCustom": "Произвольный",
+    "dateApply": "Применить",
+    "dateClear": "Очистить",
+    "dateStart": "Дата начала",
+    "dateEnd": "Дата окончания"
   },
   "de": {
     "audioTranslation": "Audioübersetzung",
@@ -1740,7 +1770,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Öffentlicher Link deaktiviert - nur Personen mit Zugriff",
     "reportEmailedTo": "Bericht per E-Mail gesendet an {n} {people} ✓",
     "reportSharedWith": "Bericht geteilt mit {n} {people}",
-    "saved": "Gespeichert"
+    "saved": "Gespeichert",
+    "invitedDidntJoin": "Eingeladen - nicht beigetreten",
+    "dateCustom": "Benutzerdefiniert",
+    "dateApply": "Anwenden",
+    "dateClear": "Löschen",
+    "dateStart": "Startdatum",
+    "dateEnd": "Enddatum"
   },
   "zh": {
     "audioTranslation": "音频翻译",
@@ -2030,7 +2066,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "公开链接已禁用 - 仅限有权限的人",
     "reportEmailedTo": "报告已通过邮件发送给 {n} 位{people} ✓",
     "reportSharedWith": "报告已共享给 {n} 位{people}",
-    "saved": "已保存"
+    "saved": "已保存",
+    "invitedDidntJoin": "已邀请 - 未加入",
+    "dateCustom": "自定义",
+    "dateApply": "应用",
+    "dateClear": "清除",
+    "dateStart": "开始日期",
+    "dateEnd": "结束日期"
   },
   "ja": {
     "audioTranslation": "音声翻訳",
@@ -2320,7 +2362,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "公開リンクは無効 - アクセス権のある人のみ",
     "reportEmailedTo": "{n} {people}にレポートをメール送信しました ✓",
     "reportSharedWith": "{n} {people}とレポートを共有しました",
-    "saved": "保存しました"
+    "saved": "保存しました",
+    "invitedDidntJoin": "招待済み - 未参加",
+    "dateCustom": "カスタム",
+    "dateApply": "適用",
+    "dateClear": "クリア",
+    "dateStart": "開始日",
+    "dateEnd": "終了日"
   },
   "nl": {
     "audioTranslation": "Audiovertaling",
@@ -2610,7 +2658,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Openbare link uitgeschakeld - alleen mensen met toegang",
     "reportEmailedTo": "Rapport gemaild naar {n} {people} ✓",
     "reportSharedWith": "Rapport gedeeld met {n} {people}",
-    "saved": "Opgeslagen"
+    "saved": "Opgeslagen",
+    "invitedDidntJoin": "Uitgenodigd - niet aanwezig",
+    "dateCustom": "Aangepast",
+    "dateApply": "Toepassen",
+    "dateClear": "Wissen",
+    "dateStart": "Begindatum",
+    "dateEnd": "Einddatum"
   },
   "da": {
     "audioTranslation": "Lydoversættelse",
@@ -2900,7 +2954,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Offentligt link deaktiveret - kun personer med adgang",
     "reportEmailedTo": "Rapport sendt på e-mail til {n} {people} ✓",
     "reportSharedWith": "Rapport delt med {n} {people}",
-    "saved": "Gemt"
+    "saved": "Gemt",
+    "invitedDidntJoin": "Inviteret - deltog ikke",
+    "dateCustom": "Tilpasset",
+    "dateApply": "Anvend",
+    "dateClear": "Ryd",
+    "dateStart": "Startdato",
+    "dateEnd": "Slutdato"
   },
   "fi": {
     "audioTranslation": "Äänen käännös",
@@ -3190,7 +3250,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Julkinen linkki poistettu käytöstä - vain henkilöt, joilla on käyttöoikeus",
     "reportEmailedTo": "Raportti lähetetty sähköpostitse {n} {people} ✓",
     "reportSharedWith": "Raportti jaettu {n} {people}",
-    "saved": "Tallennettu"
+    "saved": "Tallennettu",
+    "invitedDidntJoin": "Kutsuttu - ei liittynyt",
+    "dateCustom": "Mukautettu",
+    "dateApply": "Käytä",
+    "dateClear": "Tyhjennä",
+    "dateStart": "Alkupäivä",
+    "dateEnd": "Loppupäivä"
   },
   "sv": {
     "audioTranslation": "Ljudöversättning",
@@ -3480,7 +3546,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Offentlig länk inaktiverad - endast personer med åtkomst",
     "reportEmailedTo": "Rapport skickad via e-post till {n} {people} ✓",
     "reportSharedWith": "Rapport delad med {n} {people}",
-    "saved": "Sparat"
+    "saved": "Sparat",
+    "invitedDidntJoin": "Inbjuden - deltog inte",
+    "dateCustom": "Anpassat",
+    "dateApply": "Använd",
+    "dateClear": "Rensa",
+    "dateStart": "Startdatum",
+    "dateEnd": "Slutdatum"
   },
   "no": {
     "audioTranslation": "Lydoversettelse",
@@ -3770,7 +3842,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Offentlig lenke deaktivert - kun personer med tilgang",
     "reportEmailedTo": "Rapport sendt på e-post til {n} {people} ✓",
     "reportSharedWith": "Rapport delt med {n} {people}",
-    "saved": "Lagret"
+    "saved": "Lagret",
+    "invitedDidntJoin": "Invitert - deltok ikke",
+    "dateCustom": "Egendefinert",
+    "dateApply": "Bruk",
+    "dateClear": "Tøm",
+    "dateStart": "Startdato",
+    "dateEnd": "Sluttdato"
   },
   "ca": {
     "audioTranslation": "Traducció d'àudio",
@@ -4060,7 +4138,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Enllaç públic desactivat - només les persones amb accés",
     "reportEmailedTo": "Informe enviat per correu a {n} {people} ✓",
     "reportSharedWith": "Informe compartit amb {n} {people}",
-    "saved": "Desat"
+    "saved": "Desat",
+    "invitedDidntJoin": "Convidat - no s'hi va unir",
+    "dateCustom": "Personalitzat",
+    "dateApply": "Aplica",
+    "dateClear": "Esborra",
+    "dateStart": "Data d'inici",
+    "dateEnd": "Data de fi"
   },
   "ko": {
     "audioTranslation": "오디오 번역",
@@ -4350,7 +4434,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "공개 링크 비활성화됨 - 액세스 권한이 있는 사람만",
     "reportEmailedTo": "{n} {people}에게 리포트를 이메일로 보냈습니다 ✓",
     "reportSharedWith": "{n} {people}와(과) 리포트를 공유했습니다",
-    "saved": "저장됨"
+    "saved": "저장됨",
+    "invitedDidntJoin": "초대됨 - 미참여",
+    "dateCustom": "맞춤",
+    "dateApply": "적용",
+    "dateClear": "지우기",
+    "dateStart": "시작일",
+    "dateEnd": "종료일"
   },
   "pl": {
     "audioTranslation": "Tłumaczenie dźwięku",
@@ -4640,7 +4730,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Link publiczny wyłączony - tylko osoby z dostępem",
     "reportEmailedTo": "Raport wysłany e-mailem do {n} {people} ✓",
     "reportSharedWith": "Raport udostępniony {n} {people}",
-    "saved": "Zapisano"
+    "saved": "Zapisano",
+    "invitedDidntJoin": "Zaproszony - nie dołączył",
+    "dateCustom": "Niestandardowy",
+    "dateApply": "Zastosuj",
+    "dateClear": "Wyczyść",
+    "dateStart": "Data początkowa",
+    "dateEnd": "Data końcowa"
   },
   "uk": {
     "audioTranslation": "Переклад аудіо",
@@ -4930,7 +5026,13 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "Публічне посилання вимкнено - лише люди з доступом",
     "reportEmailedTo": "Звіт надіслано на email {n} {people} ✓",
     "reportSharedWith": "Звітом поділилися з {n} {people}",
-    "saved": "Збережено"
+    "saved": "Збережено",
+    "invitedDidntJoin": "Запрошено - не приєднався",
+    "dateCustom": "Власний",
+    "dateApply": "Застосувати",
+    "dateClear": "Очистити",
+    "dateStart": "Дата початку",
+    "dateEnd": "Дата завершення"
   },
   "he": {
     "audioTranslation": "תרגום אודיו",
@@ -5220,6 +5322,12 @@ export const EXTRA_LANGS = {
     "publicLinkDisabled": "קישור ציבורי מושבת - רק אנשים עם גישה",
     "reportEmailedTo": "הדוח נשלח באימייל אל {n} {people} ✓",
     "reportSharedWith": "הדוח שותף עם {n} {people}",
-    "saved": "נשמר"
+    "saved": "נשמר",
+    "invitedDidntJoin": "הוזמן - לא הצטרף",
+    "dateCustom": "מותאם אישית",
+    "dateApply": "החל",
+    "dateClear": "נקה",
+    "dateStart": "תאריך התחלה",
+    "dateEnd": "תאריך סיום"
   }
 };

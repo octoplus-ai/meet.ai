@@ -106,7 +106,8 @@ const EXTRA = {
     // reports list
     searchMCP: "Search meeting, company or person…", analytics: "Analytics", aiDoc: "AI Doc", presentation: "Presentation", refresh: "Refresh",
     selMeetingsAnalytics: "Select one or more meetings to see analytics.", selMeetingsDoc: "Select one or more meetings to generate a document.", selMeetingsPres: "Select one or more meetings to generate a presentation.",
-    participants: "Participants", copyEmails: "Copy emails", copyGuestEmails: "Copy guest emails", emailGuests: "Email guests", noParticipantData: "No participant data.", noEmailOnFile: "no email on file",
+    participants: "Participants", copyEmails: "Copy emails", copyGuestEmails: "Copy guest emails", emailGuests: "Email guests", noParticipantData: "No participant data.", noEmailOnFile: "no email on file", invitedDidntJoin: "Invited - didn't join",
+    dateCustom: "Custom", dateApply: "Apply", dateClear: "Clear", dateStart: "Start date", dateEnd: "End date",
     allTypes: "All types", completed: "Completed", inProgressF: "In progress", noReportsYet: "No reports yet.", renameReport: "Rename Report", deleteReport: "Delete Report", selectAll: "Select all",
     // presentation composer
     slides: "Slides", theme: "Theme", images: "Images", noImages: "No images", aiImages: "✨ AI images", customColor: "Custom color", pickColor: "Pick your accent color", lightBg: "Light", darkBg: "Dark",
@@ -194,7 +195,8 @@ const EXTRA = {
     pitchOverall: "Pitch general", pitchWhatWorked: "Qué funcionó", pitchImprove: "Cómo mejorarlo", pitchNextTime: "Decí esto la próxima", pitchNoData: "No hay suficiente contenido hablado para analizar el pitch.", pitchIntro: "Coaching de pitch con IA por orador, basado en mejores prácticas de presentación y persuasión.",
     searchMCP: "Buscar reunión, empresa o persona…", analytics: "Analytics", aiDoc: "AI Doc", presentation: "Presentación", refresh: "Actualizar",
     selMeetingsAnalytics: "Seleccioná una o más reuniones para ver analytics.", selMeetingsDoc: "Seleccioná una o más reuniones para generar un documento.", selMeetingsPres: "Seleccioná una o más reuniones para generar una presentación.",
-    participants: "Participantes", copyEmails: "Copiar emails", copyGuestEmails: "Copiar emails de invitados", emailGuests: "Enviar email a invitados", noParticipantData: "Sin datos de participantes.", noEmailOnFile: "sin email registrado",
+    participants: "Participantes", copyEmails: "Copiar emails", copyGuestEmails: "Copiar emails de invitados", emailGuests: "Enviar email a invitados", noParticipantData: "Sin datos de participantes.", noEmailOnFile: "sin email registrado", invitedDidntJoin: "Invitado - no se unió",
+    dateCustom: "Personalizado", dateApply: "Aplicar", dateClear: "Limpiar", dateStart: "Fecha inicial", dateEnd: "Fecha final",
     allTypes: "Todos los tipos", completed: "Completados", inProgressF: "En progreso", noReportsYet: "Todavía no hay reportes.", renameReport: "Renombrar reporte", deleteReport: "Eliminar reporte", selectAll: "Seleccionar todo",
     slides: "Diapositivas", theme: "Tema", images: "Imágenes", noImages: "Sin imágenes", aiImages: "✨ Imágenes IA", customColor: "Color personalizado", pickColor: "Elegí tu color de acento", lightBg: "Claro", darkBg: "Oscuro",
     // hardcoded-string sweep
@@ -1449,6 +1451,118 @@ function FilterDropdown({ label, icon: Icon, value, onChange, options }) {
   );
 }
 
+// ---- Custom date-range calendar (Reports "Date" filter) ----------------------
+const _pad2 = (n) => String(n).padStart(2, "0");
+const toYmd = (y, m, d) => `${y}-${_pad2(m + 1)}-${_pad2(d)}`;
+const parseYmd = (s) => { const [y, m, d] = String(s || "").split("-").map(Number); return new Date(y || 1970, (m || 1) - 1, d || 1); };
+// Monday-first month grid, with greyed leading/trailing days from the adjacent months.
+const monthCells = (year, month) => {
+  const startDow = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevDays = new Date(year, month, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push({ day: prevDays - startDow + 1 + i, inMonth: false });
+  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, inMonth: true, ymd: toYmd(year, month, d) });
+  let t = 1; while (cells.length % 7 !== 0) cells.push({ day: t++, inMonth: false });
+  return cells;
+};
+const weekdayLabels = () => [...Array(7)].map((_, i) => new Date(2024, 0, 1 + i).toLocaleDateString(LOC(), { weekday: "short" })); // 2024-01-01 = Monday
+
+function MonthGrid({ year, month, start, end, onPick }) {
+  const cells = monthCells(year, month);
+  const caption = new Date(year, month, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" });
+  const hasRange = start && end && end !== start;
+  return (
+    <div className="w-[252px]">
+      <div className="mb-2 text-[13px] font-semibold text-slate-500">{caption}</div>
+      <div className="grid grid-cols-7">
+        {weekdayLabels().map((w, i) => <div key={"w" + i} className="flex h-7 items-center justify-center text-[11px] font-medium text-slate-400">{w}</div>)}
+        {cells.map((c, i) => {
+          const isStart = !!c.ymd && c.ymd === start, isEnd = !!c.ymd && c.ymd === end;
+          const endpoint = isStart || isEnd;
+          const between = hasRange && c.ymd && c.ymd > start && c.ymd < end;
+          const band = hasRange && (between || endpoint);
+          const isToday = c.ymd === REF_TODAY;
+          return (
+            <div key={i} className={"my-0.5 flex h-9 items-center justify-center " + (band ? "bg-violet-100 " : "") + (band && isStart ? "rounded-l-full " : "") + (band && isEnd ? "rounded-r-full " : "")}>
+              {c.inMonth ? (
+                <button onClick={() => onPick(c.ymd)} className={"flex h-9 w-9 items-center justify-center rounded-full text-[13px] transition " + (endpoint ? "bg-violet-600 font-semibold text-white" : "text-slate-700 hover:bg-violet-50") + (isToday && !endpoint ? " font-semibold text-violet-600 underline underline-offset-2" : "")}>{c.day}</button>
+              ) : (
+                <span className="flex h-9 w-9 items-center justify-center text-[13px] text-slate-300">{c.day}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Reports date filter: the standard buckets PLUS a "Custom" entry that opens a two-month range
+// calendar (click one day = that day; click two = the range, with every day in between shown).
+function DateFilterDropdown({ label, value, range, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState("list");
+  const [view, setView] = useState(() => { const d = (range && range.start) ? parseYmd(range.start) : new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const [start, setStart] = useState((range && range.start) || null);
+  const [end, setEnd] = useState((range && range.end) || null);
+  const active = value && value !== "all";
+  const cur = options.find((o) => o.value === value);
+  const rangeLabel = (range && range.start) ? (range.end && range.end !== range.start ? `${fmtDateShort(range.start)} - ${fmtDateShort(range.end)}` : fmtDateShort(range.start)) : tr("dateCustom");
+  const btnLabel = value === "custom" ? rangeLabel : (active ? cur?.label : label);
+  const close = () => { setOpen(false); setMode("list"); };
+  const openCal = () => { const d = (range && range.start) ? parseYmd(range.start) : new Date(); setView({ y: d.getFullYear(), m: d.getMonth() }); setStart((range && range.start) || null); setEnd((range && range.end) || null); setMode("calendar"); };
+  const pick = (ymd) => { if (!start || (start && end)) { setStart(ymd); setEnd(null); } else if (ymd >= start) setEnd(ymd); else { setStart(ymd); setEnd(null); } };
+  const shift = (delta) => setView((v) => { const d = new Date(v.y, v.m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const apply = () => { if (!start) return; onChange("custom", { start, end: end || start }); close(); };
+  const clearCal = () => { setStart(null); setEnd(null); onChange("all", null); close(); };
+  const nm = new Date(view.y, view.m + 1, 1);
+  return (
+    <div className="relative">
+      <button onClick={() => (open ? close() : setOpen(true))} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (active ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+        <Calendar size={14} className={active ? "text-violet-500" : "text-slate-400"} />{btnLabel}<ChevronDown size={14} className={active ? "text-violet-400" : "text-slate-400"} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={close} />
+          {mode === "list" ? (
+            <div className="absolute left-0 z-20 mt-1 max-h-72 min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              {options.map((o) => (
+                <button key={o.value} onClick={() => { onChange(o.value, null); close(); }} className={"flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-50 " + (o.value === value ? "font-semibold text-violet-700" : "text-slate-600")}>
+                  {o.label}{o.value === value && <Check size={14} className="text-violet-600" />}
+                </button>
+              ))}
+              <div className="my-1 border-t border-slate-100" />
+              <button onClick={openCal} className={"flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-50 " + (value === "custom" ? "font-semibold text-violet-700" : "text-slate-600")}>
+                <span className="flex items-center gap-2"><Calendar size={14} className="text-slate-400" />{tr("dateCustom")}</span>{value === "custom" && <Check size={14} className="text-violet-600" />}
+              </button>
+            </div>
+          ) : (
+            <div className="absolute left-0 z-20 mt-1 w-[580px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+              <div className="mb-3 flex gap-2">
+                <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center text-[13px] text-slate-600">{start ? fmtDateShort(start) : tr("dateStart")}</div>
+                <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center text-[13px] text-slate-600">{end ? fmtDateShort(end) : (start ? fmtDateShort(start) : tr("dateEnd"))}</div>
+              </div>
+              <div className="mb-1 flex items-center justify-between">
+                <button onClick={() => shift(-1)} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"><ChevronLeft size={16} /></button>
+                <button onClick={() => shift(1)} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"><ChevronRight size={16} /></button>
+              </div>
+              <div className="flex justify-between gap-6">
+                <MonthGrid year={view.y} month={view.m} start={start} end={end} onPick={pick} />
+                <MonthGrid year={nm.getFullYear()} month={nm.getMonth()} start={start} end={end} onPick={pick} />
+              </div>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                <button onClick={clearCal} className="rounded-lg px-3 py-2 text-[13px] font-medium text-slate-500 hover:bg-slate-50">{tr("dateClear")}</button>
+                <button onClick={apply} disabled={!start} className={"rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition " + (start ? "bg-violet-600 hover:bg-violet-700" : "cursor-not-allowed bg-violet-300")}>{tr("dateApply")}</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // Base folder catalog (meeting types) — the system auto-files meetings into these via AI,
 // and the user can pick/create more. Mirrors Read.ai's folder set.
 const BASE_FOLDERS = ["Sales Call", "Sales Strategy", "Customer Success", "Customer Support", "Customer Feedback", "Onboarding", "One-on-One", "Planning Meeting", "Partnership Alignment", "Product Demo", "Job Interview", "Program Interview", "Professional Consultation", "Technical Troubleshooting", "Training", "Educational", "Standup", "Kickoff", "Team Meeting", "Meetings"];
@@ -1568,7 +1682,7 @@ function PeoplePopover({ meeting, emailBook = {} }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
-  const { people, withEmail } = meetingPeople(meeting, emailBook);
+  const { people, withEmail, invited } = meetingPeople(meeting, emailBook);
   const emails = withEmail.map((p) => p.email);
   const count = people.length;
   const openMenu = (e) => { e.stopPropagation(); const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } setOpen(true); };
@@ -1590,11 +1704,25 @@ function PeoplePopover({ meeting, emailBook = {} }) {
                   <Avatar name={p.name || p.email} email={p.email} size={22} />
                   <div className="min-w-0">
                     <div className="truncate text-[13px] text-slate-700">{p.name || p.email}</div>
-                    {p.name && <div className="truncate text-[11px] text-slate-400">{p.email || "no email on file"}</div>}
+                    {p.name && <div className="truncate text-[11px] text-slate-400">{p.email || tr("noEmailOnFile")}</div>}
                   </div>
                 </div>
               ))}
               {!people.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">{tr("noParticipantData2")}</div>}
+              {invited.length > 0 && (
+                <>
+                  <div className="mt-1 border-t border-slate-100 px-2 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">{tr("invitedDidntJoin")}</div>
+                  {invited.map((p, i) => (
+                    <div key={`inv-${i}`} className="flex items-center gap-2 rounded-lg px-2 py-1.5 opacity-60">
+                      <Avatar name={p.name || p.email} email={p.email} size={22} />
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] text-slate-600">{p.name || p.email}</div>
+                        {p.name && <div className="truncate text-[11px] text-slate-400">{p.email || tr("noEmailOnFile")}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </>
@@ -1617,21 +1745,42 @@ const isPlaceholderName = (n) => {
   const s = String(n || "").trim();
   return !s || /^(speaker|guest|participant|unknown|user|persona|invitado|orador)\s*[a-z0-9]{0,3}$/i.test(s);
 };
-const firstToken = (n) => String(n || "").trim().toLowerCase().split(/[\s(]+/)[0] || "";
-const emailLocalTokens = (e) => String(e || "").toLowerCase().split("@")[0].replace(/[._\-0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+// Strip accents so "Nicolás" and "nicolas" compare equal.
+const deaccent = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+const firstToken = (n) => deaccent(n).trim().toLowerCase().split(/[\s(]+/)[0] || "";
+const emailLocalTokens = (e) => deaccent(e).toLowerCase().split("@")[0].replace(/[._\-0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+const emailUserFlat = (e) => deaccent(e).toLowerCase().split("@")[0].replace(/[^a-z]/g, "");
 const nameFromEmail = (e) => { const t = emailLocalTokens(e)[0] || String(e || "").split("@")[0]; return t ? t[0].toUpperCase() + t.slice(1) : String(e || ""); };
+const sharedPrefix = (a, b) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; };
+// Two name-ish tokens refer to the same person when one is a prefix/extension of the other, OR
+// they share a >=4-char prefix (catches a first name vs a mashed username, e.g. "nicolas" vs
+// "nicoobenech"). Short tokens (<4) must match exactly to avoid merging "ana"/"andres".
+const nameMatch = (ft, tok) => {
+  if (!ft || !tok) return false;
+  if (ft === tok || tok.startsWith(ft) || ft.startsWith(tok)) return true;
+  return Math.min(ft.length, tok.length) >= 4 && sharedPrefix(ft, tok) >= 4;
+};
 // A diarized speaker name is the SAME person as an invited attendee when their first name
-// matches the attendee's name or is contained in the email local-part.
+// matches the attendee's name or a token of the email local-part.
 const samePerson = (speakerName, att) => {
   const ft = firstToken(speakerName);
   if (!ft || ft.length < 2) return false;
-  if (att.name && firstToken(att.name) === ft) return true;
-  return emailLocalTokens(att.email).some((tok) => tok === ft || tok.startsWith(ft) || ft.startsWith(tok));
+  if (att.name && nameMatch(ft, firstToken(att.name))) return true;
+  return emailLocalTokens(att.email).some((tok) => nameMatch(ft, tok));
 };
 const fullerName = (a, b) => {
   const A = String(a || "").trim(), B = String(b || "").trim();
   if (!A) return B; if (!B) return A;
   return (B.split(/\s+/).length > A.split(/\s+/).length || B.length > A.length) ? B : A;
+};
+// Prefer the diarized real name when the calendar invite has no name, or its "name" is just the
+// email username (Google sometimes returns "nicoobenech" as the display name). Otherwise keep the
+// fuller of the two.
+const preferName = (att, speaker) => {
+  const A = String(att.name || "").trim();
+  if (!A) return speaker;
+  if (deaccent(A).toLowerCase().replace(/[^a-z]/g, "") === emailUserFlat(att.email)) return speaker;
+  return fullerName(A, speaker);
 };
 
 // Build ONE deduped person list. Invited attendees are the source of truth (name + email);
@@ -1648,26 +1797,55 @@ function meetingPeople(meeting, emailBook = {}) {
     else if (!cur.name && name) cur.name = name;
   });
   const atts = [...attByEmail.values()];
+  // Everyone the report detected IN the meeting: diarized speakers + roster-captured joiners
+  // (stored as talkPct 0). Placeholder labels ("Speaker C", "Guest 2") are not real people.
   const speakers = (meeting.participants || []).map((p) => p && p.name).filter((n) => n && !isPlaceholderName(n));
 
+  // 1) Match each invited attendee to a detected participant (same person -> they joined).
   const used = new Set();
-  const people = atts.map((a) => {
-    let name = a.name;
+  const rows = atts.map((a) => {
     const si = speakers.findIndex((s, idx) => !used.has(idx) && samePerson(s, a));
-    if (si >= 0) { used.add(si); name = fullerName(name, speakers[si]); }
-    return { name: name || nameFromEmail(a.email), email: a.email };
+    let joined = false, name = a.name;
+    if (si >= 0) { used.add(si); joined = true; name = preferName(a, speakers[si]); }
+    return { a, name, joined };
   });
-  // Speakers with no matching invite = real extra guests (resolve an email from the book if we have one).
+  // 2) Residual pairing: if EXACTLY one attendee and one participant are still unmatched, and
+  //    their names don't clearly conflict, they are the same person (a username that just didn't
+  //    parse to the real first name, e.g. nicoobenech@gmail.com == "Nicolas"). This is what stops
+  //    the same person from showing twice. Guarded so a genuine walk-in guest + a real no-show
+  //    (names that share nothing) are NOT merged.
+  const openSpk = speakers.map((s, i) => i).filter((i) => !used.has(i));
+  const openRow = rows.filter((r) => !r.joined);
+  if (openSpk.length === 1 && openRow.length === 1) {
+    const si = openSpk[0], r = openRow[0], s = speakers[si];
+    const fa = firstToken(r.a.name), fs = firstToken(s);
+    const conflict = fa && fs && !nameMatch(fs, fa) && sharedPrefix(fs, fa) < 3;
+    const own = emailBook[normName(s)];
+    const speakerIsElsewhere = isEmail(own) && own !== r.a.email;
+    if (!conflict && !speakerIsElsewhere) { used.add(si); r.joined = true; r.name = preferName(r.a, s); }
+  }
+
+  // 3) Split invited attendees into joined vs invited-but-didn't-join. We only claim someone
+  //    did NOT join when the report actually detected participants; with none detected the join
+  //    status is unknown, so everyone is shown as a normal participant.
+  const detected = speakers.length > 0;
+  const joined = [], invited = [];
+  rows.forEach((r) => {
+    const person = { name: r.name || nameFromEmail(r.a.email), email: r.a.email };
+    (r.joined || !detected ? joined : invited).push(person);
+  });
+  // 4) Detected participants with no matching invite = real extra guests (resolve email if known).
   speakers.forEach((s, idx) => {
     if (used.has(idx)) return;
     const e = emailBook[normName(s)];
-    if (e && people.some((p) => p.email === e)) return; // already listed via attendee
-    people.push({ name: s, email: isEmail(e) ? e : "" });
+    if (e && joined.some((p) => p.email === e)) return; // already listed via attendee
+    joined.push({ name: s, email: isEmail(e) ? e : "" });
   });
 
-  const withEmail = people.filter((p) => p.email);
-  const noEmail = people.filter((p) => !p.email);
-  return { people, withEmail, noEmail };
+  const people = joined; // "people" = who actually participated (deduped)
+  const withEmail = joined.filter((p) => p.email);
+  const noEmail = joined.filter((p) => !p.email);
+  return { people, withEmail, noEmail, joined, invited };
 }
 function meetingParticipantEmails(meeting, emailBook = {}) {
   return meetingPeople(meeting, emailBook).withEmail.map((p) => p.email);
@@ -1704,6 +1882,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const [deleting, setDeleting] = useState(null);    // meeting pending delete confirm
   const [fOwner, setFOwner] = useState("all");
   const [fDate, setFDate] = useState("all");
+  const [fRange, setFRange] = useState(null); // {start,end} YYYY-MM-DD when fDate === "custom"
   const [fType, setFType] = useState("all");
   const [fSource, setFSource] = useState("all");
   const [fFolder, setFFolder] = useState("all");
@@ -1783,7 +1962,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
       .filter((m) => fSource === "all" || m.source === fSource)
       .filter((m) => fFolder === "all" || (m.folders || (m.folder ? [m.folder] : [])).includes(fFolder))
       .filter((m) => fType === "all" || (fType === "completed" ? (!m.real || m.status === "done") : (m.real && INCOMPLETE.includes(m.status))))
-      .filter((m) => { if (fDate === "all") return true; const d = daysAgo(m.date); return fDate === "today" ? d <= 0 : fDate === "week" ? d <= 7 : d <= 31; })
+      .filter((m) => {
+        if (fDate === "all") return true;
+        if (fDate === "custom") { if (!fRange || !fRange.start) return true; return m.date >= fRange.start && m.date <= (fRange.end || fRange.start); }
+        const d = daysAgo(m.date); return fDate === "today" ? d <= 0 : fDate === "week" ? d <= 7 : d <= 31;
+      })
       .filter((m) => {
         if (!q) return true;
         const s = q.toLowerCase();
@@ -1791,7 +1974,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
         return hay.includes(s);
       })
       .sort((a, b) => (sortDir === "asc" ? whenMs(a) - whenMs(b) : whenMs(b) - whenMs(a))),
-    [meetings, q, tab, folderFilter, fOwner, fDate, fType, fSource, fFolder, sortDir]
+    [meetings, q, tab, folderFilter, fOwner, fDate, fRange, fType, fSource, fFolder, sortDir]
   );
   const groups = useMemo(() => {
     const order = ["TODAY", "THIS WEEK", "THIS MONTH", "EARLIER"];
@@ -1886,12 +2069,12 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 <span className="flex items-center gap-1.5 rounded-lg bg-violet-50 px-3 py-2 text-[13px] font-semibold text-violet-700"><Folder size={13} /> {folderFilter}<button onClick={onClearFolder} className="ml-1 text-violet-400 hover:text-violet-700"><X size={13} /></button></span>
               )}
               <FilterDropdown label={t("allReports")} icon={ClipboardList} value={fOwner} onChange={setFOwner} options={ownerOpts} />
-              <FilterDropdown label={t("anytime")} icon={Calendar} value={fDate} onChange={setFDate} options={dateOpts} />
+              <DateFilterDropdown label={t("anytime")} value={fDate} range={fRange} onChange={(v, r) => { setFDate(v); setFRange(r); }} options={dateOpts} />
               <FilterDropdown label={t("type")} value={fType} onChange={setFType} options={typeOpts} />
               <FilterDropdown label={t("source")} value={fSource} onChange={setFSource} options={sourceOpts} />
               <FilterDropdown label={t("folder")} value={fFolder} onChange={setFFolder} options={folderOpts} />
               {(fOwner !== "all" || fDate !== "all" || fType !== "all" || fSource !== "all" || fFolder !== "all") && (
-                <button onClick={() => { setFOwner("all"); setFDate("all"); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">{tr("clearFilters")}</button>
+                <button onClick={() => { setFOwner("all"); setFDate("all"); setFRange(null); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">{tr("clearFilters")}</button>
               )}
               <div className="flex-1" />
               {/* Bulk actions: always visible + active-looking. Hover shows a hint until a selection is made. */}
