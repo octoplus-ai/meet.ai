@@ -6089,6 +6089,12 @@ function StyleInject() {
       *::-webkit-scrollbar { width: 8px; height: 8px; }
       *::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; }
       *::-webkit-scrollbar-track { background: transparent; }
+      /* Sidebar: no scrollbars at all (the light global bar looked ugly on the dark nav and made
+         the expand look janky). Scroll still works; the bar is just hidden. */
+      .rai-sidebar, .rai-sidebar * { scrollbar-width: none; -ms-overflow-style: none; }
+      .rai-sidebar::-webkit-scrollbar, .rai-sidebar *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+      .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+      .no-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
     `}</style>
   );
 }
