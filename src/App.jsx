@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { THEME_LIST, getTheme, customTheme, coerceDeck, deckHTML } from "./slides/deck.js";
 import { exportPptx } from "./slides/pptx.js";
+import { EXTRA_LANGS } from "./i18n-extra.js";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
@@ -109,6 +110,75 @@ const EXTRA = {
     allTypes: "All types", completed: "Completed", inProgressF: "In progress", noReportsYet: "No reports yet.", renameReport: "Rename Report", deleteReport: "Delete Report", selectAll: "Select all",
     // presentation composer
     slides: "Slides", theme: "Theme", images: "Images", noImages: "No images", aiImages: "✨ AI images", customColor: "Custom color", pickColor: "Pick your accent color", lightBg: "Light", darkBg: "Dark",
+    // hardcoded-string sweep
+    statusScheduled: "🗓️ OctoMeet is scheduled to join this meeting and will start recording automatically at the start time.", statusJoining: "🔄 OctoMeet is joining the meeting now. Admit it from the waiting room to start recording.", statusInCall: "🟡 OctoMeet is in the meeting. Recording will begin once allowed.",
+    statusRecording: "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.", statusProcessing: "⏳ Meeting ended - generating your AI report from the transcript. This page updates automatically.", octoMeetScore: "OctoMeet Score",
+    octoMeetScoreTip: "how effective the meeting was, combining real-time sentiment and engagement.", badgeScheduled: "Scheduled", badgeJoining: "Joining…",
+    badgeInCall: "In call", badgeRecording: "Recording", badgeProcessing: "Processing report…",
+    badgeFailed: "Failed", signInToViewReport: "Sign in to view this report", reportRestrictedContinue: "This report is restricted. Continue with the account it was shared with",
+    redirecting: "Redirecting…", emailMeCodeInstead: "Email me a code instead", enter6DigitCode: "Enter the 6-digit code we emailed to",
+    viewReport: "View report", resendCode: "Resend code", backToGoogle: "Back to Google",
+    sharedLinkUnavailable: "This shared report link is no longer available", linkInvalidOrRevoked: "The link may be invalid or was revoked by the owner.", loadingSharedReport: "Loading shared report…",
+    sharedReportBadge: "Shared report · {role}", viewOnly: "view only", getOctoMeet: "Get OctoMeet",
+    gmailNudgeMsg: "Activá el envío de reportes por email: reconectá tu cuenta de Google para conceder el permiso de Gmail (un solo click).", reconnectGoogle: "Reconectar Google", accountSettings: "Account Settings",
+    planBilling: "Plan & Billing", addPeople2: "Add People", support: "Support",
+    logOut: "Log Out", sendingBotToMeeting: "Sending OctoMeet to the meeting…", botJoiningMeeting: "OctoMeet is joining the meeting 🎥",
+    pasteMeetingUrlPh: "Paste meeting URL + Enter", addToFolder: "Add to Folder", searchFoldersPh: "Search folders...",
+    createFolderTitle: "Create folder", createFolderNamed: "Create “{q}”", noFoldersYet: "No folders yet - type to create one.",
+    cancel: "Cancel", save: "Save", share: "Share",
+    download: "Download", renameReport2: "Rename Report", deleteReport2: "Delete Report",
+    participants2: "Participants", copyEmails2: "Copy emails", noParticipantData2: "No participant data.",
+    copyGuestEmails2: "Copy guest emails", emailGuests2: "Email guests", allSources: "All sources",
+    allFoldersOpt: "All folders", allTypes2: "All types", completed2: "Completed",
+    inProgress: "In progress", anytimeOpt: "Anytime", todayOpt: "Today",
+    thisWeekOpt: "This week", thisMonthOpt: "This month", allReportsOpt: "All Reports",
+    myReportsOpt: "My reports", recordedByOctomeet: "Recorded by OctoMeet", liveRecordingBanner: "OctoMeet is recording “{title}”{more} - the AI report will appear here automatically.",
+    generatingReportsBanner: "Generating {n} AI report{s} from your meeting{s}… this updates automatically.", refreshBtn: "Refresh", newBadge: "NEW!",
+    crmBannerMsg: "Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.", addHubspot: "Add Hubspot", addSalesforce: "Add Salesforce",
+    dismiss: "Dismiss", clearFilters: "Clear filters", deselectAll: "Deselect all",
+    selectAll2: "Select all", nSelected: "{n} selected", noIncompleteMatch: "No in-progress meetings match “{q}”.",
+    noMeetingsInProgress: "No meetings in progress. Live & processing meetings will appear here.", noReportsMatch: "No reports match “{q}”.", noReportsYet2: "No reports yet.",
+    deleteReportConfirm: "Delete “{title}”? This permanently removes the report and its analysis. This can't be undone.", sectionComingSoon: "This section is coming soon. For now, the Reports screen is fully working.", goToReports: "Go to Reports",
+    meetingPolicyHead: "Meeting Policy", meetingPolicyDesc: "Set organization-wide rules for how Octomeet joins, records, and shares meetings.", policyDefaultsNote: "These defaults apply to everyone in your workspace (octomeet.ai). Members can be allowed to override them below.",
+    autoJoinMeetings: "Auto-Join meetings", recordingData: "Recording & Data", allowRecordingTranscription: "Allow recording & transcription",
+    requireConsent: "Require participant consent", dataRetention: "Data retention", dataRetentionDesc: "How long meeting data is kept before automatic deletion.",
+    days30: "30 days", keepForever: "Keep forever", notetakerDisplayName: "Notetaker display name",
+    notetakerNameDesc: "The name the bot shows as when it joins your meetings.", permissions: "Permissions", allowExternalSharing: "Allow external report sharing",
+    lockSettingsMembers: "Lock settings for members", createAccountTitle: "Create your OctoMeet AI account", signInTitle: "Sign in to OctoMeet AI",
+    signupSubtitle: "It's free to get started - no credit card required.", signinSubtitle: "Welcome back. Choose how to continue.", continueWithGoogle: "Continue with Google",
+    continueWithMicrosoft: "Continue with Microsoft", continueWithApple: "Continue with Apple", continueWithSSO: "Continue with SSO",
+    emailPlaceholder: "name@company.com", createAccountBtn: "Create account", continueWithEmail: "Continue with email",
+    newToOctomeet: "New to Octomeet?", createAnAccountLink: "Create an account", whyCalendarAccess: "Why does Octomeet need calendar access?",
+    helpCenter: "Help Center", chatWithUs: "Chat with us", emailSupport: "Email support",
+    whatsNew: "What's new", howCanWeHelp: "How can we help?", logoutConfirmTitle: "Log out of Octomeet?",
+    logoutConfirmDesc: "You'll need to sign in again with Google to access your meetings and reports.", logout: "Log out", currentPlan: "Current Plan",
+    comparePlans: "Compare plans", changePlan: "Change plan", createWorkspace: "Create a Workspace",
+    cancelPlanConfirm: "Cancel your plan? You'll keep access until the end of the billing period.", cancelPlan: "Cancel plan", licenseUsage: "License Usage",
+    addLicenses: "Add licenses", fileUploadCredits: "File Upload Credits", buyUploadCredits: "Buy file upload credits",
+    paymentMethod: "Payment Method", updatePaymentMethod: "Update payment method", billingHistory: "Billing History",
+    invoiceDate: "Invoice Date", description: "Description", billingPeriod: "Billing Period",
+    plansPricing2: "Plans & Pricing", choosePlanHeading: "Choose the plan that fits your team", mostPopular: "Most Popular",
+    navProfileAccount: "Profile & Account", navMeetingRecording: "Meeting Recording", navReportContent: "Report Content",
+    navReportSharing: "Report Sharing", navSmartScheduler: "Smart Scheduler", navContactsGroups: "Contacts & Groups",
+    navCustomVocabulary: "Custom Vocabulary", uploadPhoto: "Upload photo", defaultLanguage: "Default Language",
+    addWordPlaceholder: "Add a word, name or term…", dubbedVideoReady: "Dubbed video ready", collapseVideo: "Collapse video",
+    translatingSubtitles: "Translating subtitles…", playbackSpeed2: "Playback speed", speedNormal: "Normal",
+    muteVolume: "Mute / volume", subtitlesTitle: "Subtitles", settingsTitle: "Settings (playback speed & overlays)",
+    pipTitle: "Picture in picture (click the screen or this button to go back)", fullscreen: "Fullscreen", expandVideo: "Expand Video",
+    jumpToMoment: "Jump to this moment in the video", sugSummarizeDecisions: "Summarize the key decisions", sugActionItemsOwners: "What are the action items and who owns them?",
+    sugNextSteps: "What are the next steps?", sugOpenQuestions: "What questions were left open?", askOcto: "Ask Octo",
+    askOctoEmptyState: "Ask anything about this meeting - Octo answers from the transcript & report.", octoThinking: "Octo is thinking…", presentation2: "Presentation",
+    slides2: "Slides", images2: "Images", noImages2: "No images",
+    aiImages2: "✨ AI images", aiImagesHint: "Generates a few images based on the meeting (slower, ~30s).", attach: "Attach",
+    generating: "Generating…", generate: "Generate", availableWhenReportReady: "Available once the report is ready",
+    generatePresentationTitle: "Generate a presentation from this meeting", askOctoPlaceholder: "Ask Octo anything…", roleViewerDesc: "Can view and download the detailed meeting report and metrics",
+    roleEditorDesc: "Can view the full report, edit the notes and transcript, download, and share", removeAccess: "Remove Access", aiDocument: "AI Document",
+    generateFreshVersion: "Generate a fresh version", regenerate: "Regenerate", generatingDocument: "Generating your document…",
+    analyzingMeeting: "Analyzing the meeting and structuring it", followUpEmail: "Follow-up email", toLabel: "To",
+    emailsCommaSeparated: "emails, comma separated", subject: "Subject", message: "Message",
+    copy: "Copy", sendFromGmail: "Send from my Gmail", anyoneWithLink: "Anyone with the link can view",
+    publicLinkDisabled: "Public link disabled - only people with access", reportEmailedTo: "Report emailed to {n} {people} ✓", reportSharedWith: "Report shared with {n} {people}",
+    saved: "Saved",
   },
   es: {
     audioTranslation: "Traducción de audio", translatingAudio: "Traduciendo el audio a", dubKeepsVoices: "Voces con IA, mantiene cada orador", original: "Original",
@@ -127,14 +197,89 @@ const EXTRA = {
     participants: "Participantes", copyEmails: "Copiar emails", copyGuestEmails: "Copiar emails de invitados", emailGuests: "Enviar email a invitados", noParticipantData: "Sin datos de participantes.", noEmailOnFile: "sin email registrado",
     allTypes: "Todos los tipos", completed: "Completados", inProgressF: "En progreso", noReportsYet: "Todavía no hay reportes.", renameReport: "Renombrar reporte", deleteReport: "Eliminar reporte", selectAll: "Seleccionar todo",
     slides: "Diapositivas", theme: "Tema", images: "Imágenes", noImages: "Sin imágenes", aiImages: "✨ Imágenes IA", customColor: "Color personalizado", pickColor: "Elegí tu color de acento", lightBg: "Claro", darkBg: "Oscuro",
+    // hardcoded-string sweep
+    statusScheduled: "🗓️ OctoMeet está programado para unirse a esta reunión y empezará a grabar automáticamente en el horario de inicio.", statusJoining: "🔄 OctoMeet se está uniendo a la reunión ahora. Admitilo desde la sala de espera para empezar a grabar.", statusInCall: "🟡 OctoMeet está en la reunión. La grabación va a empezar una vez que se permita.",
+    statusRecording: "🔴 OctoMeet está grabando en vivo. Tu reporte con IA va a aparecer acá automáticamente cuando termine la reunión.", statusProcessing: "⏳ La reunión terminó - generando tu reporte con IA a partir de la transcripción. Esta página se actualiza automáticamente.", octoMeetScore: "OctoMeet Score",
+    octoMeetScoreTip: "qué tan efectiva fue la reunión, combinando el sentimiento y el engagement en tiempo real.", badgeScheduled: "Programada", badgeJoining: "Uniéndose…",
+    badgeInCall: "En llamada", badgeRecording: "Grabando", badgeProcessing: "Procesando reporte…",
+    badgeFailed: "Falló", signInToViewReport: "Iniciá sesión para ver este reporte", reportRestrictedContinue: "Este reporte es restringido. Continuá con la cuenta con la que se compartió",
+    redirecting: "Redirigiendo…", emailMeCodeInstead: "Enviame un código por email", enter6DigitCode: "Ingresá el código de 6 dígitos que enviamos a",
+    viewReport: "Ver reporte", resendCode: "Reenviar código", backToGoogle: "Volver a Google",
+    sharedLinkUnavailable: "Este link de reporte compartido ya no está disponible", linkInvalidOrRevoked: "El link puede ser inválido o fue revocado por el dueño.", loadingSharedReport: "Cargando reporte compartido…",
+    sharedReportBadge: "Reporte compartido ·", viewOnly: "solo lectura", getOctoMeet: "Obtené OctoMeet",
+    gmailNudgeMsg: "Activá el envío de reportes por email: reconectá tu cuenta de Google para conceder el permiso de Gmail (un solo click).", reconnectGoogle: "Reconectar Google", accountSettings: "Configuración de la cuenta",
+    planBilling: "Plan y facturación", addPeople2: "Agregar personas", support: "Soporte",
+    logOut: "Cerrar sesión", sendingBotToMeeting: "Enviando OctoMeet a la reunión…", botJoiningMeeting: "OctoMeet se está uniendo a la reunión 🎥",
+    pasteMeetingUrlPh: "Pegá la URL de la reunión + Enter", addToFolder: "Agregar a carpeta", searchFoldersPh: "Buscar carpetas...",
+    createFolderTitle: "Crear carpeta", createFolderNamed: "Crear \"{q}\"", noFoldersYet: "No hay carpetas todavía - escribí para crear una.",
+    cancel: "Cancelar", save: "Guardar", share: "Compartir",
+    download: "Descargar", renameReport2: "Renombrar reporte", deleteReport2: "Eliminar reporte",
+    participants2: "Participantes", copyEmails2: "Copiar emails", noParticipantData2: "Sin datos de participantes.",
+    copyGuestEmails2: "Copiar emails de invitados", emailGuests2: "Enviar email a invitados", allSources: "Todas las fuentes",
+    allFoldersOpt: "Todas las carpetas", allTypes2: "Todos los tipos", completed2: "Completado",
+    inProgress: "En progreso", anytimeOpt: "Cualquier momento", todayOpt: "Hoy",
+    thisWeekOpt: "Esta semana", thisMonthOpt: "Este mes", allReportsOpt: "Todos los reportes",
+    myReportsOpt: "Mis reportes", recordedByOctomeet: "Grabado por OctoMeet", liveRecordingBanner: "OctoMeet está grabando \"{title}\" +{n} más - el reporte con IA aparecerá acá automáticamente.",
+    generatingReportsBanner: "Generando {n} reportes con IA de tus reuniones… esto se actualiza automáticamente.", refreshBtn: "Actualizar", newBadge: "NUEVO!",
+    crmBannerMsg: "Conectá tu CRM para recibir recomendaciones inteligentes sobre cuándo avanzar tus oportunidades a la siguiente etapa.", addHubspot: "Agregar HubSpot", addSalesforce: "Agregar Salesforce",
+    dismiss: "Descartar", clearFilters: "Limpiar filtros", deselectAll: "Deseleccionar todo",
+    selectAll2: "Seleccionar todo", nSelected: "{n} seleccionados", noIncompleteMatch: "No hay reuniones en progreso que coincidan con \"{q}\".",
+    noMeetingsInProgress: "No hay reuniones en progreso. Las reuniones en vivo y en procesamiento aparecerán acá.", noReportsMatch: "No hay reportes que coincidan con \"{q}\".", noReportsYet2: "No hay reportes todavía.",
+    deleteReportConfirm: "¿Eliminar \"{title}\"? Esto elimina permanentemente el reporte y su análisis. No se puede deshacer.", sectionComingSoon: "Esta sección estará disponible pronto. Por ahora, la pantalla de Reportes funciona completamente.", goToReports: "Ir a Reportes",
+    meetingPolicyHead: "Politica de reuniones", meetingPolicyDesc: "Configura reglas para toda la organizacion sobre como Octomeet se une, graba y comparte reuniones.", policyDefaultsNote: "Estos valores por defecto aplican a todos en tu espacio de trabajo (octomeet.ai). Se les puede permitir a los miembros anularlos abajo.",
+    autoJoinMeetings: "Unirse a reuniones automaticamente", recordingData: "Grabacion y datos", allowRecordingTranscription: "Permitir grabacion y transcripcion",
+    requireConsent: "Requerir consentimiento de los participantes", dataRetention: "Retencion de datos", dataRetentionDesc: "Cuanto tiempo se conservan los datos de la reunion antes de la eliminacion automatica.",
+    days30: "30 dias", keepForever: "Conservar para siempre", notetakerDisplayName: "Nombre visible del tomador de notas",
+    notetakerNameDesc: "El nombre que muestra el bot cuando se une a tus reuniones.", permissions: "Permisos", allowExternalSharing: "Permitir compartir reportes externamente",
+    lockSettingsMembers: "Bloquear la configuracion para los miembros", createAccountTitle: "Crea tu cuenta de OctoMeet AI", signInTitle: "Inicia sesion en OctoMeet AI",
+    signupSubtitle: "Empezar es gratis - no se necesita tarjeta de credito.", signinSubtitle: "Bienvenido de nuevo. Elegi como continuar.", continueWithGoogle: "Continuar con Google",
+    continueWithMicrosoft: "Continuar con Microsoft", continueWithApple: "Continuar con Apple", continueWithSSO: "Continuar con SSO",
+    emailPlaceholder: "nombre@empresa.com", createAccountBtn: "Crear cuenta", continueWithEmail: "Continuar con correo",
+    newToOctomeet: "Sos nuevo en Octomeet?", createAnAccountLink: "Crea una cuenta", whyCalendarAccess: "Por que Octomeet necesita acceso al calendario?",
+    helpCenter: "Centro de ayuda", chatWithUs: "Chatea con nosotros", emailSupport: "Soporte por correo",
+    whatsNew: "Novedades", howCanWeHelp: "Como podemos ayudarte?", logoutConfirmTitle: "Cerrar sesion en Octomeet?",
+    logoutConfirmDesc: "Vas a tener que iniciar sesion de nuevo con Google para acceder a tus reuniones y reportes.", logout: "Cerrar sesion", currentPlan: "Plan actual",
+    comparePlans: "Comparar planes", changePlan: "Cambiar plan", createWorkspace: "Crear un espacio de trabajo",
+    cancelPlanConfirm: "Cancelar tu plan? Vas a conservar el acceso hasta el final del periodo de facturacion.", cancelPlan: "Cancelar plan", licenseUsage: "Uso de licencias",
+    addLicenses: "Agregar licencias", fileUploadCredits: "Creditos de subida de archivos", buyUploadCredits: "Comprar creditos de subida de archivos",
+    paymentMethod: "Metodo de pago", updatePaymentMethod: "Actualizar metodo de pago", billingHistory: "Historial de facturacion",
+    invoiceDate: "Fecha de factura", description: "Descripcion", billingPeriod: "Periodo de facturacion",
+    plansPricing2: "Planes y precios", choosePlanHeading: "Elegi el plan que se adapta a tu equipo", mostPopular: "Mas popular",
+    navProfileAccount: "Perfil y cuenta", navMeetingRecording: "Grabacion de reuniones", navReportContent: "Contenido del reporte",
+    navReportSharing: "Compartir reportes", navSmartScheduler: "Agendador inteligente", navContactsGroups: "Contactos y grupos",
+    navCustomVocabulary: "Vocabulario personalizado", uploadPhoto: "Subir foto", defaultLanguage: "Idioma predeterminado",
+    addWordPlaceholder: "Agrega una palabra, nombre o termino...", dubbedVideoReady: "Video doblado listo", collapseVideo: "Contraer video",
+    translatingSubtitles: "Traduciendo subtitulos...", playbackSpeed2: "Velocidad de reproduccion", speedNormal: "Normal",
+    muteVolume: "Silenciar / volumen", subtitlesTitle: "Subtitulos", settingsTitle: "Ajustes (velocidad y superposiciones)",
+    pipTitle: "Imagen en imagen (clickea la pantalla o este boton para volver)", fullscreen: "Pantalla completa", expandVideo: "Expandir video",
+    jumpToMoment: "Saltar a este momento del video", sugSummarizeDecisions: "Resumi las decisiones clave", sugActionItemsOwners: "Cuales son los action items y quien esta a cargo?",
+    sugNextSteps: "Cuales son los proximos pasos?", sugOpenQuestions: "Que preguntas quedaron abiertas?", askOcto: "Preguntale a Octo",
+    askOctoEmptyState: "Pregunta lo que quieras sobre esta reunion - Octo responde desde la transcripcion y el reporte.", octoThinking: "Octo esta pensando...", presentation2: "Presentacion",
+    slides2: "Diapositivas", images2: "Imagenes", noImages2: "Sin imagenes",
+    aiImages2: "✨ Imagenes con IA", aiImagesHint: "Genera algunas imagenes basadas en la reunion (mas lento, ~30s).", attach: "Adjuntar",
+    generating: "Generando...", generate: "Generar", availableWhenReportReady: "Disponible cuando el reporte este listo",
+    generatePresentationTitle: "Genera una presentacion desde esta reunion", askOctoPlaceholder: "Preguntale cualquier cosa a Octo...", roleViewerDesc: "Puede ver y descargar el reporte detallado de la reunion y las metricas",
+    roleEditorDesc: "Puede ver el reporte completo, editar las notas y la transcripcion, descargar y compartir", removeAccess: "Quitar acceso", aiDocument: "Documento con IA",
+    generateFreshVersion: "Genera una version nueva", regenerate: "Regenerar", generatingDocument: "Generando tu documento...",
+    analyzingMeeting: "Analizando la reunion y estructurandola", followUpEmail: "Email de seguimiento", toLabel: "Para",
+    emailsCommaSeparated: "emails, separados por coma", subject: "Asunto", message: "Mensaje",
+    copy: "Copiar", sendFromGmail: "Enviar desde mi Gmail", anyoneWithLink: "Cualquiera con el link puede ver",
+    publicLinkDisabled: "Link publico deshabilitado - solo gente con acceso", reportEmailedTo: "Reporte enviado por email a {n} {people} ✓", reportSharedWith: "Reporte compartido con {n} {people}",
+    saved: "Guardado",
   },
 };
-for (const lng of Object.keys(TR)) TR[lng] = { ...TR[lng], ...(EXTRA[lng] || {}) };
+// Merge order: base table, machine-generated languages (i18n-extra.js), then the
+// hand-maintained EXTRA (en/es) wins. Missing keys fall back to EN via t()/tr().
+for (const lng of Object.keys(TR)) TR[lng] = { ...TR[lng], ...(EXTRA_LANGS[lng] || {}), ...(EXTRA[lng] || {}) };
 
 // Module-level translator + current language, so components that don't receive the `t` prop
 // (e.g. MeetingVideo) can still translate. CUR_LANG is synced from the App on every render.
 let CUR_LANG = "en";
 const tr = (k) => (TR[CUR_LANG] && TR[CUR_LANG][k]) || TR.en[k] || k;
+// Interpolated strings: tf("recordingOf", { name }) with dictionary text "Recording {name}".
+const tf = (k, vars = {}) => Object.entries(vars).reduce((s, [n, v]) => s.split(`{${n}}`).join(String(v)), tr(k));
+// Locale for date/time formatting - follows the UI language instead of hardcoding en-US.
+const LOC = () => (CUR_LANG === "en" ? "en-US" : CUR_LANG);
 const isRTL = (code) => !!(LANGS.find((l) => l.code === code) || {}).rtl;
 
 /* ---------------------------- storage shim ------------------------- */
@@ -427,7 +572,7 @@ function seedMeetings() {
 }
 
 // Adapt a real meeting+report row from Supabase into the UI meeting shape.
-const hhmm = (iso) => { try { return iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : ""; } catch { return ""; } };
+const hhmm = (iso) => { try { return iso ? new Date(iso).toLocaleTimeString(LOC(), { hour: "numeric", minute: "2-digit" }) : ""; } catch { return ""; } };
 // Local calendar date (YYYY-MM-DD) of an ISO timestamp. List dates + buckets must follow the
 // VIEWER's day, not UTC - a 23:25 local meeting was showing as "tomorrow" via the UTC date.
 const localDateISO = (iso) => {
@@ -437,11 +582,11 @@ const localDateISO = (iso) => {
 };
 function statusSummary(status) {
   switch (status) {
-    case "scheduled": return "🗓️ OctoMeet is scheduled to join this meeting and will start recording automatically at the start time.";
-    case "joining": return "🔄 OctoMeet is joining the meeting now. Admit it from the waiting room to start recording.";
-    case "in_call": return "🟡 OctoMeet is in the meeting. Recording will begin once allowed.";
-    case "recording": return "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.";
-    case "processing": return "⏳ Meeting ended - generating your AI report from the transcript. This page updates automatically.";
+    case "scheduled": return tr("statusScheduled");
+    case "joining": return tr("statusJoining");
+    case "in_call": return tr("statusInCall");
+    case "recording": return tr("statusRecording");
+    case "processing": return tr("statusProcessing");
     case "error": return "⚠️ The notetaker couldn't complete this meeting. Check the meeting link or permissions and try again.";
     default: return "";
   }
@@ -576,11 +721,11 @@ const whenMs = (m) => {
   return base;
 };
 const fmtDateFull = (iso) => {
-  try { return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }); }
+  try { return new Date(iso + "T00:00:00").toLocaleDateString(LOC(), { weekday: "short", month: "short", day: "numeric", year: "numeric" }); }
   catch { return iso; }
 };
 const fmtDateShort = (iso) => {
-  try { return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
+  try { return new Date(iso + "T00:00:00").toLocaleDateString(LOC(), { month: "short", day: "numeric", year: "numeric" }); }
   catch { return iso; }
 };
 const initialsOf = (name) => {
@@ -689,7 +834,7 @@ function ScoreChip({ value }) {
       <OctoLogo size={15} />
       <span className="text-[12px] font-bold" style={{ color: col }}>{has ? value : "-"}</span>
       <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-60 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-center text-[11px] font-medium leading-snug text-white opacity-0 shadow-2xl transition-opacity duration-150 group-hover:opacity-100">
-        <span className="font-bold">OctoMeet Score</span> - how effective the meeting was, combining real-time sentiment and engagement.
+        <span className="font-bold">{tr("octoMeetScore")}</span> - {tr("octoMeetScoreTip")}
         <span className="absolute left-1/2 top-full -ml-1 h-2 w-2 -translate-y-1/2 rotate-45 bg-slate-900" />
       </span>
     </span>
@@ -697,12 +842,12 @@ function ScoreChip({ value }) {
 }
 
 const STATUS_META = {
-  scheduled: { label: "Scheduled", cls: "bg-slate-100 text-slate-600", dot: "bg-slate-400" },
-  joining: { label: "Joining…", cls: "bg-amber-100 text-amber-700", spin: true },
-  in_call: { label: "In call", cls: "bg-amber-100 text-amber-700", dot: "bg-amber-500", pulse: true },
-  recording: { label: "Recording", cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500", pulse: true },
-  processing: { label: "Processing report…", cls: "bg-violet-100 text-violet-700", spin: true },
-  error: { label: "Failed", cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500" },
+  scheduled: { label: tr("badgeScheduled"), cls: "bg-slate-100 text-slate-600", dot: "bg-slate-400" },
+  joining: { label: tr("badgeJoining"), cls: "bg-amber-100 text-amber-700", spin: true },
+  in_call: { label: tr("badgeInCall"), cls: "bg-amber-100 text-amber-700", dot: "bg-amber-500", pulse: true },
+  recording: { label: tr("badgeRecording"), cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500", pulse: true },
+  processing: { label: tr("badgeProcessing"), cls: "bg-violet-100 text-violet-700", spin: true },
+  error: { label: tr("badgeFailed"), cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500" },
 };
 function StatusBadge({ status }) {
   const m = STATUS_META[status];
@@ -782,24 +927,24 @@ function ShareSignInGate({ token, emailHint, wrongAccount, onVerified }) {
       <StyleInject />
       <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-xl">
         <OctoLogo size={40} />
-        <h2 className="mt-3 text-lg font-bold text-slate-900">Sign in to view this report</h2>
-        <p className="mt-1 text-[13px] text-slate-500">This report is restricted. Continue with the account it was shared with{hint ? <> (<b className="text-slate-700">{hint}</b>)</> : ""}.</p>
+        <h2 className="mt-3 text-lg font-bold text-slate-900">{tr("signInToViewReport")}</h2>
+        <p className="mt-1 text-[13px] text-slate-500">{tr("reportRestrictedContinue")}{hint ? <> (<b className="text-slate-700">{hint}</b>)</> : ""}.</p>
         {denied && <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-left text-[12px] text-amber-700"><b>{denied.account}</b> doesn't have access. This report was shared with {denied.invited}. Switch accounts or use the email code below.</div>}
         {mode === "google" ? (
           <>
             <button onClick={googleSignIn} disabled={busy} className="mt-4 inline-flex w-full items-center justify-center gap-2.5 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60">
               <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-              {busy ? "Redirecting…" : "Continuar con Google"}
+              {busy ? tr("redirecting") : "Continuar con Google"}
             </button>
             <div className="my-4 flex items-center gap-3 text-[11px] text-slate-300"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div>
-            <button onClick={() => { setMode("code"); setMsg(""); request(); }} disabled={busy} className="text-[13px] font-medium text-violet-600 hover:text-violet-700">Email me a code instead</button>
+            <button onClick={() => { setMode("code"); setMsg(""); request(); }} disabled={busy} className="text-[13px] font-medium text-violet-600 hover:text-violet-700">{tr("emailMeCodeInstead")}</button>
           </>
         ) : (
           <>
-            <p className="mt-3 text-[13px] text-slate-500">Enter the 6-digit code we emailed to <b className="text-slate-700">{hint || "your email"}</b>.</p>
+            <p className="mt-3 text-[13px] text-slate-500">{tr("enter6DigitCode")} <b className="text-slate-700">{hint || "your email"}</b>.</p>
             <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(e) => e.key === "Enter" && verify()} inputMode="numeric" placeholder="••••••" autoFocus className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-center text-xl font-bold tracking-[0.4em] outline-none focus:border-violet-400" />
-            <button onClick={verify} disabled={busy} className="mt-3 w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-60">View report</button>
-            <div className="mt-2 flex justify-center gap-4 text-[13px]"><button onClick={request} disabled={busy} className="font-medium text-violet-600 hover:text-violet-700">Resend code</button><button onClick={() => { setMode("google"); setMsg(""); }} className="font-medium text-slate-500 hover:text-slate-700">Back to Google</button></div>
+            <button onClick={verify} disabled={busy} className="mt-3 w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{tr("viewReport")}</button>
+            <div className="mt-2 flex justify-center gap-4 text-[13px]"><button onClick={request} disabled={busy} className="font-medium text-violet-600 hover:text-violet-700">{tr("resendCode")}</button><button onClick={() => { setMode("google"); setMsg(""); }} className="font-medium text-slate-500 hover:text-slate-700">{tr("backToGoogle")}</button></div>
           </>
         )}
         {msg && <p className="mt-3 text-[12px] text-slate-500">{msg}</p>}
@@ -858,13 +1003,13 @@ function SharedReportView({ token }) {
   if (err) return (
     <div className="rai-body flex h-screen flex-col items-center justify-center gap-3 bg-[#F4F5FA] text-center text-slate-500">
       <StyleInject /><OctoLogo size={40} />
-      <div className="text-lg font-semibold text-slate-700">This shared report link is no longer available</div>
-      <div className="text-sm">The link may be invalid or was revoked by the owner.</div>
+      <div className="text-lg font-semibold text-slate-700">{tr("sharedLinkUnavailable")}</div>
+      <div className="text-sm">{tr("linkInvalidOrRevoked")}</div>
     </div>
   );
   if (!meeting) return (
     <div className="rai-body flex h-screen items-center justify-center bg-[#F4F5FA] text-slate-400">
-      <StyleInject /><Loader2 className="mr-2 animate-spin" size={18} /> Loading shared report…
+      <StyleInject /><Loader2 className="mr-2 animate-spin" size={18} /> {tr("loadingSharedReport")}
     </div>
   );
   return (
@@ -874,8 +1019,8 @@ function SharedReportView({ token }) {
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-5 py-2.5">
         <OctoLogo size={26} />
         <span className="text-[15px] font-bold text-slate-900">OctoMeet</span>
-        <span className="ml-3 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">Shared report · {role === "Editor" ? "Editor" : "view only"}</span>
-        <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noreferrer" className="ml-auto rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">Get OctoMeet</a>
+        <span className="ml-3 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">{tf("sharedReportBadge", { role: role === "Editor" ? "Editor" : tr("viewOnly") })}</span>
+        <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noreferrer" className="ml-auto rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">{tr("getOctoMeet")}</a>
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Real updater: Editor mutations (action-item toggles, speaker rename) must reflect in
@@ -1047,8 +1192,8 @@ export default function App() {
         {user && user.gmailReady === false && gmailNudge && (
           <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-[13px] text-amber-900">
             <Mail size={15} className="shrink-0 text-amber-600" />
-            <span className="flex-1">Activá el envío de reportes por email: reconectá tu cuenta de Google para conceder el permiso de Gmail (un solo click).</span>
-            <button onClick={() => { window.location.href = "/api/auth/google/start"; }} className="rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">Reconectar Google</button>
+            <span className="flex-1">{tr("gmailNudgeMsg")}</span>
+            <button onClick={() => { window.location.href = "/api/auth/google/start"; }} className="rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">{tr("reconnectGoogle")}</button>
             <button onClick={() => setGmailNudge(false)} className="text-amber-500 transition hover:text-amber-700"><X size={16} /></button>
           </div>
         )}
@@ -1196,13 +1341,13 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
           <>
             <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
             <div className="absolute bottom-1 left-full z-50 ml-2 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-2xl">
-              <MenuItem icon={SlidersHorizontal} label="Account Settings" onClick={() => { setView("account"); setMenuOpen(false); }} />
-              <MenuItem icon={Rocket} label="Plan & Billing" onClick={() => { setView("plan-billing"); setMenuOpen(false); }} />
-              <MenuItem icon={Users} label="Add People" onClick={() => { setView("add-people"); setMenuOpen(false); }} />
+              <MenuItem icon={SlidersHorizontal} label={tr("accountSettings")} onClick={() => { setView("account"); setMenuOpen(false); }} />
+              <MenuItem icon={Rocket} label={tr("planBilling")} onClick={() => { setView("plan-billing"); setMenuOpen(false); }} />
+              <MenuItem icon={Users} label={tr("addPeople2")} onClick={() => { setView("add-people"); setMenuOpen(false); }} />
               <div className="my-1 border-t border-slate-100" />
-              <MenuItem icon={HelpCircle} label="Support" onClick={() => { setView("support"); setMenuOpen(false); }} />
+              <MenuItem icon={HelpCircle} label={tr("support")} onClick={() => { setView("support"); setMenuOpen(false); }} />
               <div className="my-1 border-t border-slate-100" />
-              <MenuItem icon={LogOut} label="Log Out" onClick={() => { setView("logout"); setMenuOpen(false); }} />
+              <MenuItem icon={LogOut} label={tr("logOut")} onClick={() => { setView("logout"); setMenuOpen(false); }} />
             </div>
           </>
         )}
@@ -1220,15 +1365,15 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
                   if (e.key === "Escape") { setLiveOpen(false); setLiveUrl(""); }
                   if (e.key === "Enter" && liveUrl.trim()) {
                     const url = liveUrl.trim(); setLiveOpen(false); setLiveUrl("");
-                    toast("Sending OctoMeet to the meeting…");
+                    toast(tr("sendingBotToMeeting"));
                     try {
                       const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, botName: notetakerName() }) });
                       const d = await r.json();
-                      toast(r.ok ? "OctoMeet is joining the meeting 🎥" : ("Error: " + (d.error || "failed")));
+                      toast(r.ok ? tr("botJoiningMeeting") : ("Error: " + (d.error || "failed")));
                     } catch (er) { toast("Network error"); }
                   }
                 }}
-                placeholder="Paste meeting URL + Enter" className="mb-3 w-full rounded-md border border-violet-400 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-slate-500 outline-none" />
+                placeholder={tr("pasteMeetingUrlPh")} className="mb-3 w-full rounded-md border border-violet-400 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-slate-500 outline-none" />
             ) : (
               <button onClick={() => setLiveOpen(true)} className="mb-3 flex w-full items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-[13px] font-medium text-slate-300 hover:bg-white/5 hover:text-white">
                 <PlusCircle size={16} /> {t("addToLive")}
@@ -1350,7 +1495,7 @@ function FolderPicker({ meeting, folders, onSave, onCreate }) {
         </button>
       ) : (
         <button ref={btnRef} onClick={() => (open ? setOpen(false) : openMenu())} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[12px] text-slate-500 transition hover:bg-slate-50">
-          <Folder size={12} className="shrink-0 text-slate-400" /> Add to Folder <ChevronDown size={12} className="shrink-0 text-slate-400" />
+          <Folder size={12} className="shrink-0 text-slate-400" /> {tr("addToFolder")} <ChevronDown size={12} className="shrink-0 text-slate-400" />
         </button>
       )}
       {open && pos && (
@@ -1360,9 +1505,9 @@ function FolderPicker({ meeting, folders, onSave, onCreate }) {
             <div className="flex items-center gap-2 p-2.5">
               <div className="relative flex-1">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-violet-400" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search folders..." autoFocus className="w-full rounded-lg border border-violet-200 py-2 pl-8 pr-2 text-[13px] outline-none focus:border-violet-400" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("searchFoldersPh")} autoFocus className="w-full rounded-lg border border-violet-200 py-2 pl-8 pr-2 text-[13px] outline-none focus:border-violet-400" />
               </div>
-              <button onClick={createAndCheck} title="Create folder" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50"><FolderPlus size={16} /></button>
+              <button onClick={createAndCheck} title={tr("createFolderTitle")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50"><FolderPlus size={16} /></button>
             </div>
             <div className="max-h-60 overflow-y-auto px-1.5">
               {list.map((f) => (
@@ -1373,13 +1518,13 @@ function FolderPicker({ meeting, folders, onSave, onCreate }) {
                 </button>
               ))}
               {canCreate && (
-                <button onClick={createAndCheck} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] font-medium text-violet-600 transition hover:bg-violet-50"><FolderPlus size={14} /> Create &ldquo;{q.trim()}&rdquo;</button>
+                <button onClick={createAndCheck} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] font-medium text-violet-600 transition hover:bg-violet-50"><FolderPlus size={14} /> {tf("createFolderNamed", { q: q.trim() })}</button>
               )}
-              {!list.length && !canCreate && <p className="px-2 py-3 text-center text-[13px] text-slate-400">No folders yet - type to create one.</p>}
+              {!list.length && !canCreate && <p className="px-2 py-3 text-center text-[13px] text-slate-400">{tr("noFoldersYet")}</p>}
             </div>
             <div className="flex items-center justify-end gap-1 border-t border-slate-100 p-2.5">
-              <button onClick={() => setOpen(false)} className="rounded-lg px-3 py-1.5 text-[13px] font-semibold text-violet-600 transition hover:bg-violet-50">Cancel</button>
-              <button onClick={save} disabled={!dirty} className="rounded-lg bg-violet-600 px-4 py-1.5 text-[13px] font-semibold text-white transition hover:bg-violet-500 disabled:cursor-default disabled:bg-slate-200 disabled:text-slate-400">Save</button>
+              <button onClick={() => setOpen(false)} className="rounded-lg px-3 py-1.5 text-[13px] font-semibold text-violet-600 transition hover:bg-violet-50">{tr("cancel")}</button>
+              <button onClick={save} disabled={!dirty} className="rounded-lg bg-violet-600 px-4 py-1.5 text-[13px] font-semibold text-white transition hover:bg-violet-500 disabled:cursor-default disabled:bg-slate-200 disabled:text-slate-400">{tr("save")}</button>
             </div>
           </div>
         </>
@@ -1407,10 +1552,10 @@ function RowMenu({ onShare, onDownload, onRename, onDelete }) {
         <>
           <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
           <div className="fixed z-[56] w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
-            <button onClick={act(onShare)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Share2 size={15} className="text-slate-400" /> Share</button>
-            <button onClick={act(onDownload)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Download size={15} className="text-slate-400" /> Download</button>
-            <button onClick={act(onRename)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Pencil size={15} className="text-slate-400" /> Rename Report</button>
-            <button onClick={act(onDelete)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-rose-600 hover:bg-rose-50"><Trash2 size={15} /> Delete Report</button>
+            <button onClick={act(onShare)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Share2 size={15} className="text-slate-400" /> {tr("share")}</button>
+            <button onClick={act(onDownload)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Download size={15} className="text-slate-400" /> {tr("download")}</button>
+            <button onClick={act(onRename)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"><Pencil size={15} className="text-slate-400" /> {tr("renameReport2")}</button>
+            <button onClick={act(onDelete)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-rose-600 hover:bg-rose-50"><Trash2 size={15} /> {tr("deleteReport2")}</button>
           </div>
         </>
       )}
@@ -1436,8 +1581,8 @@ function PeoplePopover({ meeting, emailBook = {} }) {
           <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
           <div className="fixed z-[56] w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
             <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Participants</span>
-              {emails.length > 0 && <button onClick={copyEmails} className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"><Copy size={11} /> Copy emails</button>}
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{tr("participants2")}</span>
+              {emails.length > 0 && <button onClick={copyEmails} className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"><Copy size={11} /> {tr("copyEmails2")}</button>}
             </div>
             <div className="max-h-64 overflow-y-auto">
               {people.map((p, i) => (
@@ -1449,7 +1594,7 @@ function PeoplePopover({ meeting, emailBook = {} }) {
                   </div>
                 </div>
               ))}
-              {!people.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">No participant data.</div>}
+              {!people.length && <div className="px-2 py-3 text-center text-[12px] text-slate-400">{tr("noParticipantData2")}</div>}
             </div>
           </div>
         </>
@@ -1539,11 +1684,11 @@ function ParticipantsCell({ meeting, emailBook }) {
     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
       <div className="group relative">
         <button onClick={copy} className={"flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-violet-600" + faded}><Copy size={15} /></button>
-        <span className={tip}>Copy guest emails</span>
+        <span className={tip}>{tr("copyGuestEmails2")}</span>
       </div>
       <div className="group relative">
         <button onClick={mail} className={"flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-violet-600" + faded}><Mail size={15} /></button>
-        <span className={tip}>Email guests</span>
+        <span className={tip}>{tr("emailGuests2")}</span>
       </div>
     </div>
   );
@@ -1620,11 +1765,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   // "error" is intentionally excluded: a failed capture never shows anywhere -
   // it's either a real report (recorded) or nothing at all.
   const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing"];
-  const sourceOpts = useMemo(() => [{ value: "all", label: "All sources" }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
-  const folderOpts = useMemo(() => [{ value: "all", label: "All folders" }, ...[...new Set(meetings.flatMap((m) => m.folders || (m.folder ? [m.folder] : [])).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
-  const typeOpts = [{ value: "all", label: "All types" }, { value: "completed", label: "Completed" }, { value: "processing", label: "In progress" }];
-  const dateOpts = [{ value: "all", label: "Anytime" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }];
-  const ownerOpts = [{ value: "all", label: "All Reports" }, { value: "mine", label: "My reports" }, { value: "real", label: "Recorded by OctoMeet" }];
+  const sourceOpts = useMemo(() => [{ value: "all", label: tr("allSources") }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
+  const folderOpts = useMemo(() => [{ value: "all", label: tr("allFoldersOpt") }, ...[...new Set(meetings.flatMap((m) => m.folders || (m.folder ? [m.folder] : [])).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
+  const typeOpts = [{ value: "all", label: tr("allTypes2") }, { value: "completed", label: tr("completed2") }, { value: "processing", label: tr("inProgress") }];
+  const dateOpts = [{ value: "all", label: tr("anytimeOpt") }, { value: "today", label: tr("todayOpt") }, { value: "week", label: tr("thisWeekOpt") }, { value: "month", label: tr("thisMonthOpt") }];
+  const ownerOpts = [{ value: "all", label: tr("allReportsOpt") }, { value: "mine", label: tr("myReportsOpt") }, { value: "real", label: tr("recordedByOctomeet") }];
 
   // Date & Time column sort direction - newest first by default; the header toggles it.
   const [sortDir, setSortDir] = useState("desc");
@@ -1715,19 +1860,19 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 ) : <Loader2 size={15} className="animate-spin text-violet-600" />}
                 <span className="flex-1 text-sm font-medium text-slate-700">
                   {live.length
-                    ? <>OctoMeet is <b className="text-rose-700">recording</b> “{live[0].title}”{live.length > 1 ? ` +${live.length - 1} more` : ""} - the AI report will appear here automatically.</>
-                    : <>Generating <b className="text-violet-700">{proc.length}</b> AI report{proc.length > 1 ? "s" : ""} from your meeting{proc.length > 1 ? "s" : ""}… this updates automatically.</>}
+                    ? tf("liveRecordingBanner", { title: live[0].title, more: live.length > 1 ? ` +${live.length - 1} more` : "" })
+                    : tf("generatingReportsBanner", { n: proc.length, s: proc.length > 1 ? "s" : "" })}
                 </span>
-                <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> Refresh</button>
+                <button onClick={() => { if (onRefresh) onRefresh(); }} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> {tr("refreshBtn")}</button>
               </div>
             )}
             {tab === "reports" && showCrm && (
               <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-violet-50 px-4 py-3">
-                <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">✨ NEW!</span>
-                <span className="flex-1 text-sm text-slate-700">Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.</span>
-                <button onClick={() => toast("Connect HubSpot - coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="hubspot" size={14} /></span> Add Hubspot</button>
-                <button onClick={() => toast("Connect Salesforce - coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="salesforce" size={14} /></span> Add Salesforce</button>
-                <button onClick={() => setShowCrm(false)} className="text-[13px] font-medium text-slate-500 hover:text-slate-700">Dismiss</button>
+                <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">✨ {tr("newBadge")}</span>
+                <span className="flex-1 text-sm text-slate-700">{tr("crmBannerMsg")}</span>
+                <button onClick={() => toast("Connect HubSpot - coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="hubspot" size={14} /></span> {tr("addHubspot")}</button>
+                <button onClick={() => toast("Connect Salesforce - coming soon")} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-semibold text-white hover:bg-slate-800"><span className="rounded bg-white p-0.5"><BrandIcon name="salesforce" size={14} /></span> {tr("addSalesforce")}</button>
+                <button onClick={() => setShowCrm(false)} className="text-[13px] font-medium text-slate-500 hover:text-slate-700">{tr("dismiss")}</button>
               </div>
             )}
 
@@ -1746,7 +1891,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               <FilterDropdown label={t("source")} value={fSource} onChange={setFSource} options={sourceOpts} />
               <FilterDropdown label={t("folder")} value={fFolder} onChange={setFFolder} options={folderOpts} />
               {(fOwner !== "all" || fDate !== "all" || fType !== "all" || fSource !== "all" || fFolder !== "all") && (
-                <button onClick={() => { setFOwner("all"); setFDate("all"); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">Clear filters</button>
+                <button onClick={() => { setFOwner("all"); setFDate("all"); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">{tr("clearFilters")}</button>
               )}
               <div className="flex-1" />
               {/* Bulk actions: always visible + active-looking. Hover shows a hint until a selection is made. */}
@@ -1771,9 +1916,9 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               <div className="mb-1 flex items-center gap-3">
                 <button onClick={toggleAll} className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 transition hover:text-violet-700">
                   <span className={"flex h-4 w-4 items-center justify-center rounded border " + (allSelected ? "border-violet-600 bg-violet-600 text-white" : "border-slate-300 text-transparent")}><Check size={11} /></span>
-                  {allSelected ? "Deselect all" : "Select all"}
+                  {allSelected ? tr("deselectAll") : tr("selectAll2")}
                 </button>
-                {sel.size > 0 && <span className="text-[12px] font-semibold text-violet-600">{sel.size} selected</span>}
+                {sel.size > 0 && <span className="text-[12px] font-semibold text-violet-600">{tf("nSelected", { n: sel.size })}</span>}
               </div>
             )}
 
@@ -1789,7 +1934,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                   {t("dateTime")} <ArrowDown size={12} className={"transition-transform " + (sortDir === "asc" ? "rotate-180" : "")} />
                 </button>
                 <div>{t("folders")}</div>
-                <div>Participants</div>
+                <div>{tr("participants2")}</div>
                 <div>{t("owner")}</div>
                 <div></div>
               </div>
@@ -1836,7 +1981,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                   ))}
                 </div>
               ))}
-              {!filtered.length && <div className="py-16 text-center text-sm text-slate-400">{tab === "incomplete" ? (q ? `No in-progress meetings match “${q}”.` : "No meetings in progress. Live & processing meetings will appear here.") : (q ? `No reports match “${q}”.` : "No reports yet.")}</div>}
+              {!filtered.length && <div className="py-16 text-center text-sm text-slate-400">{tab === "incomplete" ? (q ? tf("noIncompleteMatch", { q }) : tr("noMeetingsInProgress")) : (q ? tf("noReportsMatch", { q }) : tr("noReportsYet2"))}</div>}
             </div>
             )}
           </>
@@ -1858,7 +2003,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setDeleting(null)}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center gap-2"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-50 text-rose-600"><Trash2 size={18} /></span><h3 className="text-base font-bold text-slate-900">Delete Report</h3></div>
-            <p className="text-[13px] leading-relaxed text-slate-500">Delete <b className="text-slate-700">“{deleting.title}”</b>? This permanently removes the report and its analysis. This can't be undone.</p>
+            <p className="text-[13px] leading-relaxed text-slate-500">{tf("deleteReportConfirm", { title: deleting.title })}</p>
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setDeleting(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
               <button onClick={confirmDelete} className="rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-rose-500">Delete Report</button>
@@ -1880,9 +2025,9 @@ function Placeholder({ section, onReports, t }) {
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-500"><Icon size={26} /></div>
       <h2 className="text-xl font-bold text-slate-800">{section ? t(section.tkey) : ""}</h2>
       <p className="mt-1 max-w-md text-sm text-slate-500">
-        This section is coming soon. For now, the <b>Reports</b> screen is fully working.
+        {tr("sectionComingSoon")}
       </p>
-      <button onClick={onReports} className="mt-5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">Go to Reports</button>
+      <button onClick={onReports} className="mt-5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">{tr("goToReports")}</button>
     </div>
   );
 }
@@ -2173,7 +2318,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   ];
   const links = [{ m: 15 }, { m: 30 }, { m: 60 }, { m: 90 }];
   const fmtEv = (iso) => {
-    try { const d = new Date(iso); return { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) }; }
+    try { const d = new Date(iso); return { date: d.toLocaleDateString(LOC(), { weekday: "short", month: "short", day: "numeric" }), time: d.toLocaleTimeString(LOC(), { hour: "numeric", minute: "2-digit" }) }; }
     catch { return { date: iso, time: "" }; }
   };
   const totalTime = (startIso, endIso, guests) => {
@@ -2884,11 +3029,11 @@ function MeetingPolicyView({ onAsk }) {
       <SectionTop title="Meeting Policy" onAsk={onAsk} />
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-2xl space-y-5">
-          <SecHead icon={ShieldCheck} title="Meeting Policy" desc="Set organization-wide rules for how Octomeet joins, records, and shares meetings." />
-          <div className="rounded-lg bg-violet-50 p-3 text-[13px] text-violet-700">These defaults apply to everyone in your workspace (octomeet.ai). Members can be allowed to override them below.</div>
+          <SecHead icon={ShieldCheck} title={tr("meetingPolicyHead")} desc={tr("meetingPolicyDesc")} />
+          <div className="rounded-lg bg-violet-50 p-3 text-[13px] text-violet-700">{tr("policyDefaultsNote")}</div>
 
           <div className="text-sm font-bold text-slate-800">Auto-Join</div>
-          <ToggleRow title="Auto-Join meetings" desc="Octomeet automatically joins scheduled meetings from connected calendars." on={p.autoJoin} onChange={(v) => set1("autoJoin", v)}>
+          <ToggleRow title={tr("autoJoinMeetings")} desc="Octomeet automatically joins scheduled meetings from connected calendars." on={p.autoJoin} onChange={(v) => set1("autoJoin", v)}>
             {p.autoJoin && (
               <div className="mt-3 space-y-3">
                 <div>
@@ -2905,26 +3050,26 @@ function MeetingPolicyView({ onAsk }) {
             )}
           </ToggleRow>
 
-          <div className="text-sm font-bold text-slate-800">Recording & Data</div>
-          <ToggleRow title="Allow recording & transcription" desc="Let Octomeet record and transcribe meetings for reports." on={p.recording} onChange={(v) => set1("recording", v)} />
-          <ToggleRow title="Require participant consent" desc="Announce and require consent before recording starts." on={p.consent} onChange={(v) => set1("consent", v)} />
+          <div className="text-sm font-bold text-slate-800">{tr("recordingData")}</div>
+          <ToggleRow title={tr("allowRecordingTranscription")} desc="Let Octomeet record and transcribe meetings for reports." on={p.recording} onChange={(v) => set1("recording", v)} />
+          <ToggleRow title={tr("requireConsent")} desc="Announce and require consent before recording starts." on={p.consent} onChange={(v) => set1("consent", v)} />
           <ToggleRow title="Affective metrics" desc="Allow engagement, sentiment, charisma and bias scoring across the org." on={p.affective} onChange={(v) => set1("affective", v)} />
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="text-sm font-semibold text-slate-800">Data retention</div>
-            <p className="mb-2 text-[13px] text-slate-500">How long meeting data is kept before automatic deletion.</p>
+            <div className="text-sm font-semibold text-slate-800">{tr("dataRetention")}</div>
+            <p className="mb-2 text-[13px] text-slate-500">{tr("dataRetentionDesc")}</p>
             <select value={retention} onChange={(e) => set1("retention", e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400">
-              <option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="forever">Keep forever</option>
+              <option value="30">{tr("days30")}</option><option value="90">90 days</option><option value="365">1 year</option><option value="forever">{tr("keepForever")}</option>
             </select>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="text-sm font-semibold text-slate-800">Notetaker display name</div>
-            <p className="mb-2 text-[13px] text-slate-500">The name the bot shows as when it joins your meetings.</p>
+            <div className="text-sm font-semibold text-slate-800">{tr("notetakerDisplayName")}</div>
+            <p className="mb-2 text-[13px] text-slate-500">{tr("notetakerNameDesc")}</p>
             <input value={p.notetakerName} onChange={(e) => set1("notetakerName", e.target.value)} placeholder="OctoMeet AI" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
           </div>
 
-          <div className="text-sm font-bold text-slate-800">Permissions</div>
-          <ToggleRow title="Allow external report sharing" desc="Members can share reports with people outside octomeet.ai." on={p.externalShare} onChange={(v) => set1("externalShare", v)} />
-          <ToggleRow title="Lock settings for members" desc="Members cannot override these workspace defaults." on={p.lockMembers} onChange={(v) => set1("lockMembers", v)} />
+          <div className="text-sm font-bold text-slate-800">{tr("permissions")}</div>
+          <ToggleRow title={tr("allowExternalSharing")} desc="Members can share reports with people outside octomeet.ai." on={p.externalShare} onChange={(v) => set1("externalShare", v)} />
+          <ToggleRow title={tr("lockSettingsMembers")} desc="Members cannot override these workspace defaults." on={p.lockMembers} onChange={(v) => set1("lockMembers", v)} />
         </div>
       </div>
     </>
@@ -3031,10 +3176,10 @@ function LoginView({ onLogin, onGoogle }) {
     } catch (er) { /* ignore */ }
   }, []);
   const providers = [
-    { label: "Continue with Google", icon: <GoogleIcon />, real: true },
-    { label: "Continue with Microsoft", icon: <MicrosoftIcon /> },
-    { label: "Continue with Apple", icon: <AppleIcon /> },
-    { label: "Continue with SSO", icon: <KeyRound size={17} className="text-slate-500" /> },
+    { label: tr("continueWithGoogle"), icon: <GoogleIcon />, real: true },
+    { label: tr("continueWithMicrosoft"), icon: <MicrosoftIcon /> },
+    { label: tr("continueWithApple"), icon: <AppleIcon /> },
+    { label: tr("continueWithSSO"), icon: <KeyRound size={17} className="text-slate-500" /> },
   ];
   return (
     <div className="rai-body flex min-h-screen w-full items-center justify-center bg-[#F4F5FA] px-4">
@@ -3042,8 +3187,8 @@ function LoginView({ onLogin, onGoogle }) {
       <div className="w-full max-w-sm py-10">
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-3"><OctoLogo size={56} /></div>
-          <h1 className="text-2xl font-bold text-slate-900">{signup ? "Create your OctoMeet AI account" : "Sign in to OctoMeet AI"}</h1>
-          <p className="mt-1 text-sm text-slate-500">{signup ? "It's free to get started - no credit card required." : "Welcome back. Choose how to continue."}</p>
+          <h1 className="text-2xl font-bold text-slate-900">{signup ? tr("createAccountTitle") : tr("signInTitle")}</h1>
+          <p className="mt-1 text-sm text-slate-500">{signup ? tr("signupSubtitle") : tr("signinSubtitle")}</p>
         </div>
         {authError && (
           <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
@@ -3057,18 +3202,18 @@ function LoginView({ onLogin, onGoogle }) {
             </button>
           ))}
           <div className="flex items-center gap-3 py-1 text-[12px] text-slate-400"><span className="h-px flex-1 bg-slate-200" /> or <span className="h-px flex-1 bg-slate-200" /></div>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
-          <button onClick={onLogin} className="w-full rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500">{signup ? "Create account" : "Continue with email"}</button>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder={tr("emailPlaceholder")} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
+          <button onClick={onLogin} className="w-full rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500">{signup ? tr("createAccountBtn") : tr("continueWithEmail")}</button>
         </div>
 
         <div className="mt-4 text-center text-[13px] text-slate-500">
           {signup
             ? <>Already have an account? <button onClick={() => setMode("signin")} className="font-semibold text-violet-600">Sign in</button></>
-            : <>New to Octomeet? <button onClick={() => setMode("signup")} className="font-semibold text-violet-600">Create an account</button></>}
+            : <>{tr("newToOctomeet")} <button onClick={() => setMode("signup")} className="font-semibold text-violet-600">{tr("createAnAccountLink")}</button></>}
         </div>
 
         <div className="relative mt-6 flex justify-center">
-          <button onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)} className="text-[13px] font-medium text-violet-600 underline">Why does Octomeet need calendar access?</button>
+          <button onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)} className="text-[13px] font-medium text-violet-600 underline">{tr("whyCalendarAccess")}</button>
           {tip && (
             <div className="absolute bottom-full left-1/2 z-10 mb-2 w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-2xl">
               <div className="text-sm font-bold text-slate-800">Effortless meeting notes.</div>
@@ -3090,19 +3235,19 @@ function LoginView({ onLogin, onGoogle }) {
 /* ============================ SUPPORT / LOGOUT ==================== */
 function SupportView({ onBack }) {
   const cards = [
-    { icon: FileText, title: "Help Center", desc: "Browse guides and articles." },
-    { icon: MessageSquareText, title: "Chat with us", desc: "Get help from our support team." },
+    { icon: FileText, title: tr("helpCenter"), desc: "Browse guides and articles." },
+    { icon: MessageSquareText, title: tr("chatWithUs"), desc: "Get help from our support team." },
     { icon: Mail, title: "Email support", desc: "support@octomeet.ai" },
-    { icon: Sparkles, title: "What's new", desc: "Latest features and updates." },
+    { icon: Sparkles, title: tr("whatsNew"), desc: "Latest features and updates." },
   ];
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
         <button onClick={onBack}><ChevronLeft size={18} className="text-slate-400" /></button>
-        <h1 className="text-lg font-bold text-slate-900">Support</h1>
+        <h1 className="text-lg font-bold text-slate-900">{tr("support")}</h1>
       </div>
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <h2 className="text-xl font-bold text-slate-900">How can we help?</h2>
+        <h2 className="text-xl font-bold text-slate-900">{tr("howCanWeHelp")}</h2>
         <p className="mt-1 text-sm text-slate-500">Find answers, contact us, or send feedback.</p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           {cards.map((c) => (
@@ -3120,11 +3265,11 @@ function LogoutView({ onCancel, onLogout }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-500"><LogOut size={26} /></div>
-      <h2 className="text-xl font-bold text-slate-800">Log out of Octomeet?</h2>
-      <p className="mt-1 max-w-sm text-sm text-slate-500">You'll need to sign in again with Google to access your meetings and reports.</p>
+      <h2 className="text-xl font-bold text-slate-800">{tr("logoutConfirmTitle")}</h2>
+      <p className="mt-1 max-w-sm text-sm text-slate-500">{tr("logoutConfirmDesc")}</p>
       <div className="mt-5 flex gap-3">
         <button onClick={onCancel} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-        <button onClick={onLogout} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Log out</button>
+        <button onClick={onLogout} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">{tr("logout")}</button>
       </div>
     </div>
   );
@@ -3143,59 +3288,59 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
     <div className="flex-1 overflow-y-auto">
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
         <button onClick={onBack}><ChevronLeft size={18} className="text-slate-400" /></button>
-        <h1 className="text-lg font-bold text-slate-900">Plan &amp; Billing</h1>
+        <h1 className="text-lg font-bold text-slate-900">{tr("planBilling")}</h1>
       </div>
       <div className="mx-auto max-w-5xl px-6 py-6">
         <div className="grid gap-5 lg:grid-cols-2">
           {/* Current Plan */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-900">Current Plan</h2>
-              <button onClick={onComparePlans} className="flex items-center gap-1 text-[13px] font-semibold text-violet-600 hover:text-violet-800">Compare plans <ArrowDown size={13} className="-rotate-90" /></button>
+              <h2 className="text-base font-bold text-slate-900">{tr("currentPlan")}</h2>
+              <button onClick={onComparePlans} className="flex items-center gap-1 text-[13px] font-semibold text-violet-600 hover:text-violet-800">{tr("comparePlans")} <ArrowDown size={13} className="-rotate-90" /></button>
             </div>
             <div className="flex items-center gap-2"><span className="text-xl font-bold text-slate-900">{planName}</span><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">Monthly</span></div>
             <p className="mt-1 text-[13px] text-slate-500">Next invoice July 4, 2026. ($29.75)</p>
             <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-              <button onClick={onComparePlans} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Change plan</button>
-              <button onClick={() => toast("Create a Workspace - coming soon")} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Create a Workspace</button>
-              <button onClick={() => { if (window.confirm("Cancel your plan? You'll keep access until the end of the billing period.")) toast("Plan cancellation requested"); }} className="rounded-lg px-4 py-2 text-[13px] font-semibold text-rose-600 hover:bg-rose-50">Cancel plan</button>
+              <button onClick={onComparePlans} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">{tr("changePlan")}</button>
+              <button onClick={() => toast("Create a Workspace - coming soon")} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">{tr("createWorkspace")}</button>
+              <button onClick={() => { if (window.confirm(tr("cancelPlanConfirm"))) toast("Plan cancellation requested"); }} className="rounded-lg px-4 py-2 text-[13px] font-semibold text-rose-600 hover:bg-rose-50">{tr("cancelPlan")}</button>
             </div>
           </div>
           {/* License Usage */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 text-base font-bold text-slate-900">License Usage</h2>
+            <h2 className="mb-3 text-base font-bold text-slate-900">{tr("licenseUsage")}</h2>
             <p className="text-sm text-slate-600">1 of 1 license is in use</p>
             <div className="mt-2 h-2 w-full rounded-full bg-slate-100"><div className="h-2 rounded-full bg-violet-600" style={{ width: "100%" }} /></div>
-            <button onClick={() => toast("Add licenses - coming soon")} className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Add licenses</button>
+            <button onClick={() => toast("Add licenses - coming soon")} className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">{tr("addLicenses")}</button>
           </div>
           {/* File Upload Credits */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 text-base font-bold text-slate-900">File Upload Credits</h2>
+            <h2 className="mb-3 text-base font-bold text-slate-900">{tr("fileUploadCredits")}</h2>
             <div className="flex gap-8">
               <div><div className="text-[12px] text-slate-400">Monthly credits</div><div className="text-xl font-bold text-slate-900">200 minutes</div></div>
               <div><div className="text-[12px] text-slate-400">Purchased credits</div><div className="text-xl font-bold text-slate-900">0 minutes</div></div>
             </div>
             <p className="mt-1 text-[12px] text-slate-400">Resets Jul 1, 2026</p>
-            <button onClick={() => toast("Buy file upload credits - coming soon")} className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Buy file upload credits</button>
+            <button onClick={() => toast("Buy file upload credits - coming soon")} className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">{tr("buyUploadCredits")}</button>
           </div>
           {/* Payment Method */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 text-base font-bold text-slate-900">Payment Method</h2>
+            <h2 className="mb-3 text-base font-bold text-slate-900">{tr("paymentMethod")}</h2>
             <div className="flex items-center justify-between rounded-xl border border-slate-100 p-3">
               <span className="flex items-center gap-2 text-sm text-slate-700">Visa ending in 9878 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">Default</span></span>
               <span className="text-[13px] text-slate-400">Expires 1/2030</span>
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <button onClick={() => toast("Update payment method - coming soon")} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">Update payment method</button>
+              <button onClick={() => toast("Update payment method - coming soon")} className="rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500">{tr("updatePaymentMethod")}</button>
               <button onClick={() => toast("Add Tax ID - coming soon")} className="flex items-center gap-1 rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-violet-600 hover:bg-slate-50"><Plus size={14} /> Add Tax ID</button>
             </div>
           </div>
         </div>
         {/* Billing History */}
-        <h2 className="mb-2 mt-7 text-base font-bold text-slate-900">Billing History</h2>
+        <h2 className="mb-2 mt-7 text-base font-bold text-slate-900">{tr("billingHistory")}</h2>
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div className="grid grid-cols-[1fr_1.4fr_0.6fr_1fr_40px] border-b border-slate-200 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
-            <div>Invoice Date</div><div>Description</div><div>Qty</div><div>Billing Period</div><div></div>
+            <div>{tr("invoiceDate")}</div><div>{tr("description")}</div><div>Qty</div><div>{tr("billingPeriod")}</div><div></div>
           </div>
           {history.map((h) => (
             <div key={h.date} className="grid grid-cols-[1fr_1.4fr_0.6fr_1fr_40px] items-center border-b border-slate-100 px-4 py-3 text-[13px] text-slate-600 last:border-0">
@@ -3239,12 +3384,12 @@ function PlansView({ onBack }) {
     <div className="flex-1 overflow-y-auto">
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
         <button onClick={onBack}><ChevronLeft size={18} className="text-slate-400" /></button>
-        <h1 className="text-lg font-bold text-slate-900">Plans &amp; Pricing</h1>
+        <h1 className="text-lg font-bold text-slate-900">{tr("plansPricing2")}</h1>
       </div>
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-7 flex flex-col items-center text-center">
           <span className="rounded-full bg-violet-50 px-3 py-1 text-[12px] font-semibold text-violet-700">Your current plan: Enterprise</span>
-          <h2 className="mt-3 text-2xl font-bold text-slate-900">Choose the plan that fits your team</h2>
+          <h2 className="mt-3 text-2xl font-bold text-slate-900">{tr("choosePlanHeading")}</h2>
           <div className="mt-4 inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 text-sm">
             <button onClick={() => setAnnual(true)} className={"rounded-md px-3 py-1.5 font-medium transition " + (annual ? "bg-violet-600 text-white" : "text-slate-500")}>Annual <span className="text-[11px] opacity-80">-25%</span></button>
             <button onClick={() => setAnnual(false)} className={"rounded-md px-3 py-1.5 font-medium transition " + (!annual ? "bg-violet-600 text-white" : "text-slate-500")}>Monthly</button>
@@ -3253,7 +3398,7 @@ function PlansView({ onBack }) {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {plans.map((p) => (
             <div key={p.name} className={"relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm " + (p.popular ? "border-violet-400 ring-2 ring-violet-200" : "border-slate-200")}>
-              {p.popular && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-violet-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Most Popular</span>}
+              {p.popular && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-violet-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">{tr("mostPopular")}</span>}
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-bold text-slate-900">{p.name}</h3>
                 {p.current && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Current</span>}
@@ -3354,7 +3499,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
     reader.readAsDataURL(f);
   };
   const setP = (k, val) => setProfile((p) => ({ ...p, [k]: val }));
-  const SUBNAV = ["Profile & Account", "Integrations", "Meeting Recording", "Report Content", "Report Sharing", "Notifications", "Ask Octo", "Smart Scheduler", "Folders", "Contacts & Groups", "Custom Vocabulary", "Advanced"];
+  const SUBNAV = [tr("navProfileAccount"), "Integrations", tr("navMeetingRecording"), tr("navReportContent"), tr("navReportSharing"), "Notifications", "Ask Octo", tr("navSmartScheduler"), "Folders", tr("navContactsGroups"), tr("navCustomVocabulary"), "Advanced"];
   const [sec, setSec] = useState(0);
   const [tg, setTg] = useState({
     autoJoinCal: true, autoJoinUnsched: true, autoNotes: true, transcription: true, playback: true, affective: true,
@@ -3377,7 +3522,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
     <div className="flex-1 overflow-y-auto">
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-6 py-3.5">
         <button onClick={onBack}><ChevronLeft size={18} className="text-slate-400" /></button>
-        <h1 className="text-lg font-bold text-slate-900">Account Settings</h1>
+        <h1 className="text-lg font-bold text-slate-900">{tr("accountSettings")}</h1>
       </div>
 
       <div className="flex">
@@ -3402,7 +3547,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
                   {profile.photo ? <img src={profile.photo} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" /> : initialsOf(profile.name)}
                 </div>
                 <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} className="hidden" />
-                <button onClick={() => fileRef.current && fileRef.current.click()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Upload photo</button>
+                <button onClick={() => fileRef.current && fileRef.current.click()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">{tr("uploadPhoto")}</button>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white">
                 <EditableField label="Name" value={profile.name} onSave={(v) => setP("name", v)} />
@@ -3417,7 +3562,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
                 <EditableField label="Primary Email" value={profile.email} onSave={(v) => setP("email", v)} />
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-5">
-                <label className="text-sm font-semibold text-slate-800">Default Language</label>
+                <label className="text-sm font-semibold text-slate-800">{tr("defaultLanguage")}</label>
                 <p className="mb-2 text-[13px] text-slate-500">Set your default language for the Octomeet dashboard</p>
                 <select value={lang} onChange={(e) => setLang(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400">
                   {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
@@ -3579,7 +3724,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
               <div className="rounded-lg bg-violet-50 p-3 text-[13px] text-violet-700">Maximum 100 entries.</div>
               <div className="text-sm font-semibold text-slate-700">{vocab.length} custom words</div>
               <div className="flex gap-2">
-                <input value={newWord} onChange={(e) => setNewWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} placeholder="Add a word, name or term…" className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
+                <input value={newWord} onChange={(e) => setNewWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} placeholder={tr("addWordPlaceholder")} className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
                 <button onClick={() => { if (newWord.trim()) { setVocab((v) => [...v, newWord.trim()]); setNewWord(""); toast("Word added"); } }} className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"><Plus size={16} /> Add new</button>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -3883,7 +4028,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
         try {
           const sr = await fetch("/api/dub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "status", meetingId, lang }) });
           const sd = await sr.json();
-          if (sd.ready) { clearInterval(dubPollRef.current); dubPollRef.current = null; setDubUrl(`/api/dub?meetingId=${encodeURIComponent(meetingId)}&lang=${encodeURIComponent(lang)}${shareTok ? `&share=${encodeURIComponent(shareTok)}` : ""}`); setDubStatus("ready"); startedRef.current = false; setEverPlayed(false); toast("Dubbed video ready"); }
+          if (sd.ready) { clearInterval(dubPollRef.current); dubPollRef.current = null; setDubUrl(`/api/dub?meetingId=${encodeURIComponent(meetingId)}&lang=${encodeURIComponent(lang)}${shareTok ? `&share=${encodeURIComponent(shareTok)}` : ""}`); setDubStatus("ready"); startedRef.current = false; setEverPlayed(false); toast(tr("dubbedVideoReady")); }
           else if (sd.status === "failed") { clearInterval(dubPollRef.current); dubPollRef.current = null; setDubStatus("error"); toast("Dubbing failed - try again"); }
         } catch (e) {}
       }, 6000);
@@ -3977,7 +4122,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       {!collapsed && <div className="pointer-events-none absolute inset-0 z-20 bg-black transition-opacity duration-300" style={{ opacity: fading ? 1 : 0 }} />}
       {/* Collapse the video to just its control bar (toggle is in the bar when collapsed). */}
       {!collapsed && (
-        <button onClick={() => setCollapsed(true)} title="Collapse video"
+        <button onClick={() => setCollapsed(true)} title={tr("collapseVideo")}
           className="absolute right-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg bg-white/90 text-violet-700 shadow transition hover:bg-white">
           <ChevronsDownUp size={18} />
         </button>
@@ -4018,7 +4163,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       {/* Subtitles overlay (off by default; language chosen via the CC menu). */}
       {!collapsed && cc && (capText || subBusy) && (
         <div className="pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-6" style={{ transform: "translateZ(0)" }}>
-          <span className="line-clamp-2 max-w-[70%] rounded-lg bg-black/80 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white shadow-lg" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.95)" }}>{subBusy && !subCache[subLang] ? "Translating subtitles…" : capText}</span>
+          <span className="line-clamp-2 max-w-[70%] rounded-lg bg-black/80 px-3 py-1.5 text-center text-[15px] font-medium leading-snug text-white shadow-lg" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.95)" }}>{subBusy && !subCache[subLang] ? tr("translatingSubtitles") : capText}</span>
         </div>
       )}
       {/* Hover menu: smart playback modes (only when paused so it doesn't block viewing). */}
@@ -4051,7 +4196,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
                   </button>
                 </div>
               ))}
-              <div className="mt-1 px-3 text-[13px] text-white/90">Playback speed</div>
+              <div className="mt-1 px-3 text-[13px] text-white/90">{tr("playbackSpeed2")}</div>
               <div className="relative mx-4 mb-1 mt-3 flex items-center justify-between">
                 <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/20" />
                 {RATES.map((r) => (
@@ -4064,7 +4209,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
                   default (1x, correctly selected) look like a wrong speed. */}
               <div className="relative mx-4 mb-1 h-4 text-[10px] text-white/40">
                 <span className="absolute left-0">.5x</span>
-                <span className="absolute -translate-x-1/2" style={{ left: `${(2 / 6) * 100}%` }}>Normal</span>
+                <span className="absolute -translate-x-1/2" style={{ left: `${(2 / 6) * 100}%` }}>{tr("speedNormal")}</span>
                 <span className="absolute right-0">2x</span>
               </div>
             </div>
@@ -4121,7 +4266,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
                 </div>
               </div>
             )}
-            <button onClick={toggleMute} title="Mute / volume" className="hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
+            <button onClick={toggleMute} title={tr("muteVolume")} className="hover:text-violet-300">{muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
           </div>
           {/* Subtitles: own button + language menu (off by default). */}
           <div className="relative">
@@ -4139,13 +4284,13 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
                 </div>
               </>
             )}
-            <button onClick={() => setSubMenu((s) => !s)} title="Subtitles"
+            <button onClick={() => setSubMenu((s) => !s)} title={tr("subtitlesTitle")}
               className={"flex h-5 items-center rounded px-1 text-[11px] font-bold transition hover:text-violet-300 " + (cc ? "bg-white text-neutral-900" : "")}>CC</button>
           </div>
-          <button onClick={() => setShowSettings((s) => !s)} title="Settings (playback speed & overlays)" className="flex items-center gap-0.5 hover:text-violet-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
-          <button onClick={pip} title="Picture in picture (click the screen or this button to go back)" className="hover:text-violet-300"><PictureInPicture2 size={16} /></button>
-          <button onClick={fs} title="Fullscreen" className="hover:text-violet-300"><Maximize2 size={16} /></button>
-          {collapsed && <button onClick={() => setCollapsed(false)} title="Expand Video" className="hover:text-violet-300"><ChevronsUpDown size={16} /></button>}
+          <button onClick={() => setShowSettings((s) => !s)} title={tr("settingsTitle")} className="flex items-center gap-0.5 hover:text-violet-300"><Settings size={16} />{rate !== 1 && <span className="text-[10px] font-semibold">{rate}x</span>}</button>
+          <button onClick={pip} title={tr("pipTitle")} className="hover:text-violet-300"><PictureInPicture2 size={16} /></button>
+          <button onClick={fs} title={tr("fullscreen")} className="hover:text-violet-300"><Maximize2 size={16} /></button>
+          {collapsed && <button onClick={() => setCollapsed(false)} title={tr("expandVideo")} className="hover:text-violet-300"><ChevronsUpDown size={16} /></button>}
         </div>
       </div>
     </div>
@@ -4156,7 +4301,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
 function TimeChip({ t, onClick, className = "" }) {
   if (!t) return null;
   return (
-    <button onClick={onClick} title="Jump to this moment in the video"
+    <button onClick={onClick} title={tr("jumpToMoment")}
       className={"inline-flex shrink-0 items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-violet-600 transition hover:bg-violet-100 " + className}>
       <Play size={9} fill="currentColor" />{t}
     </button>
@@ -4211,7 +4356,7 @@ function AskPanel({ meeting, shared, shareTok }) {
   };
 
   const suggested = (meeting.keyQA || []).map((q) => q.q).filter(Boolean).slice(0, 4);
-  const sug = suggested.length ? suggested : ["Summarize the key decisions", "What are the action items and who owns them?", "What are the next steps?", "What questions were left open?"];
+  const sug = suggested.length ? suggested : [tr("sugSummarizeDecisions"), tr("sugActionItemsOwners"), tr("sugNextSteps"), tr("sugOpenQuestions")];
 
   const buildContext = () => {
     const tr = (meeting.transcript || []).map((t) => `${t.speaker}: ${t.text}`).join("\n").slice(0, 70000);
@@ -4236,15 +4381,15 @@ function AskPanel({ meeting, shared, shareTok }) {
 
   return (
     <aside className="hidden w-[340px] shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
-      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3"><Sparkles size={16} className="text-violet-500" /><span className="text-sm font-bold text-slate-900">Ask Octo</span></div>
+      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3"><Sparkles size={16} className="text-violet-500" /><span className="text-sm font-bold text-slate-900">{tr("askOcto")}</span></div>
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {msgs.length === 0 && <p className="text-[13px] leading-relaxed text-slate-400">Ask anything about this meeting - Octo answers from the transcript & report.</p>}
+        {msgs.length === 0 && <p className="text-[13px] leading-relaxed text-slate-400">{tr("askOctoEmptyState")}</p>}
         {msgs.map((m, i) => (
           <div key={i} className={m.role === "user"
             ? "ml-auto max-w-[88%] rounded-2xl bg-violet-600 px-3 py-2 text-sm text-white"
             : "mr-auto max-w-[92%] whitespace-pre-wrap rounded-2xl bg-slate-100 px-3 py-2 text-sm leading-relaxed text-slate-700"}>{m.text}</div>
         ))}
-        {busy && <div className="mr-auto flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" />Octo is thinking…</div>}
+        {busy && <div className="mr-auto flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" />{tr("octoThinking")}</div>}
         <div ref={endRef} />
       </div>
       {msgs.length === 0 && (
@@ -4259,8 +4404,8 @@ function AskPanel({ meeting, shared, shareTok }) {
           <>
             <div className="fixed inset-0 z-10" onClick={() => setShowComposer(false)} />
             <div className="absolute bottom-16 left-3 right-3 z-20 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl">
-              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-slate-800"><Presentation size={14} className="text-violet-600" /> Presentation</div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Slides</div>
+              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-slate-800"><Presentation size={14} className="text-violet-600" /> {tr("presentation2")}</div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tr("slides2")}</div>
               <div className="mb-3 flex gap-1.5">
                 {[5, 8, 10, 12].map((n) => (
                   <button key={n} onClick={() => setSlideCount(n)} className={"flex-1 rounded-lg border py-1.5 text-[13px] font-semibold " + (slideCount === n ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>{n}</button>
@@ -4291,12 +4436,12 @@ function AskPanel({ meeting, shared, shareTok }) {
                   </div>
                 </div>
               )}
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Images</div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tr("images2")}</div>
               <div className="mb-3 flex gap-1.5">
-                <button onClick={() => setWithImages(false)} className={"flex-1 rounded-lg border py-1.5 text-[12px] font-semibold " + (!withImages ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>No images</button>
-                <button onClick={() => setWithImages(true)} className={"flex-1 rounded-lg border py-1.5 text-[12px] font-semibold " + (withImages ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>✨ AI images</button>
+                <button onClick={() => setWithImages(false)} className={"flex-1 rounded-lg border py-1.5 text-[12px] font-semibold " + (!withImages ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>{tr("noImages2")}</button>
+                <button onClick={() => setWithImages(true)} className={"flex-1 rounded-lg border py-1.5 text-[12px] font-semibold " + (withImages ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600")}>{tr("aiImages2")}</button>
               </div>
-              {withImages && <div className="mb-3 -mt-1 text-[11px] leading-snug text-slate-400">Generates a few images based on the meeting (slower, ~30s).</div>}
+              {withImages && <div className="mb-3 -mt-1 text-[11px] leading-snug text-slate-400">{tr("aiImagesHint")}</div>}
               {atts.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {atts.map((a, i) => (<span key={i} className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-600">{a.kind === "image" ? <ImagePlus size={11} /> : <Paperclip size={11} />}{(a.name || "image").slice(0, 18)}<button onClick={() => setAtts((x) => x.filter((_, j) => j !== i))}><X size={11} /></button></span>))}
@@ -4304,17 +4449,17 @@ function AskPanel({ meeting, shared, shareTok }) {
               )}
               <div className="flex items-center gap-2">
                 <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-slate-50">
-                  <Paperclip size={13} /> Attach
+                  <Paperclip size={13} /> {tr("attach")}
                   <input type="file" multiple accept="image/*,.txt,.md,.csv,text/*" className="hidden" onChange={(e) => onFiles(e.target.files)} />
                 </label>
-                <button onClick={() => generate(false)} disabled={genBusy} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{genBusy ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate</>}</button>
+                <button onClick={() => generate(false)} disabled={genBusy} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{genBusy ? <><Loader2 size={13} className="animate-spin" /> {tr("generating")}</> : <><Sparkles size={13} /> {tr("generate")}</>}</button>
               </div>
             </div>
           </>
         )}
         <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 focus-within:border-violet-400">
-          <button onClick={() => canPresent ? setShowComposer((v) => !v) : toast("Available once the report is ready")} disabled={genBusy} title="Generate a presentation from this meeting" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 transition hover:bg-violet-200 disabled:opacity-50">{genBusy ? <Loader2 size={18} className="animate-spin" /> : <Presentation size={18} />}</button>
-          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} placeholder="Ask Octo anything…" className="flex-1 bg-transparent text-sm outline-none" />
+          <button onClick={() => canPresent ? setShowComposer((v) => !v) : toast(tr("availableWhenReportReady"))} disabled={genBusy} title={tr("generatePresentationTitle")} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 transition hover:bg-violet-200 disabled:opacity-50">{genBusy ? <Loader2 size={18} className="animate-spin" /> : <Presentation size={18} />}</button>
+          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} placeholder={tr("askOctoPlaceholder")} className="flex-1 bg-transparent text-sm outline-none" />
           <button onClick={() => ask()} disabled={busy} className="text-violet-600 transition disabled:text-slate-300"><Send size={16} /></button>
         </div>
       </div>
@@ -4341,7 +4486,7 @@ function RoleDropdown({ role, onChange, onRemove }) {
         <>
           <div className="fixed inset-0 z-[70]" onClick={() => setOpen(false)} />
           <div className="fixed z-[71] w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
-            {[{ k: "Viewer", icon: <Eye size={16} />, d: "Can view and download the detailed meeting report and metrics" }, { k: "Editor", icon: <Pencil size={16} />, d: "Can view the full report, edit the notes and transcript, download, and share" }].map((o) => (
+            {[{ k: "Viewer", icon: <Eye size={16} />, d: tr("roleViewerDesc") }, { k: "Editor", icon: <Pencil size={16} />, d: tr("roleEditorDesc") }].map((o) => (
               <button key={o.k} onClick={() => { onChange(o.k); setOpen(false); }} className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50">
                 <span className="mt-0.5 text-slate-500">{o.icon}</span>
                 <span className="flex-1">
@@ -4351,7 +4496,7 @@ function RoleDropdown({ role, onChange, onRemove }) {
               </button>
             ))}
             <div className="my-1 border-t border-slate-100" />
-            <button onClick={() => { onRemove(); setOpen(false); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[14px] font-medium text-rose-600 hover:bg-rose-50"><MinusCircle size={16} /> Remove Access</button>
+            <button onClick={() => { onRemove(); setOpen(false); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[14px] font-medium text-rose-600 hover:bg-rose-50"><MinusCircle size={16} /> {tr("removeAccess")}</button>
           </div>
         </>
       )}
@@ -4409,9 +4554,9 @@ function DocModal({ loading, doc, meta, onClose, onRegenerate, regenerating }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={onClose}>
       <div className="flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-          <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><Sparkles size={16} className="text-violet-600" /> AI Document</div>
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><Sparkles size={16} className="text-violet-600" /> {tr("aiDocument")}</div>
           <div className="flex items-center gap-2">
-            {onRegenerate && <button onClick={onRegenerate} disabled={loading || regenerating} title="Generate a fresh version" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">{regenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Regenerate</button>}
+            {onRegenerate && <button onClick={onRegenerate} disabled={loading || regenerating} title={tr("generateFreshVersion")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">{regenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} {tr("regenerate")}</button>}
             <button onClick={dlPDF} disabled={loading} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-50"><Download size={14} /> PDF</button>
             <button onClick={dlWord} disabled={loading} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><Download size={14} /> Word</button>
             <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
@@ -4420,8 +4565,8 @@ function DocModal({ loading, doc, meta, onClose, onRegenerate, regenerating }) {
         {loading ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-slate-500">
             <Loader2 size={30} className="animate-spin text-violet-600" />
-            <div className="text-sm font-medium">Generating your document…</div>
-            <div className="text-[12px] text-slate-400">Analyzing the meeting and structuring it</div>
+            <div className="text-sm font-medium">{tr("generatingDocument")}</div>
+            <div className="text-[12px] text-slate-400">{tr("analyzingMeeting")}</div>
           </div>
         ) : (
           <iframe title="document" srcDoc={full} className="w-full flex-1 bg-white" />
@@ -4509,17 +4654,17 @@ function FollowupModal({ data, meetingId, onClose }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-          <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><Mail size={16} className="text-violet-600" /> Follow-up email</div>
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><Mail size={16} className="text-violet-600" /> {tr("followUpEmail")}</div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
         <div className="flex-1 space-y-3 overflow-y-auto p-5">
-          <div><label className="text-[12px] font-semibold text-slate-500">To</label><input value={to} onChange={(e) => setTo(e.target.value)} placeholder="emails, comma separated" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" /></div>
-          <div><label className="text-[12px] font-semibold text-slate-500">Subject</label><input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" /></div>
-          <div><label className="text-[12px] font-semibold text-slate-500">Message</label><textarea value={bodyTxt} onChange={(e) => setBodyTxt(e.target.value)} rows={12} className="mt-1 w-full resize-none rounded-lg border border-slate-200 p-3 text-sm leading-relaxed outline-none focus:border-violet-400" /></div>
+          <div><label className="text-[12px] font-semibold text-slate-500">{tr("toLabel")}</label><input value={to} onChange={(e) => setTo(e.target.value)} placeholder={tr("emailsCommaSeparated")} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" /></div>
+          <div><label className="text-[12px] font-semibold text-slate-500">{tr("subject")}</label><input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400" /></div>
+          <div><label className="text-[12px] font-semibold text-slate-500">{tr("message")}</label><textarea value={bodyTxt} onChange={(e) => setBodyTxt(e.target.value)} rows={12} className="mt-1 w-full resize-none rounded-lg border border-slate-200 p-3 text-sm leading-relaxed outline-none focus:border-violet-400" /></div>
         </div>
         <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3">
-          <button onClick={copy} className="flex items-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-slate-700"><Copy size={14} /> Copy</button>
-          <button onClick={send} disabled={busy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send from my Gmail</button>
+          <button onClick={copy} className="flex items-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-slate-700"><Copy size={14} /> {tr("copy")}</button>
+          <button onClick={send} disabled={busy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {tr("sendFromGmail")}</button>
         </div>
       </div>
     </div>
@@ -4569,7 +4714,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     setLinkAccess(k);
     // Persist: shared-report enforces this server-side (restricted = the public link 403s).
     fetch("/api/share-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, setAccess: k }) })
-      .then((r) => { if (r.ok) toast(k === "public" ? "Anyone with the link can view" : "Public link disabled - only people with access"); })
+      .then((r) => { if (r.ok) toast(k === "public" ? tr("anyoneWithLink") : tr("publicLinkDisabled")); })
       .catch(() => {});
   };
   const [accessOpen, setAccessOpen] = useState(false);
@@ -4597,12 +4742,12 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       try {
         const r = await fetch("/api/send-share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, to: emails, message: msg, role: shareRole, shareToken: shared ? shareTok : undefined }) });
         const d = await r.json();
-        if (r.ok && d.sent) toast(`Report emailed to ${d.sent} ${d.sent > 1 ? "people" : "person"} ✓`);
+        if (r.ok && d.sent) toast(tf("reportEmailedTo", { n: d.sent, people: d.sent > 1 ? "people" : "person" }));
         else if (d.error === "needScope") toast("Reconectá Google (permiso de email): Log out e iniciá sesión de nuevo");
         else toast("No se pudo enviar el email: " + (d.detail || d.error || ""));
       } catch (e) { toast("No se pudo enviar el email"); }
     } else {
-      toast(`Report shared with ${emails.length} ${emails.length > 1 ? "people" : "person"}`);
+      toast(tf("reportSharedWith", { n: emails.length, people: emails.length > 1 ? "people" : "person" }));
     }
   };
 
@@ -4647,7 +4792,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     else return;
     try { await fetch("/api/report-field", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, field, value, shareToken: shared ? shareTok : undefined }) }); } catch (e) {}
     if (onUpdate) onUpdate(meetings.map((m) => (m.id === meeting.id ? { ...m, ...local } : m)));
-    toast("Saved");
+    toast(tr("saved"));
   };
 
   // Colored markers for the video timeline - chapters, key questions, action items, highlights.
