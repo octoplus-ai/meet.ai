@@ -66,14 +66,44 @@ export default async function handler(req, res) {
     // Omit the stamp entirely when a turn has no time - "[] Name:" would break the dialog parser.
     const finalText = turns.map((t) => `${t.t ? `[${t.t}] ` : ""}${t.speaker || "Speaker"}: ${t.text || ""}`).join("\n").trim();
 
-    // Talk-time per speaker (deterministic) from the renamed diarized turns.
+    // Talk-time + WPM per speaker from the renamed diarized turns. Each turn carries a start stamp
+    // (t = "mm:ss" / "h:mm:ss" / bare seconds); a turn's spoken seconds = gap to the next turn,
+    // capped so a long silence before the next speaker can't inflate one speaker's time (which
+    // would otherwise crater their wpm). This is what fills the Talking Pace / per-speaker wpm cards.
+    const parseT = (t) => {
+      if (t == null) return null;
+      const s = String(t).trim();
+      if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s); // bare seconds
+      const m = s.match(/^(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/); // h:mm:ss or mm:ss
+      return m ? (m[1] ? +m[1] * 3600 : 0) + +m[2] * 60 + parseFloat(m[3]) : null;
+    };
+    const starts = turns.map((t) => parseT(t.t));
+    const meetingSec = body.durationMin ? body.durationMin * 60 : null;
+    const haveTimes = starts.some((x) => x != null);
     const byName = {};
-    turns.forEach((t) => { const n = t.speaker || "Speaker"; const w = (t.text || "").split(/\s+/).filter(Boolean).length; (byName[n] = byName[n] || { name: n, words: 0 }).words += w; });
+    turns.forEach((t, i) => {
+      const n = t.speaker || "Speaker";
+      const w = (t.text || "").split(/\s+/).filter(Boolean).length;
+      const rec = (byName[n] = byName[n] || { name: n, words: 0, secs: 0 });
+      rec.words += w;
+      const st = starts[i];
+      if (st == null || !w) return;
+      let nx = null;
+      for (let j = i + 1; j < turns.length; j++) { if (starts[j] != null) { nx = starts[j]; break; } }
+      if (nx == null && meetingSec) nx = meetingSec;
+      let dur = (nx != null && nx > st) ? nx - st : 0;
+      const maxDur = Math.max(1, w / 1.8), minDur = Math.max(0.3, w / 5); // ~108-300 wpm bounds
+      if (!dur || dur > maxDur) dur = maxDur; else if (dur < minDur) dur = minDur;
+      rec.secs += dur;
+    });
     const totalW = Object.values(byName).reduce((a, b) => a + b.words, 0) || 1;
+    const fallbackWpm = (haveTimes || !body.durationMin) ? 0 : Math.round(totalW / body.durationMin); // no stamps -> meeting avg
     const aiParts = {}; (ai.participants || []).forEach((p) => { if (p && p.name) aiParts[p.name.toLowerCase()] = p; });
     const participants = Object.values(byName).map((s) => {
       const x = aiParts[s.name.toLowerCase()] || {};
-      return { name: s.name, role: x.role || "Participant", talkPct: Math.round((s.words / totalW) * 100), wpm: 0, sentiment: x.sentiment || "Neutral", isHost: !!x.isHost };
+      const min = s.secs / 60;
+      const wpm = min > 0.1 ? Math.round(s.words / min) : fallbackWpm;
+      return { name: s.name, role: x.role || "Participant", talkPct: Math.round((s.words / totalW) * 100), wpm, sentiment: x.sentiment || "Neutral", isHost: !!x.isHost };
     });
     // Roster members with no diarized voice of their own (never spoke, or shared a mic) still
     // COUNT as participants - like Read.ai, guests = who was in the call. Fuzzy match so

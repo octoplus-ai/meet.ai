@@ -800,24 +800,36 @@ function PlatformBadge({ source, size = 22 }) {
   );
 }
 
-function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true, at = null, onClick = null, hoverPlay = true }) {
+function VideoThumb({ src, source, size = 40, rounded = "rounded-lg", showBadge = true, at = null, onClick = null, hoverPlay = true, poster = null }) {
   const ref = useRef(null);
-  // Show the frame at `at` seconds (a highlight's moment) - or ~8s in to skip the
-  // black join intro. The media fragment "#t=" paints that frame reliably as the still;
-  // the onLoadedMetadata seek is a backup. With hoverPlay=false the still frame is kept
-  // on hover (no jump-to-black); onClick makes the whole thumb seek the main player.
+  const boxRef = useRef(null);
+  // Show the frame at `at` seconds (a highlight's moment) - or ~8s in to skip the black join intro.
+  // PERF: the heavy part is mounting a full-recording <video> per thumbnail; with many highlights
+  // that is N parallel metadata-loads + seeks against the same mp4 (very slow to paint). So we (a)
+  // paint the server cover frame instantly as a CSS poster, and (b) only attach the real <video>
+  // once the thumb scrolls into view (IntersectionObserver) or is hovered - off-screen thumbs never
+  // fetch. The seeked frame then replaces the poster.
   const seekT = at != null && at >= 0 ? at : 8;
   const posterSrc = src ? (src.includes("#") ? src : src + "#t=" + seekT) : null;
+  const [live, setLive] = useState(false);
+  useEffect(() => {
+    if (!posterSrc || live) return;
+    const el = boxRef.current; if (!el) return;
+    if (typeof IntersectionObserver === "undefined") { setLive(true); return; }
+    const io = new IntersectionObserver((ents) => { if (ents.some((e) => e.isIntersecting)) { setLive(true); io.disconnect(); } }, { rootMargin: "250px" });
+    io.observe(el); return () => io.disconnect();
+  }, [posterSrc, live]);
   const seek = () => { const v = ref.current; if (v) { try { v.currentTime = seekT; } catch (e) {} } };
-  const onEnter = () => { if (!hoverPlay) return; const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
+  const onEnter = () => { setLive(true); if (!hoverPlay) return; const v = ref.current; if (v) { try { v.currentTime = 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } };
   const onLeave = () => { if (!hoverPlay) return; const v = ref.current; if (v) { try { v.pause(); seek(); } catch (e) {} } };
   // Outer wrapper does NOT clip, so the platform badge can overlap the corner fully (like
   // Read.ai); only the inner video box is rounded/clipped.
   return (
     <div className={"relative shrink-0" + (onClick ? " cursor-pointer" : "")} style={{ width: size, height: size }} onMouseEnter={onEnter} onMouseLeave={onLeave} onClick={onClick || undefined}>
-      <div className={"relative h-full w-full overflow-hidden bg-slate-900 " + rounded}>
-        {posterSrc
-          ? <video ref={ref} src={posterSrc} muted loop playsInline preload="metadata" onLoadedMetadata={seek} className="h-full w-full object-cover" />
+      <div ref={boxRef} className={"relative h-full w-full overflow-hidden bg-slate-900 " + rounded} style={poster ? { backgroundImage: `url("${poster}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
+        {posterSrc && live
+          ? <video ref={ref} src={posterSrc} poster={poster || undefined} muted loop playsInline preload="metadata" onLoadedMetadata={seek} className="h-full w-full object-cover" />
+          : posterSrc ? null
           : <div className="h-full w-full bg-gradient-to-br from-violet-400 to-violet-500" />}
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/15">
           <span className="flex items-center justify-center rounded-full bg-black/45" style={{ width: size * 0.4, height: size * 0.4 }}>
@@ -1159,6 +1171,7 @@ export default function App() {
   const active = useMemo(() => allMeetings.find((m) => m.id === activeId), [allMeetings, activeId]);
   const [shareIntent, setShareIntent] = useState(false);
   const [gmailNudge, setGmailNudge] = useState(true);
+  const [navPinned, setNavPinned] = useState(false); // sidebar pinned open -> main content shifts to make room (no overlap)
   const openMeeting = (id, opts) => { setActiveId(id); setShareIntent(!!(opts && opts.share)); setView("meeting"); };
   const renameMeeting = async (m, title) => {
     persist(allMeetings.map((x) => (x.id === m.id ? { ...x, title } : x)));
@@ -1191,8 +1204,10 @@ export default function App() {
     <div dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body relative flex h-screen w-full overflow-hidden bg-[#F4F5FA] text-slate-800">
       <StyleInject />
       <Toaster />
-      <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
-      <main className="flex flex-1 flex-col overflow-hidden pl-[68px]">
+      <Sidebar view={view} setView={setView} t={t} lang={lang} setLang={setLang} user={user} pinned={navPinned} setPinned={setNavPinned} openScheduling={() => { setCalTab("scheduling"); setView("calendar"); }} />
+      {/* Reserve the collapsed width always; when PINNED, shift content to the expanded width so the
+          sidebar never covers the header/cards. Hover-preview stays an overlay (no full-page reflow). */}
+      <main className={"flex flex-1 flex-col overflow-hidden transition-[padding] duration-200 " + (navPinned ? "pl-60" : "pl-[68px]")}>
         {user && user.gmailReady === false && gmailNudge && (
           <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-[13px] text-amber-900">
             <Mail size={15} className="shrink-0 text-amber-600" />
@@ -1256,13 +1271,13 @@ function MenuItem({ icon: Icon, label, onClick }) {
     </button>
   );
 }
-function Sidebar({ view, setView, t, lang, setLang, openScheduling, user }) {
+function Sidebar({ view, setView, t, lang, setLang, openScheduling, user, pinned, setPinned }) {
   const uName = user?.name || user?.email || "You";
   const uEmail = user?.email || "nicolas@octomeet.ai";
   const uInit = initialsOf(uName);
   const [copied, setCopied] = useState(false);
-  const [pinned, setPinned] = useState(false);   // user toggled it open (stays open)
-  const [hovered, setHovered] = useState(false);  // mouse over → temporary expand
+  // `pinned` is lifted to the parent so <main> can shift its padding and never be overlapped.
+  const [hovered, setHovered] = useState(false);  // mouse over → temporary expand (overlay preview)
   const [langOpen, setLangOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [durOpen, setDurOpen] = useState(false);
@@ -4023,10 +4038,10 @@ function fmtClock(s) {
   return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(ss).padStart(2, "0");
 }
 const MARKER_STYLE = {
-  chapter: { color: "#7C3AED", label: "Chapter" },
-  question: { color: "#0EA5E9", label: "Key Question" },
-  action: { color: "#F59E0B", label: "Action Item" },
-  highlight: { color: "#8B5CF6", label: "Highlight" },
+  chapter: { color: "#7C3AED", label: "Chapter" },      // violet
+  question: { color: "#0EA5E9", label: "Key Question" }, // blue
+  action: { color: "#F59E0B", label: "Action Item" },    // amber
+  highlight: { color: "#EC4899", label: "Highlight" },   // pink (was #8B5CF6 - too close to chapter's violet)
 };
 
 // Custom video player with a marker timeline (chapters / questions / action items /
@@ -4190,7 +4205,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const setD = (e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDur(d); };
   const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); };
   const cycleRate = () => { const v = videoRef.current; if (!v) return; const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1; v.playbackRate = next; setRate(next); };
-  const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  const RATES = [0.5, 0.75, 1, 1.5, 2]; // symmetric around 1x so "Normal" sits in the exact middle dot
   const setRateTo = (r) => { const v = videoRef.current; if (v) v.playbackRate = r; setRate(r); };
   const applyVol = (val) => { const x = Math.min(1, Math.max(0, val)); setVolume(x); const v = videoRef.current; if (v) { v.volume = x; v.muted = x === 0; } setMuted(x === 0); };
   const volFromEvent = (e) => { const t = volRef.current; if (!t) return; const r = t.getBoundingClientRect(); applyVol(1 - (e.clientY - r.top) / r.height); };
@@ -4389,19 +4404,20 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
                     className={"relative h-3 w-3 rounded-full transition " + (rate === r ? "bg-violet-400 ring-4 ring-violet-400/30" : "bg-white/40 hover:bg-white/70")} />
                 ))}
               </div>
-              {/* Labels anchored to their ACTUAL dots (7 dots -> 1x sits at 2/6 of the track, not the
-                  center). The old justify-between row put "Normal" under the 1.25x dot, which made the
-                  default (1x, correctly selected) look like a wrong speed. */}
+              {/* 5 evenly-spaced dots -> 1x is the middle dot at 2/4 = 50% of the track. */}
               <div className="relative mx-4 mb-1 h-4 text-[10px] text-white/40">
                 <span className="absolute left-0">.5x</span>
-                <span className="absolute -translate-x-1/2" style={{ left: `${(2 / 6) * 100}%` }}>{tr("speedNormal")}</span>
+                <span className="absolute -translate-x-1/2" style={{ left: "50%" }}>{tr("speedNormal")}</span>
                 <span className="absolute right-0">2x</span>
               </div>
             </div>
           </>
         )}
         {showMetrics && hover && dur > 0 && !isTrailer && (
-          <div className="pointer-events-none absolute bottom-12 z-10 max-w-[260px] -translate-x-1/2 rounded-lg bg-slate-900/95 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg" style={{ left: `${(hover.at / dur) * 100}%` }}>
+          // z-50 so it sits above the controls/menus; clamp the center to >=130px (half the max
+          // width) from each edge so a near-left/right marker's tooltip is never clipped by the
+          // player's overflow-hidden wrapper.
+          <div className="pointer-events-none absolute bottom-12 z-50 max-w-[260px] -translate-x-1/2 rounded-lg bg-slate-900/95 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg" style={{ left: `clamp(130px, ${(hover.at / dur) * 100}%, calc(100% - 130px))` }}>
             <span className="font-semibold" style={{ color: MARKER_STYLE[hover.type].color }}>{MARKER_STYLE[hover.type].label}</span>
             <span className="text-white/85"> · {hover.label}</span>
           </div>
@@ -5023,7 +5039,21 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   // Participant displays drop unresolved "Speaker X"/"Guest" placeholders; if EVERY participant
   // is a placeholder, fall back to the raw list so the section is never blank.
   const realParts = (meeting.participants || []).filter((p) => p && !isPlaceholderName(p.name));
-  const displayParts = realParts.length ? realParts : (meeting.participants || []);
+  // Re-normalize talk % over exactly the speakers we SHOW: the stored talkPct was a share of the
+  // full diarized set (incl. placeholder speakers we hide), so the visible subset summed to <100
+  // (e.g. 8% + 42% = 50%). Largest-remainder rounding makes the shown values total exactly 100.
+  const normalizeTalk = (parts) => {
+    const sum = parts.reduce((a, p) => a + (p.talkPct || 0), 0);
+    if (!sum) return parts;
+    const raw = parts.map((p) => ({ p, exact: ((p.talkPct || 0) / sum) * 100 }));
+    const out = raw.map((r) => ({ ...r, floor: Math.floor(r.exact) }));
+    let residual = 100 - out.reduce((a, r) => a + r.floor, 0);
+    out.sort((a, b) => (b.exact - b.floor) - (a.exact - a.floor));
+    for (let i = 0; i < out.length && residual > 0; i++, residual--) out[i].floor += 1;
+    const byP = new Map(out.map((r) => [r.p, r.floor]));
+    return parts.map((p) => ({ ...p, talkPct: byP.get(p) }));
+  };
+  const displayParts = normalizeTalk(realParts.length ? realParts : (meeting.participants || []));
   const filteredTurns = meeting.transcript.filter((t) => !q || (t.text + " " + t.speaker).toLowerCase().includes(q.toLowerCase()));
   const speakerIdx = {};
   meeting.participants.forEach((p, i) => (speakerIdx[p.name] = i));
@@ -5656,7 +5686,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           <div className="space-y-3">
             {(meeting.highlights || []).map((h, i) => (
               <div key={"h" + i} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
-                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} at={h.at} hoverPlay={false} onClick={h.at != null ? () => seekTo(h.at) : undefined} />
+                <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} at={h.at} hoverPlay={false} poster={meeting.cover_url} onClick={h.at != null ? () => seekTo(h.at) : undefined} />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Highlight</span>
