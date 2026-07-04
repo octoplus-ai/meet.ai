@@ -3077,21 +3077,151 @@ function myMeetingStats(meetings, user) {
 const rangeLabel = (list) => { const ds = list.map((m) => m.date).filter(Boolean).sort(); return ds.length ? `${fmtDateShort(ds[0])} - ${fmtDateShort(ds[ds.length - 1])}` : ""; };
 const avgOf = (arr, f) => { const v = arr.map(f).filter((x) => x != null && !Number.isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
 
+// Read.ai-style pastel initial badges, stable color per name.
+const AVA_COLORS = [
+  { bg: "#EAD9FB", fg: "#7C3AED" }, { bg: "#FBD9E8", fg: "#DB2777" },
+  { bg: "#D6F0E1", fg: "#059669" }, { bg: "#FDE7CC", fg: "#C2740B" },
+  { bg: "#D8E6FB", fg: "#2563EB" }, { bg: "#F2D8FB", fg: "#A21CAF" },
+  { bg: "#D3F0F4", fg: "#0E7490" }, { bg: "#FBDAD6", fg: "#DC2626" },
+];
+const avaColor = (name) => { const s = String(name || ""); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return AVA_COLORS[h % AVA_COLORS.length]; };
+const clamp2 = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" };
+
+function AvatarStack({ names, max = 4 }) {
+  const list = names || [];
+  const shown = list.slice(0, max);
+  const extra = list.length - shown.length;
+  return (
+    <div className="flex flex-none items-center -space-x-1.5">
+      {shown.map((n, i) => { const c = avaColor(n); return (
+        <span key={i} title={n} className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-[9.5px] font-bold" style={{ background: c.bg, color: c.fg }}>{initialsOf(n)}</span>
+      ); })}
+      {extra > 0 && <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-[9.5px] font-bold text-slate-500">+{extra}</span>}
+    </div>
+  );
+}
+
+// One expandable "Topics" row: collapsed shows counts + progress + avatars; expanded shows the
+// synthesized summary, video clips (from real highlights), action items (For me/All) and Q&A.
+function TopicCard({ g, onOpen, onAsk, user }) {
+  const [open, setOpen] = useState(false);
+  const [scope, setScope] = useState("all");
+  const acts = scope === "me" ? g.actions.filter((a) => isMe(a.owner, user)) : g.actions;
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-slate-50">
+        {open ? <ChevronDown size={16} className="flex-none text-slate-400" /> : <ChevronRight size={16} className="flex-none text-slate-400" />}
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate text-[14px] font-semibold text-slate-800">{g.topic}</h4>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
+            <span className="flex items-center gap-1"><Play size={11} className="text-violet-400" />{g.clips.length}</span>
+            <span className="flex items-center gap-1"><CheckCircle2 size={11} className="text-violet-400" />{g.actions.length}</span>
+            <span className="flex items-center gap-1"><HelpCircle size={11} className="text-violet-400" />{g.qas.length}</span>
+            <span>From {g.count} meeting{g.count === 1 ? "" : "s"}{g.dateRange ? " " + g.dateRange : ""}</span>
+          </div>
+        </div>
+        <div className="hidden flex-none flex-col items-end gap-1 sm:flex">
+          <span className="text-[11px] font-semibold text-violet-600">{g.pct}% of meetings</span>
+          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-violet-500" style={{ width: Math.max(5, g.pct) + "%" }} /></div>
+        </div>
+        <AvatarStack names={g.partNames} />
+      </button>
+      {open && (
+        <div className="space-y-4 border-t border-slate-100 bg-slate-50/60 px-4 py-4">
+          {g.summary && (
+            <div>
+              <div className="mb-1 flex items-center gap-1.5 text-[12px] font-bold text-slate-700"><Sparkles size={13} className="text-violet-500" /> Summary</div>
+              <p className="text-[13px] leading-relaxed text-slate-600">{g.summary}</p>
+            </div>
+          )}
+          {g.clips.length > 0 && (
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-[12px] font-bold text-slate-700"><Play size={13} className="text-violet-500" /> Clips ({g.clips.length})</div>
+              <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+                {g.clips.slice(0, 10).map((c, i) => (
+                  <button key={i} onClick={() => onOpen(c.meeting.id)} className="w-40 flex-none text-left">
+                    <VideoThumb src={c.meeting.video} source={c.meeting.source} poster={c.meeting.cover_url} at={c.at != null ? c.at : c.meeting.coverAt} size={90} rounded="rounded-lg" showBadge onClick={() => onOpen(c.meeting.id)} />
+                    <p className="mt-1.5 text-[11px] leading-snug text-slate-600" style={clamp2}>{c.text}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-slate-400">{c.meeting.title}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {g.actions.length > 0 && (
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[12px] font-bold text-slate-700"><CheckCircle2 size={13} className="text-violet-500" /> Action Items</div>
+                <div className="flex rounded-lg bg-white p-0.5 text-[11px] shadow-sm"><button onClick={() => setScope("me")} className={"rounded-md px-2 py-0.5 font-semibold " + (scope === "me" ? "bg-violet-600 text-white" : "text-slate-500")}>For me</button><button onClick={() => setScope("all")} className={"rounded-md px-2 py-0.5 font-semibold " + (scope === "all" ? "bg-violet-600 text-white" : "text-slate-500")}>All</button></div>
+              </div>
+              {acts.length ? <div className="space-y-1.5">
+                {acts.slice(0, 8).map((a, i) => (
+                  <button key={i} onClick={() => onOpen(a.meeting.id)} className="block w-full text-left text-[12.5px] leading-snug text-slate-600 hover:text-violet-700">{a.owner ? <b className="text-slate-800">{a.owner}: </b> : ""}{a.task} <span className="text-[11px] text-slate-400">- {a.meeting.title}</span></button>
+                ))}
+              </div> : <p className="text-[12px] text-slate-400">No action items assigned to you.</p>}
+            </div>
+          )}
+          {g.qas.length > 0 && (
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-[12px] font-bold text-slate-700"><Quote size={13} className="text-amber-500" /> Key Questions &amp; Answers</div>
+              <div className="space-y-2.5">
+                {g.qas.slice(0, 5).map((q, i) => (
+                  <div key={i}>
+                    <div className="flex items-start gap-2">
+                      <button onClick={() => onOpen(q.meeting.id)} className="flex-1 text-left text-[12.5px] font-semibold text-slate-700 hover:text-violet-700">Question: {q.q}</button>
+                      <button onClick={() => onAsk(`In "${q.meeting.title}": ${q.q}`)} className="flex-none text-[11px] font-semibold text-violet-500 underline decoration-violet-200 hover:text-violet-700">Ask Octo</button>
+                    </div>
+                    {q.a && <div className="mt-1 rounded-lg border-l-2 border-violet-300 bg-white px-3 py-2 text-[12.5px] leading-snug text-slate-600"><b className="text-violet-600">Proposed answer:</b> {q.a}</div>}
+                    <div className="mt-1 text-[10.5px] text-slate-400">{fmtDateShort(q.meeting.date)} - {q.meeting.title}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ForYouView({ meetings, onOpen, onAsk, user }) {
   const [aiFilter, setAiFilter] = useState("me");
   const real = useMemo(() => (meetings || []).filter((m) => m.real && m.status === "done"), [meetings]);
   const uName = ((user && user.name) || (user && user.email) || "there").split(" ")[0];
   const hi = (() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; })();
+
+  // Topic progression: cluster meetings by topic, enrich each with clips/actions/Q&A/participants.
+  const topicGroups = useMemo(() => {
+    const map = new Map();
+    for (const m of real) for (const t of (m.topics || [])) {
+      const key = String(t).trim().toLowerCase(); if (!key) continue;
+      if (!map.has(key)) map.set(key, { topic: t, meetings: [] });
+      map.get(key).meetings.push(m);
+    }
+    return [...map.values()].map((grp) => {
+      const ms = grp.meetings;
+      const dates = ms.map((m) => m.date).filter(Boolean).sort();
+      const partNames = [...new Set(ms.flatMap((m) => (m.participants || []).map((p) => p.name).filter(Boolean)))];
+      const clips = ms.flatMap((m) => (m.highlights || []).filter((h) => h.text).map((h) => ({ ...h, meeting: m })));
+      const actions = ms.flatMap((m) => (m.actionItems || []).filter((a) => a.task).map((a) => ({ ...a, meeting: m })));
+      const qas = ms.flatMap((m) => (m.keyQA || []).filter((q) => q.q).map((q) => ({ ...q, meeting: m })));
+      const summary = ms.filter((m) => m.summary && m.summary.length > 20).slice(0, 2).map((m) => (m.summary || "").replace(/\s+/g, " ").trim()).join(" ");
+      return { topic: grp.topic, meetings: ms, count: ms.length, pct: Math.round((ms.length / real.length) * 100),
+        dateRange: dates.length ? `${fmtDateShort(dates[0])}${dates.length > 1 ? " - " + fmtDateShort(dates[dates.length - 1]) : ""}` : "",
+        partNames, clips, actions, qas, summary };
+    }).sort((a, b) => b.count - a.count).slice(0, 8);
+  }, [real]);
+
   const allActions = real.flatMap((m) => (m.actionItems || []).filter((a) => a.task).map((a) => ({ ...a, meeting: m.title, id: m.id, date: m.date })));
-  const actions = (aiFilter === "me" ? allActions.filter((a) => isMe(a.owner, user)) : allActions).slice(0, 12);
-  const topicCount = {};
-  real.forEach((m) => (m.topics || []).forEach((t) => { topicCount[t] = (topicCount[t] || 0) + 1; }));
-  const topTopics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const actions = (aiFilter === "me" ? allActions.filter((a) => isMe(a.owner, user)) : allActions).slice(0, 40);
+  const qas = real.flatMap((m) => (m.keyQA || []).filter((q) => q.q).map((q) => ({ ...q, meeting: m.title, id: m.id, date: m.date })));
   const summaries = real.filter((m) => m.summary && m.summary.length > 30);
-  const lead = summaries[0];
-  const qas = real.flatMap((m) => (m.keyQA || []).filter((q) => q.q).map((q) => ({ ...q, meeting: m.title, id: m.id, date: m.date }))).slice(0, 8);
+  const lead = summaries.find((m) => m.video) || summaries[0];
   const recapFull = summaries.slice(0, 3).map((m) => (m.summary || "").replace(/\s+/g, " ").trim()).join(" ");
-  const recap = recapFull.length > 520 ? recapFull.slice(0, 520) + "…" : recapFull;
+  const recap = recapFull.length > 560 ? recapFull.slice(0, 560) + "..." : recapFull;
+  const missed = real.filter((m) => !(m.participants || []).some((p) => isMe(p.name, user)));
+  const avgScore = (() => { const v = real.map((m) => (m.scores && m.scores.overall) || 0).filter((x) => x > 0); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; })();
+
   if (!real.length) return (
     <>
       <SectionTop title="For You" onAsk={onAsk} />
@@ -3104,77 +3234,97 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
           <div className="space-y-5">
-            <div className="rounded-2xl border border-violet-200 bg-white shadow-sm p-5">
+            {/* Greeting recap */}
+            <div className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
               <h2 className="text-2xl font-bold text-violet-700">{hi}, {uName}</h2>
-              <p className="mt-1 text-sm font-medium text-slate-500">Here's what happened across your {real.length} recent meeting{real.length === 1 ? "" : "s"}</p>
+              <p className="mt-1 text-[13px] font-medium text-slate-500">Here's what happened {rangeLabel(real) || `across your ${real.length} recent meeting${real.length === 1 ? "" : "s"}`}</p>
               <div className="mt-3 flex gap-4">
                 <p className="flex-1 text-sm leading-relaxed text-slate-600">{recap || (lead && lead.summary) || "Your digest will appear here."}</p>
                 {lead && lead.video && <VideoThumb src={lead.video} source={lead.source} poster={lead.cover_url} at={lead.coverAt} size={120} rounded="rounded-xl" showBadge={false} onClick={() => onOpen(lead.id)} />}
               </div>
             </div>
-            <Card title="Topics" icon={MessageSquareText}>
-              <p className="mb-3 text-[13px] text-slate-400">Topic progression across your meetings</p>
-              {topTopics.length ? <div className="space-y-2">
-                {topTopics.map(([t, n], i) => (
-                  <div key={i} className="rounded-xl bg-violet-50/60 p-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-slate-800">{t}</h4>
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-violet-600">{Math.round((n / real.length) * 100)}% of meetings</span>
-                    </div>
-                    <div className="mt-1 text-[12px] text-slate-400">From {n} meeting{n === 1 ? "" : "s"}</div>
-                  </div>
-                ))}
+
+            {/* Topics - expandable */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h3 className="flex items-center gap-2 text-[15px] font-bold text-slate-800"><MessageSquareText size={16} className="text-violet-500" /> Topics</h3>
+              <p className="mb-3 mt-0.5 text-[12.5px] text-slate-400">Topic progression from meetings you own or were invited to</p>
+              {topicGroups.length ? <div className="space-y-2">
+                {topicGroups.map((g, i) => <TopicCard key={i} g={g} onOpen={onOpen} onAsk={onAsk} user={user} />)}
               </div> : <p className="text-sm text-slate-400">No topics yet.</p>}
-            </Card>
-            {qas.length > 0 && (
-              <Card title="Key Questions & Answers" icon={Quote}>
-                <div className="space-y-3">
-                  {qas.map((q, i) => (
-                    <div key={i} className="border-b border-slate-100 pb-3 last:border-0">
-                      <button onClick={() => onOpen(q.id)} className="text-left text-[13px] font-semibold text-slate-700 hover:text-violet-700">{q.q}</button>
-                      {q.a && <p className="mt-1 text-[13px] text-slate-500">{q.a}</p>}
-                      <div className="mt-1 text-[11px] text-slate-400">{q.meeting}</div>
+            </div>
+
+            {/* What you missed */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h3 className="flex items-center gap-2 text-[15px] font-bold text-slate-800"><Eye size={16} className="text-fuchsia-500" /> What you missed</h3>
+              <p className="mb-3 mt-0.5 text-[12.5px] text-slate-400">Meetings you did not speak in during this period</p>
+              {missed.length ? <div className="space-y-2">
+                {missed.slice(0, 6).map((m, i) => (
+                  <button key={i} onClick={() => onOpen(m.id)} className="flex w-full items-center gap-3 rounded-xl bg-slate-50 p-3 text-left transition hover:bg-slate-100">
+                    {m.video && <VideoThumb src={m.video} source={m.source} poster={m.cover_url} at={m.coverAt} size={54} rounded="rounded-lg" showBadge={false} onClick={() => onOpen(m.id)} />}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-semibold text-slate-800">{m.title}</div>
+                      <p className="text-[12px] text-slate-500" style={clamp2}>{m.summary || "No summary."}</p>
+                      <div className="mt-0.5 text-[11px] text-slate-400">{fmtDateShort(m.date)} - {(m.participants || []).length} participant{(m.participants || []).length === 1 ? "" : "s"}</div>
                     </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-            <Card title={tr("summary")} icon={Sparkles}>
-              {summaries.length ? <div className="space-y-3">
-                {summaries.slice(0, 4).map((m, i) => (
-                  <button key={i} onClick={() => onOpen(m.id)} className="block w-full border-b border-slate-100 pb-3 text-left last:border-0">
-                    <div className="text-[13px] font-semibold text-slate-700">{m.title}</div>
-                    <p className="text-sm leading-relaxed text-slate-600">{m.summary}</p>
+                    <ChevronRight size={16} className="flex-none text-slate-300" />
                   </button>
                 ))}
-              </div> : <p className="text-sm text-slate-400">No summaries yet.</p>}
-            </Card>
+              </div> : (
+                <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center">
+                  <Eye size={22} className="mx-auto text-slate-300" />
+                  <p className="mt-2 text-[13px] font-medium text-slate-500">You did not miss any meetings in this time period</p>
+                  <p className="text-[12px] text-slate-400">When you miss meetings, a recap will show up here.</p>
+                </div>
+              )}
+            </div>
           </div>
 
+          {/* Right rail */}
           <div className="space-y-5">
+            {/* Digest stats (OctoMeet take on Daily Read) */}
+            <div className="rounded-2xl border border-violet-900/20 bg-gradient-to-br from-[#1f1a3d] to-[#14122e] p-4 text-white shadow-sm">
+              <div className="flex items-center gap-2 text-[13px] font-bold"><Sparkles size={15} className="text-violet-300" /> Your digest</div>
+              <p className="mt-0.5 text-[11.5px] text-violet-200/80">{rangeLabel(real)}</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{real.length}</div><div className="text-[10.5px] text-violet-200/70">meetings</div></div>
+                <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{avgScore != null ? avgScore : "-"}</div><div className="text-[10.5px] text-violet-200/70">avg OctoMeet Score</div></div>
+                <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{allActions.length}</div><div className="text-[10.5px] text-violet-200/70">action items</div></div>
+                <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{qas.length}</div><div className="text-[10.5px] text-violet-200/70">key questions</div></div>
+              </div>
+            </div>
+
+            {/* Action Items */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><CheckCircle2 size={16} className="text-violet-500" /> Action Items</h3>
                 <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]"><button onClick={() => setAiFilter("me")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "me" ? "bg-violet-600 text-white" : "text-slate-500")}>For me</button><button onClick={() => setAiFilter("all")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "all" ? "bg-violet-600 text-white" : "text-slate-500")}>All</button></div>
               </div>
-              {actions.length ? <div className="space-y-3">
+              {actions.length ? <div className="no-scrollbar max-h-[380px] space-y-3 overflow-y-auto pr-1">
                 {actions.map((a, i) => (
                   <div key={i} className="border-b border-slate-100 pb-3 last:border-0">
-                    <button onClick={() => onOpen(a.id)} className="block text-left text-[13px] text-slate-700 hover:text-violet-700">{a.owner ? <b>{a.owner}: </b> : ""}{a.task}</button>
-                    <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><Calendar size={11} /> {a.date ? fmtDateShort(a.date) : ""} · {a.meeting}</div>
+                    <div className="flex items-start gap-2">
+                      <button onClick={() => onOpen(a.id)} className="flex-1 text-left text-[13px] leading-snug text-slate-700 hover:text-violet-700">{a.owner ? <b>{a.owner}: </b> : ""}{a.task}</button>
+                      <button onClick={() => onAsk(`About the action item "${a.task}" from "${a.meeting}"`)} className="flex-none text-[11px] font-semibold text-violet-500 underline decoration-violet-200 hover:text-violet-700">Ask Octo</button>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400"><Calendar size={11} /> {a.date ? fmtDateShort(a.date) : ""} - {a.meeting}</div>
                   </div>
                 ))}
               </div> : <p className="text-sm text-slate-400">{aiFilter === "me" ? "No action items assigned to you." : "No action items yet."}</p>}
             </div>
+
+            {/* Key Questions */}
             {qas.length > 0 && (
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800"><Quote size={16} className="text-amber-500" /> Key Questions</h3>
-                <div className="space-y-2.5">
-                  {qas.slice(0, 6).map((q, i) => (
-                    <button key={i} onClick={() => onOpen(q.id)} className="block w-full text-left">
-                      <div className="text-[13px] text-slate-700 hover:text-violet-700">{q.q}</div>
-                      <div className="mt-0.5 text-[11px] text-slate-400">{q.date ? fmtDateShort(q.date) : ""} · {q.meeting}</div>
-                    </button>
+                <div className="no-scrollbar max-h-[380px] space-y-3 overflow-y-auto pr-1">
+                  {qas.slice(0, 30).map((q, i) => (
+                    <div key={i} className="border-b border-slate-100 pb-3 last:border-0">
+                      <div className="flex items-start gap-2">
+                        <button onClick={() => onOpen(q.id)} className="flex-1 text-left text-[13px] leading-snug text-slate-700 hover:text-violet-700">{q.q}</button>
+                        <button onClick={() => onAsk(`In "${q.meeting}": ${q.q}`)} className="flex-none text-[11px] font-semibold text-violet-500 underline decoration-violet-200 hover:text-violet-700">Ask Octo</button>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400"><Calendar size={11} /> {q.date ? fmtDateShort(q.date) : ""} - {q.meeting}</div>
+                    </div>
                   ))}
                 </div>
               </div>
