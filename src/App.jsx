@@ -4038,10 +4038,12 @@ function fmtClock(s) {
   return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(ss).padStart(2, "0");
 }
 const MARKER_STYLE = {
-  chapter: { color: "#7C3AED", label: "Chapter" },      // violet
-  question: { color: "#0EA5E9", label: "Key Question" }, // blue
-  action: { color: "#F59E0B", label: "Action Item" },    // amber
-  highlight: { color: "#EC4899", label: "Highlight" },   // pink (was #8B5CF6 - too close to chapter's violet)
+  // Soft pastel palette (per the reference); each type's color is reused for its report section.
+  // Yellow + violet aren't in the reference palette, so they're generated in the same pastel key.
+  chapter: { color: "#8E7BD6", label: "Chapter" },       // violet
+  question: { color: "#5FC4A0", label: "Key Question" }, // green
+  action: { color: "#6E9BD6", label: "Action Item" },    // blue
+  highlight: { color: "#E3BE55", label: "Highlight" },   // yellow (generated)
 };
 
 // Custom video player with a marker timeline (chapters / questions / action items /
@@ -5459,7 +5461,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 </div>) : null}>
               {meeting.summary ? <p className="text-sm leading-relaxed text-slate-600">{summaryMode === "short" ? shortSummary : meeting.summary}</p> : <p className="text-sm text-slate-400">{tr("noSummary")}</p>}
             </Card>
-            <Card title={tr("actionItems")} icon={ListChecks}
+            <Card title={tr("actionItems")} icon={ListChecks} iconColor={MARKER_STYLE.action.color}
               copyText={meeting.actionItems.map((a) => `- ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`).join("\n")}
               editText={meeting.actionItems.map((a) => a.task).join("\n")} onSaveEdit={canEdit ? (v) => editField("action_items", v) : undefined}>
               <div className="space-y-2">
@@ -5489,7 +5491,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 {!(meeting.nextSteps && meeting.nextSteps.length) && <p className="text-sm text-slate-400">{tr("noNextSteps")}</p>}
               </ul>
             </Card>
-            <Card title={tr("keyQuestions")} icon={Quote}
+            <Card title={tr("keyQuestions")} icon={Quote} iconColor={MARKER_STYLE.question.color}
               copyText={meeting.keyQuestions.join("\n")} editText={meeting.keyQuestions.join("\n")} onSaveEdit={canEdit ? (v) => editField("key_questions", v) : undefined}>
               <ul className="space-y-3">
                 {(meeting.keyQA && meeting.keyQA.length ? meeting.keyQA : meeting.keyQuestions.map((q) => ({ q, a: "" }))).map((qq, i) => (
@@ -5689,7 +5691,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} at={h.at} hoverPlay={false} poster={meeting.cover_url} onClick={h.at != null ? () => seekTo(h.at) : undefined} />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">Highlight</span>
+                    <span className="rounded-md px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: MARKER_STYLE.highlight.color + "26", color: "#8a6d12" }}>Highlight</span>
                     {h.at != null ? <TimeChip t={h.t} onClick={() => seekTo(h.at)} /> : (h.t && <span className="font-mono text-[11px] text-slate-400">{h.t}</span>)}
                   </div>
                   <p className="mt-1 text-sm text-slate-700">{h.text}</p>
@@ -5701,7 +5703,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
         )}
 
         {tab === "chapters" && (
-          <Card title="Chapters & Topics" icon={ListChecks} right={
+          <Card title="Chapters & Topics" icon={ListChecks} iconColor={MARKER_STYLE.chapter.color} right={
             (meeting.chapters && meeting.chapters.some((c) => c.summary)) ? (
               <button onClick={() => setShowDesc((v) => !v)} className="flex items-center gap-2 text-[12px] font-medium text-slate-500">
                 Descriptions
@@ -5759,7 +5761,7 @@ function Metric({ label, value, ok }) {
   );
 }
 
-function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEdit }) {
+function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEdit, iconColor }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const copy = () => { try { navigator.clipboard.writeText(copyText || ""); toast("Copied"); } catch (e) {} };
@@ -5768,7 +5770,7 @@ function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEd
   return (
     <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2">
-        {Icon && <Icon size={15} className="text-violet-500" />}
+        {Icon && <Icon size={15} className={iconColor ? "" : "text-violet-500"} style={iconColor ? { color: iconColor } : undefined} />}
         <h3 className="text-sm font-bold text-slate-900">{title}</h3>
         {!editing && (copyText != null || onSaveEdit) && (
           <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
