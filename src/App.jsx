@@ -4128,6 +4128,44 @@ function EditableField({ label, value, onSave, placeholder }) {
   );
 }
 
+// GDPR "delete everything" control. Requires typing the exact account email, then calls
+// /api/account/delete (which erases all rows across every table + revokes the Google token) and
+// bounces to the logged-out home.
+function DangerZone({ email }) {
+  const [confirming, setConfirming] = useState(false);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const match = !!email && input.trim().toLowerCase() === String(email).toLowerCase();
+  const del = async () => {
+    if (!match || busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/account/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmEmail: input.trim() }) });
+      if (!r.ok) throw new Error("delete failed");
+      toast("Your account and all data were deleted");
+      setTimeout(() => { window.location.href = "/"; }, 800);
+    } catch (e) { toast("Could not delete the account - try again"); setBusy(false); }
+  };
+  return (
+    <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-5">
+      <div className="flex items-center gap-2 text-sm font-bold text-rose-700"><AlertTriangle size={16} /> Danger zone</div>
+      <p className="mt-1 text-[13px] text-slate-600">Permanently delete your account and <b>all</b> your data - meetings, recordings, transcripts, AI documents and settings. This cannot be undone.</p>
+      {!confirming ? (
+        <button onClick={() => setConfirming(true)} className="mt-3 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Delete my account</button>
+      ) : (
+        <div className="mt-3 space-y-2">
+          <p className="text-[13px] text-slate-600">Type your email <span className="font-mono font-semibold text-slate-800">{email}</span> to confirm:</p>
+          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={email} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-rose-400" />
+          <div className="flex gap-2">
+            <button onClick={del} disabled={!match || busy} className={"rounded-lg px-4 py-2 text-sm font-semibold text-white " + (match && !busy ? "bg-rose-600 hover:bg-rose-500" : "cursor-not-allowed bg-rose-300")}>{busy ? "Deleting..." : "Permanently delete"}</button>
+            <button onClick={() => { setConfirming(false); setInput(""); }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AccountSettings({ onBack, lang, setLang, user }) {
   // Default from the real signed-in Google account (name / email / profile photo).
   const [profile, setProfile] = useState(() => ({ name: user?.name || "Your Name", jobTitle: "", roleLevel: "", department: "", email: user?.email || "you@company.com", photo: user?.picture || null }));
@@ -4223,6 +4261,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
                   <button onClick={() => toast("Add password - coming soon")} className="rounded-lg border border-violet-300 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50">Add Account Password</button>
                 </div>
               </div>
+              <DangerZone email={user?.email || profile.email} />
             </>)}
 
             {sec === 1 && (<>
