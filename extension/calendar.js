@@ -4,6 +4,8 @@
 (() => {
   const APP = "https://meet.octoplusteam.com";
   let lastEventId = null; // most recently clicked event chip (fallback source of the event id)
+  // Inline OctoMeet mark (purple gradient) - matches the app + add-on logo.
+  const OCTO_SVG = '<svg width="16" height="16" viewBox="0 0 64 64" aria-hidden><defs><linearGradient id="ocg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#C084FC"/><stop offset="100%" stop-color="#7C3AED"/></linearGradient></defs><path d="M44 19 L58 12 Q61 10.5 61 14.5 V37.5 Q61 41.5 58 40 L44 33 Z" fill="url(#ocg)"/><path d="M10 27 C10 16 19 8 28 8 C37 8 46 16 46 27 L46 40 Q43.5 46 41 46 Q38.5 46 36.5 40 Q34 46 32 46 Q29.5 46 27.5 40 Q25 46 23 46 Q20.5 46 18.5 40 Q16 46 14 46 Q11 46 10 40 Z" fill="url(#ocg)"/><rect x="25" y="16" width="6" height="20" rx="3" fill="#fff"/><rect x="18" y="23" width="20" height="6" rx="3" fill="#fff"/></svg>';
 
   // Google encodes data-eventid as base64("<eventId> <calendarEmail>"). Recurring
   // instances decode to ids like "abc_20260703T150000Z" which is exactly what the
@@ -47,6 +49,20 @@
     return n;
   }
 
+  // Score -> color (mirrors the app's scoreColor): green (great) ... grey (none).
+  function scoreColor(v) {
+    if (!(v > 0)) return "#94a3b8";
+    if (v >= 80) return "#16a34a";
+    if (v >= 65) return "#0ea5e9";
+    if (v >= 45) return "#d97706";
+    return "#e11d48";
+  }
+  function scoreBadge(v, cls) {
+    const chip = el("span", cls || "octomeet-score", String(v));
+    chip.style.background = scoreColor(v);
+    return chip;
+  }
+
   // ---------- Event popup: toggle before the meeting, score + report link after ----------
 
   function costLine(state) {
@@ -62,59 +78,67 @@
   function render(row, eventId, state) {
     row.textContent = "";
     const brand = el("span", "octomeet-brand");
-    const logo = el("span", "octomeet-logo", "🐙");
+    const logo = el("span", "octomeet-logo");
+    logo.innerHTML = OCTO_SVG;
     brand.append(logo, el("span", "octomeet-name", "OctoMeet AI"));
     row.append(brand);
 
     if (state.needAuth) {
-      const btn = el("button", "octomeet-btn", "Conectar OctoMeet");
+      const btn = el("button", "octomeet-btn", "Connect OctoMeet");
       btn.addEventListener("click", () => {
         window.open(APP + "/api/auth/google/start?addon=1", "octoauth", "width=480,height=660,menubar=no,toolbar=no");
       });
       row.append(btn);
       return;
     }
-    if (state.error) { row.append(el("span", "octomeet-hint", "Sin conexion con OctoMeet")); return; }
+    if (state.error) { row.append(el("span", "octomeet-hint", "Can't reach OctoMeet")); return; }
 
-    // Post-meeting: Read Score + report link.
+    // Post-meeting: OctoMeet Score (labeled, like Read.ai's "Read Engagement Score") + report link.
     if (state.status === "done") {
+      const wrap = el("div", "octomeet-done");
       if (state.score != null) {
-        const chip = el("span", "octomeet-score", String(state.score));
-        chip.title = "Read Score";
-        row.append(chip);
+        const line = el("div", "octomeet-scoreline");
+        line.append(scoreBadge(state.score), el("span", "octomeet-scorelabel", "OctoMeet Score"));
+        wrap.append(line);
       }
-      const a = el("a", "octomeet-link", "Ver reporte");
+      const a = el("a", "octomeet-link", "View meeting report ↗");
       a.href = state.reportUrl || APP;
       a.target = "_blank";
       a.rel = "noopener";
-      row.append(a);
+      wrap.append(a);
+      const cost = costLine(state);
+      if (cost) wrap.append(el("div", "octomeet-cost", cost));
+      row.append(wrap);
+      row.classList.add("octomeet-row-tall");
       return;
     }
     if (state.status === "processing" || state.status === "in_call" || state.status === "recording") {
-      row.append(el("span", "octomeet-hint", state.status === "processing" ? "Procesando reporte..." : "Grabando ahora"));
+      const live = el("span", "octomeet-hint octomeet-live");
+      live.append(el("span", "octomeet-livedot"), document.createTextNode(state.status === "processing" ? "Generating report…" : "Recording now"));
+      row.append(live);
       return;
     }
 
-    // Pre-meeting: the toggle (+ the total-time cost line when we know the event).
+    // Pre-meeting: "Invite OctoMeet" toggle (+ the total-time cost line when we know the event).
     const label = el("label", "octomeet-switch");
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = state.enabled !== false;
     const slider = el("span", "octomeet-slider");
     label.append(input, slider);
-    const hint = el("span", "octomeet-hint", input.checked ? "El notetaker se unira" : "Desactivado para esta reunion");
+    const hint = el("span", "octomeet-hint", input.checked ? "OctoMeet will join & record" : "Off for this meeting");
     input.addEventListener("change", () => {
       const enable = input.checked;
-      hint.textContent = "Guardando...";
+      hint.textContent = "Saving…";
       input.disabled = true;
       chrome.runtime.sendMessage({ type: "toggle", eventId, enable }, (r) => {
         input.disabled = false;
         if (!r || r.error || r.ok === false) {
           input.checked = !enable; // revert
-          hint.textContent = (r && (r.detail || r.error)) || "No se pudo guardar";
+          hint.textContent = (r && (r.detail || r.error)) || "Couldn't save";
           return;
         }
-        hint.textContent = enable ? "El notetaker se unira" : "Desactivado para esta reunion";
+        hint.textContent = enable ? "OctoMeet will join & record" : "Off for this meeting";
       });
     });
     row.append(label, hint);
@@ -155,7 +179,8 @@
     if (!st || st.status !== "done" || st.score == null) return;
     if (node.querySelector(":scope > .octomeet-grid-chip")) return;
     const chip = el("span", "octomeet-grid-chip", String(st.score));
-    chip.title = "OctoMeet Read Score";
+    chip.style.background = scoreColor(st.score);
+    chip.title = "OctoMeet Score";
     node.prepend(chip);
   }
 

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "OctoMeet AI for Google Calendar",
-  "version": "1.0.0",
-  "description": "Activa o desactiva el notetaker de OctoMeet por reunion y ve el Read Score y el reporte directo en Google Calendar.",
+  "version": "1.1.0",
+  "description": "Toggle the OctoMeet notetaker per meeting and see the OctoMeet Score + report right inside Google Calendar.",
   "icons": { "128": "icon128.png" },
   "background": { "service_worker": "bg.js" },
   "content_scripts": [
