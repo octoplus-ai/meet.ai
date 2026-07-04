@@ -904,11 +904,30 @@ function TalkRibbon({ participants }) {
   );
 }
 
-function ScorePill({ label, value }) {
+// Short "how is this measured?" explainer per KPI, shown on hover.
+const KPI_INFO = {
+  readScore: "Overall meeting effectiveness - a blend of engagement and sentiment across the whole call. Higher is better.",
+  engagement: "How actively people were involved: talking, asking and responding vs. passively listening.",
+  sentiment: "The overall emotional tone of the conversation, from the positive vs. negative language used.",
+  balance: "How evenly talk time was shared between participants (100 = perfectly balanced).",
+  clarity: "How clearly people spoke: few filler words, a steady pace and easy-to-follow delivery.",
+  charisma: "Speaker presence and persuasiveness: energy, confidence and delivery.",
+  fillerWords: "Share of words that are fillers (um, uh, you know). Lower is better.",
+  talkingPace: "Average speaking speed in words per minute. 130-175 wpm is easiest to follow.",
+  questionsAsked: "How many real questions were asked - a sign of engagement and discovery.",
+  talkBalance: "How evenly talk time was shared between participants (higher = more balanced).",
+};
+// Grey, semi-transparent hover tooltip (lighter/translucent version of the app's dark tooltips).
+// Render inside a container that has `group/tip relative`.
+const kpiTip = (text) => text ? (
+  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 w-56 max-w-[80vw] -translate-x-1/2 rounded-lg bg-slate-500/80 px-2.5 py-1.5 text-left text-[11px] font-medium leading-snug text-white opacity-0 shadow-lg backdrop-blur-sm transition-opacity duration-150 group-hover/tip:opacity-100">{text}</span>
+) : null;
+
+function ScorePill({ label, value, info }) {
   const has = Number.isFinite(value) && value > 0;
   const col = has ? scoreColor(value) : "#CBD5E1";
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+    <div className="group/tip relative rounded-xl border border-slate-200 bg-white px-3 py-2.5">
       <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
       <div className="mt-1 flex items-end gap-1.5">
         <span className="text-xl font-bold" style={{ color: col }}>{has ? value : "-"}</span>
@@ -917,6 +936,7 @@ function ScorePill({ label, value }) {
       <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
         <div className="h-full rounded-full" style={{ width: (has ? value : 0) + "%", background: col }} />
       </div>
+      {kpiTip(info)}
     </div>
   );
 }
@@ -5439,15 +5459,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
 
         <div className="mb-5 grid grid-cols-3 gap-3">
           {[
-            { l: "Read Score", v: meeting.scores.overall, series: metricSeries("readScore", meeting) },
-            { l: "Engagement", v: meeting.scores.engagement, series: metricSeries("engagement", meeting) },
-            { l: "Sentiment", v: meeting.scores.sentiment, series: metricSeries("sentiment", meeting) },
+            { l: "Read Score", v: meeting.scores.overall, series: metricSeries("readScore", meeting), info: KPI_INFO.readScore },
+            { l: "Engagement", v: meeting.scores.engagement, series: metricSeries("engagement", meeting), info: KPI_INFO.engagement },
+            { l: "Sentiment", v: meeting.scores.sentiment, series: metricSeries("sentiment", meeting), info: KPI_INFO.sentiment },
           ].map((s) => {
             const has = Number.isFinite(s.v) && s.v > 0;
             const lab = s.v >= 70 ? "GOOD" : s.v >= 40 ? "OKAY" : s.v >= 20 ? "FAIR" : "LOW";
             const col = scoreColor(s.v);
             return (
-            <div key={s.l} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div key={s.l} className="group/tip relative rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.l}</div>
               <div className="mt-1 flex items-center gap-3">
                 <div className="flex shrink-0 items-end gap-1.5">
@@ -5456,6 +5476,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 </div>
                 {has && <div className="min-w-0 flex-1"><Sparkline data={s.series} /></div>}
               </div>
+              {kpiTip(s.info)}
             </div>
             );
           })}
@@ -5596,11 +5617,11 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             </Card>
             <Card title={tr("scores")} icon={BarChart3}>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <ScorePill label="Read Score" value={meeting.scores.overall} />
-                <ScorePill label="Engagement" value={meeting.scores.engagement} />
-                <ScorePill label="Sentiment" value={meeting.scores.sentiment} />
-                <ScorePill label="Balance" value={meeting.scores.balance} />
-                <ScorePill label="Clarity" value={meeting.scores.clarity} />
+                <ScorePill label="Read Score" value={meeting.scores.overall} info={KPI_INFO.readScore} />
+                <ScorePill label="Engagement" value={meeting.scores.engagement} info={KPI_INFO.engagement} />
+                <ScorePill label="Sentiment" value={meeting.scores.sentiment} info={KPI_INFO.sentiment} />
+                <ScorePill label="Balance" value={meeting.scores.balance} info={KPI_INFO.balance} />
+                <ScorePill label="Clarity" value={meeting.scores.clarity} info={KPI_INFO.clarity} />
               </div>
             </Card>
             <Card title={tr("sentimentOverTime")} icon={Activity}>
@@ -5673,15 +5694,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             </Card>
             <div className="grid gap-5 md:grid-cols-2">
               <Card title="Clarity" icon={Sparkles}>
-                <Metric label="Filler words" value={fillerPct + "%"} ok={fillerPct < 5} />
-                <Metric label="Talking pace" value={avgWpm != null ? avgWpm + " wpm" : "-"} ok={avgWpm != null && avgWpm >= 130 && avgWpm <= 175} />
-                <Metric label="Clarity score" value={meeting.scores.clarity || "-"} ok={meeting.scores.clarity >= 80} />
+                <Metric label="Filler words" value={fillerPct + "%"} ok={fillerPct < 5} info={KPI_INFO.fillerWords} />
+                <Metric label="Talking pace" value={avgWpm != null ? avgWpm + " wpm" : "-"} ok={avgWpm != null && avgWpm >= 130 && avgWpm <= 175} info={KPI_INFO.talkingPace} />
+                <Metric label="Clarity score" value={meeting.scores.clarity || "-"} ok={meeting.scores.clarity >= 80} info={KPI_INFO.clarity} />
               </Card>
               <Card title="Impact" icon={Target}>
-                <Metric label="Charisma" value={meeting.scores.charisma || "-"} ok={meeting.scores.charisma >= 80} />
-                <Metric label="Sentiment" value={meeting.scores.sentiment || "-"} ok={meeting.scores.sentiment >= 70} />
-                <Metric label="Questions asked" value={questionsAsked} ok={questionsAsked > 0} />
-                <Metric label="Talk-time balance" value={meeting.scores.balance} ok={meeting.scores.balance >= 60} />
+                <Metric label="Charisma" value={meeting.scores.charisma || "-"} ok={meeting.scores.charisma >= 80} info={KPI_INFO.charisma} />
+                <Metric label="Sentiment" value={meeting.scores.sentiment || "-"} ok={meeting.scores.sentiment >= 70} info={KPI_INFO.sentiment} />
+                <Metric label="Questions asked" value={questionsAsked} ok={questionsAsked > 0} info={KPI_INFO.questionsAsked} />
+                <Metric label="Talk-time balance" value={meeting.scores.balance} ok={meeting.scores.balance >= 60} info={KPI_INFO.talkBalance} />
               </Card>
             </div>
             {meeting.participants && meeting.participants.length > 0 && (
@@ -5768,15 +5789,16 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   );
 }
 
-function Metric({ label, value, ok }) {
+function Metric({ label, value, ok, info }) {
   const num = Number(value);
   const col = (Number.isFinite(num) && num > 0) ? scoreColor(num) : (ok ? "#16A34A" : "#D97706");
   return (
-    <div className="flex items-center justify-between border-b border-slate-100 py-2 last:border-0">
+    <div className="group/tip relative flex items-center justify-between border-b border-slate-100 py-2 last:border-0">
       <span className="text-sm text-slate-600">{label}</span>
       <span className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: col }}>
         {value} {ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
       </span>
+      {kpiTip(info)}
     </div>
   );
 }
