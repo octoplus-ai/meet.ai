@@ -4,6 +4,7 @@ import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
+import { extractJson } from "./lib/aijson.js";
 
 // The Claude call that builds the doc can run ~15-25s; without this it would hit the
 // platform's short default timeout and the generation would fail mid-flight.
@@ -130,14 +131,18 @@ Rules: 4-7 sections, each earning its place. Prefer tight bullets over long para
     const up = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 3000, system: sys, messages: [{ role: "user", content: ctx }] }),
+      // 8000 (was 3000): a rich meeting's JSON doc was being truncated mid-object at 3000, which
+      // then failed to parse and returned a 500. The robust extractJson below is the safety net;
+      // the higher ceiling stops truncation from happening in the first place.
+      body: JSON.stringify({ model: MODEL, max_tokens: 8000, system: sys, messages: [{ role: "user", content: ctx }] }),
     });
     if (!up.ok) { const tx = await up.text().catch(() => ""); return res.status(502).json({ error: "claude_failed", detail: tx.slice(0, 300) }); }
     const data = await up.json();
-    let text = (data.content && data.content[0] && data.content[0].text) || "";
-    text = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    let doc;
-    try { doc = JSON.parse(text); } catch (e) { const s = text.indexOf("{"), end = text.lastIndexOf("}"); doc = JSON.parse(text.slice(s, end + 1)); }
+    const text = (data.content && data.content[0] && data.content[0].text) || "";
+    // Truncation-proof parse: never throw a 500 on imperfect model output. A 502 tells the client
+    // to simply retry (it already shows a friendly toast) instead of surfacing a crash.
+    const doc = extractJson(text);
+    if (!doc || typeof doc !== "object") return res.status(502).json({ error: "doc_parse_failed", stop: data.stop_reason || "" });
     const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "" };
     if (ownerId) await saveArtifact(ownerId, "doc", akey, doc, meta);
     return res.status(200).json({ doc, meta, cached: false });

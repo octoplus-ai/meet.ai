@@ -5,6 +5,7 @@ import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
+import { extractJson } from "./lib/aijson.js";
 
 export const config = { maxDuration: 60 };
 
@@ -166,14 +167,15 @@ Allowed layouts: ${VALID_LAYOUTS.join(", ")}. You may add an optional "note" (sp
     const up = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 4000, system: sys, messages: [{ role: "user", content: userContent }] }),
+      // 8000 (was 4000): stop a rich deck's JSON from being truncated mid-slide (which parsed to a
+      // 500). extractJson is the truncation-proof safety net.
+      body: JSON.stringify({ model: MODEL, max_tokens: 8000, system: sys, messages: [{ role: "user", content: userContent }] }),
     });
     if (!up.ok) { const tx = await up.text().catch(() => ""); return res.status(502).json({ error: "claude_failed", detail: tx.slice(0, 300) }); }
     const data = await up.json();
-    let text = (data.content && data.content[0] && data.content[0].text) || "";
-    text = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    let deck;
-    try { deck = JSON.parse(text); } catch (e) { const s = text.indexOf("{"), end = text.lastIndexOf("}"); deck = JSON.parse(text.slice(s, end + 1)); }
+    const text = (data.content && data.content[0] && data.content[0].text) || "";
+    const deck = extractJson(text);
+    if (!deck || typeof deck !== "object" || !Array.isArray(deck.slides)) return res.status(502).json({ error: "deck_parse_failed", stop: data.stop_reason || "" });
     deck.themeId = themeId;
 
     // Generate AI background images for slides Claude flagged with imagePrompt (parallel, capped).
