@@ -1598,7 +1598,6 @@ function MonthGrid({ year, month, start, end, onPick, hideCaption }) {
 // calendar (click one day = that day; click two = the range, with every day in between shown).
 function DateFilterDropdown({ label, value, range, onChange, options }) {
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState("list");
   const [view, setView] = useState(() => { const d = (range && range.start) ? parseYmd(range.start) : new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
   const [start, setStart] = useState((range && range.start) || null);
   const [end, setEnd] = useState((range && range.end) || null);
@@ -1606,50 +1605,44 @@ function DateFilterDropdown({ label, value, range, onChange, options }) {
   const cur = options.find((o) => o.value === value);
   const rangeLabel = (range && range.start) ? (range.end && range.end !== range.start ? `${fmtDateShort(range.start)} - ${fmtDateShort(range.end)}` : fmtDateShort(range.start)) : tr("dateCustom");
   const btnLabel = value === "custom" ? rangeLabel : (active ? cur?.label : label);
-  const close = () => { setOpen(false); setMode("list"); };
-  const openCal = () => { const d = (range && range.start) ? parseYmd(range.start) : new Date(); setView({ y: d.getFullYear(), m: d.getMonth() }); setStart((range && range.start) || null); setEnd((range && range.end) || null); setMode("calendar"); };
+  const headLabel = value === "custom" ? rangeLabel : (cur?.label || label);
+  const close = () => setOpen(false);
+  const openMenu = () => { const d = (range && range.start) ? parseYmd(range.start) : new Date(); setView({ y: d.getFullYear(), m: d.getMonth() }); setStart((range && range.start) || null); setEnd((range && range.end) || null); setOpen(true); };
   const pick = (ymd) => { if (!start || (start && end)) { setStart(ymd); setEnd(null); } else if (ymd >= start) setEnd(ymd); else { setStart(ymd); setEnd(null); } };
   const shift = (delta) => setView((v) => { const d = new Date(v.y, v.m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const apply = () => { if (!start) return; onChange("custom", { start, end: end || start }); close(); };
   const clearCal = () => { setStart(null); setEnd(null); onChange("all", null); close(); };
   return (
     <div className="relative">
-      <button onClick={() => (open ? close() : setOpen(true))} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (active ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+      <button onClick={() => (open ? close() : openMenu())} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (active ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
         <Calendar size={14} className={active ? "text-violet-500" : "text-slate-400"} />{btnLabel}<ChevronDown size={14} className={active ? "text-violet-400" : "text-slate-400"} />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={close} />
-          {mode === "list" ? (
-            <div className="absolute left-0 z-20 mt-1 max-h-72 min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+          {/* Two-pane: quick ranges on the left, a calendar for a custom range on the right. */}
+          <div className="absolute left-0 z-20 mt-1 flex w-[560px] max-w-[94vw] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="w-[188px] shrink-0 border-r border-slate-100 py-2">
               {options.map((o) => (
-                <button key={o.value} onClick={() => { onChange(o.value, null); close(); }} className={"flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-50 " + (o.value === value ? "font-semibold text-violet-700" : "text-slate-600")}>
-                  {o.label}{o.value === value && <Check size={14} className="text-violet-600" />}
+                <button key={o.value} onClick={() => { onChange(o.value, null); close(); }} className={"flex w-full items-center justify-between px-4 py-2 text-left text-[13px] hover:bg-slate-50 " + (o.value === value ? "font-semibold text-violet-700" : "text-slate-600")}>
+                  {o.label}{o.value === value && <Check size={15} className="text-violet-600" />}
                 </button>
               ))}
-              <div className="my-1 border-t border-slate-100" />
-              <button onClick={openCal} className={"flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-50 " + (value === "custom" ? "font-semibold text-violet-700" : "text-slate-600")}>
-                <span className="flex items-center gap-2"><Calendar size={14} className="text-slate-400" />{tr("dateCustom")}</span>{value === "custom" && <Check size={14} className="text-violet-600" />}
-              </button>
             </div>
-          ) : (
-            <div className="absolute left-0 z-20 mt-1 w-[300px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
-              <div className="mb-3 flex gap-2">
-                <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-[12px] text-slate-600">{start ? fmtDateShort(start) : tr("dateStart")}</div>
-                <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-[12px] text-slate-600">{end ? fmtDateShort(end) : (start ? fmtDateShort(start) : tr("dateEnd"))}</div>
-              </div>
+            <div className="flex-1 p-4">
+              <div className="mb-2 text-center text-[13px] font-semibold text-slate-500">{headLabel}</div>
               <div className="mb-1 flex items-center justify-between">
-                <button onClick={() => shift(-1)} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"><ChevronLeft size={16} /></button>
-                <span className="text-[13px] font-semibold text-slate-700">{new Date(view.y, view.m, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" })}</span>
-                <button onClick={() => shift(1)} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"><ChevronRight size={16} /></button>
+                <button onClick={() => shift(-1)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-50 hover:text-violet-600"><ChevronLeft size={18} /></button>
+                <span className="text-[14px] font-semibold text-slate-700">{new Date(view.y, view.m, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" })}</span>
+                <button onClick={() => shift(1)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-50 hover:text-violet-600"><ChevronRight size={18} /></button>
               </div>
               <MonthGrid year={view.y} month={view.m} start={start} end={end} onPick={pick} hideCaption />
-              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-                <button onClick={clearCal} className="rounded-lg px-3 py-2 text-[13px] font-medium text-slate-500 hover:bg-slate-50">{tr("dateClear")}</button>
-                <button onClick={apply} disabled={!start} className={"rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition " + (start ? "bg-violet-600 hover:bg-violet-700" : "cursor-not-allowed bg-violet-300")}>{tr("dateApply")}</button>
+              <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                {start && <button onClick={clearCal} className="rounded-lg px-3 py-2 text-[13px] font-medium text-slate-500 hover:bg-slate-50">{tr("dateClear")}</button>}
+                <button onClick={apply} disabled={!start} className={"rounded-lg px-6 py-2 text-[13px] font-semibold text-white transition " + (start ? "bg-violet-600 hover:bg-violet-700" : "cursor-not-allowed bg-violet-300")}>OK</button>
               </div>
             </div>
-          )}
+          </div>
         </>
       )}
     </div>
@@ -2040,7 +2033,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const sourceOpts = useMemo(() => [{ value: "all", label: tr("allSources") }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
   const folderOpts = useMemo(() => [{ value: "all", label: tr("allFoldersOpt") }, ...[...new Set(meetings.flatMap((m) => m.folders || (m.folder ? [m.folder] : [])).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
   const typeOpts = [{ value: "all", label: tr("allTypes2") }, { value: "completed", label: tr("completed2") }, { value: "processing", label: tr("inProgress") }];
-  const dateOpts = [{ value: "all", label: tr("anytimeOpt") }, { value: "today", label: tr("todayOpt") }, { value: "week", label: tr("thisWeekOpt") }, { value: "month", label: tr("thisMonthOpt") }];
+  const dateOpts = [{ value: "all", label: tr("anytimeOpt") }, { value: "today", label: tr("todayOpt") }, { value: "last7", label: "Last 7 days" }, { value: "last30", label: "Last 30 days" }, { value: "last90", label: "Last 90 days" }, { value: "last6mo", label: "Last 6 months" }, { value: "last12mo", label: "Last 12 months" }];
   const ownerOpts = [{ value: "all", label: tr("allReportsOpt") }, { value: "mine", label: tr("myReportsOpt") }, { value: "real", label: tr("recordedByOctomeet") }];
 
   // Date & Time column sort direction - newest first by default; the header toggles it.
@@ -2054,11 +2047,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
       .filter((m) => fOwner === "all" || (fOwner === "mine" ? !m.shared : m.real))
       .filter((m) => fSource === "all" || m.source === fSource)
       .filter((m) => fFolder === "all" || (m.folders || (m.folder ? [m.folder] : [])).includes(fFolder))
-      .filter((m) => fType === "all" || (fType === "completed" ? (!m.real || m.status === "done") : (m.real && INCOMPLETE.includes(m.status))))
       .filter((m) => {
         if (fDate === "all") return true;
         if (fDate === "custom") { if (!fRange || !fRange.start) return true; return m.date >= fRange.start && m.date <= (fRange.end || fRange.start); }
-        const d = daysAgo(m.date); return fDate === "today" ? d <= 0 : fDate === "week" ? d <= 7 : d <= 31;
+        const d = daysAgo(m.date), CAP = { today: 0, last7: 7, last30: 30, last90: 90, last6mo: 183, last12mo: 365 };
+        return d <= (CAP[fDate] != null ? CAP[fDate] : 31);
       })
       .filter((m) => {
         if (!q) return true;
@@ -2111,12 +2104,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
         </form>
         <div className="flex items-center justify-between">
           <div className="flex gap-5">
-            {[{ k: "reports", key: "reportsTab" }, { k: "incomplete", key: "incompleteTab" }].map((tb) => (
-              <button key={tb.k} onClick={() => setTab(tb.k)}
-                className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-violet-600 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
-                {t(tb.key)}
-              </button>
-            ))}
+            <span className="border-b-2 border-violet-600 pb-2.5 text-sm font-semibold text-violet-700">{t("reportsTab")}</span>
           </div>
           <div className="flex items-center gap-3 pb-1.5">
             <button onClick={() => { if (onRefresh) onRefresh(); toast("Refreshed"); }} className="flex items-center gap-1.5 text-[13px] text-slate-400 transition hover:text-slate-600"><RefreshCw size={13} /> {t("lastRefreshed")}</button>
@@ -2163,11 +2151,10 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               )}
               <FilterDropdown label={t("allReports")} icon={ClipboardList} value={fOwner} onChange={setFOwner} options={ownerOpts} />
               <DateFilterDropdown label={t("anytime")} value={fDate} range={fRange} onChange={(v, r) => { setFDate(v); setFRange(r); }} options={dateOpts} />
-              <FilterDropdown label={t("type")} value={fType} onChange={setFType} options={typeOpts} />
               <FilterDropdown label={t("source")} value={fSource} onChange={setFSource} options={sourceOpts} />
               <FilterDropdown label={t("folder")} value={fFolder} onChange={setFFolder} options={folderOpts} />
-              {(fOwner !== "all" || fDate !== "all" || fType !== "all" || fSource !== "all" || fFolder !== "all") && (
-                <button onClick={() => { setFOwner("all"); setFDate("all"); setFRange(null); setFType("all"); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">{tr("clearFilters")}</button>
+              {(fOwner !== "all" || fDate !== "all" || fSource !== "all" || fFolder !== "all") && (
+                <button onClick={() => { setFOwner("all"); setFDate("all"); setFRange(null); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">{tr("clearFilters")}</button>
               )}
               <div className="flex-1" />
               {/* Bulk actions: always visible + active-looking. Hover shows a hint until a selection is made. */}
