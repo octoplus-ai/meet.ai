@@ -1257,6 +1257,13 @@ export default function App() {
   const handleUploadSave = useCallback(async (m) => {
     await persist([m, ...meetings]); setUploadOpen(false); setActiveId(m.id); setView("meeting");
   }, [meetings]);
+  // A real audio/video upload was accepted for transcription: close the modal and let the new
+  // "processing" meeting surface in Reports, updating to done when AssemblyAI finishes.
+  const handleMediaUploaded = (meetingId) => {
+    setUploadOpen(false); setView("reports");
+    toast("Transcribing your upload - the report will appear in Reports shortly.");
+    try { loadReal && loadReal(); } catch (e) {}
+  };
 
   // Public shared-report link (?share=token): a login-free, read-only view of ONE report.
   // Bypasses the auth gate entirely so invited people never hit Google sign-in.
@@ -1305,7 +1312,7 @@ export default function App() {
         {view === "integrations" && <IntegrationsView onAsk={goAsk} />}
         {view === "meeting-policy" && <MeetingPolicyView onAsk={goAsk} />}
       </main>
-      {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} onSave={handleUploadSave} />}
+      {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} onSave={handleUploadSave} onUploaded={handleMediaUploaded} />}
     </div>
   );
 }
@@ -6456,12 +6463,13 @@ const EXAMPLE_TRANSCRIPT =
 [01:25] Nicolas Benech: We'd train on your historical tickets and start in suggest-only mode until trust is high, then flip to auto.
 [02:05] Jordan Vela: I like the phased approach. I'll export a month of tickets by Friday. Let's get a proposal moving.`;
 
-function UploadModal({ onClose, onSave }) {
+function UploadModal({ onClose, onSave, onUploaded }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [notify, setNotify] = useState(true);
   const [fileName, setFileName] = useState("");
   const [transcript, setTranscript] = useState("");
+  const [mediaFile, setMediaFile] = useState(null); // an audio/video file to transcribe via AssemblyAI
   const [showPaste, setShowPaste] = useState(false);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef(null);
@@ -6469,15 +6477,32 @@ function UploadModal({ onClose, onSave }) {
   const handleFiles = async (files) => {
     const f = files && files[0];
     if (!f) return;
-    setFileName(f.name); setErr("");
+    setFileName(f.name); setErr(""); setMediaFile(null);
     const isText = /\.(txt|vtt|srt|md|json)$/i.test(f.name) || (f.type && f.type.startsWith("text"));
     if (isText) {
       try { setTranscript(await f.text()); } catch { setErr("Couldn't read that file."); }
     } else {
-      setTranscript("");
-      setErr("Audio/video transcription via upload is coming soon. For now, drop a transcript file (.txt/.vtt/.srt) or paste the transcript below - or use “Add to live meeting” to capture a live call.");
-      setShowPaste(true);
+      // Real audio/video: transcribed by the media pipeline (AssemblyAI). Ready to upload.
+      setTranscript(""); setMediaFile(f); setShowPaste(false);
+      if (f.size > 115 * 1024 * 1024) setErr("This file is " + Math.round(f.size / 1048576) + " MB. Uploads up to ~115 MB are supported for now - for a long video, upload just its audio track (.m4a).");
     }
+  };
+
+  // Transcribe an uploaded audio/video file: mint an upload pass, POST the bytes straight to the
+  // orchestrator (which hands them to AssemblyAI), then let the report appear as it finishes.
+  const uploadMedia = async () => {
+    if (!mediaFile) return;
+    if (mediaFile.size > 115 * 1024 * 1024) { setErr("This file is too large (limit ~115 MB). Upload the audio track (.m4a) of a long recording instead."); return; }
+    setBusy(true); setErr("");
+    try {
+      const title = (mediaFile.name || "Uploaded recording").replace(/\.[^.]+$/, "");
+      const fin = await fetch("/api/media/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, source: "Upload" }) });
+      const fd = await fin.json().catch(() => ({}));
+      if (!fin.ok || !fd.uploadUrl || !fd.pass) { setErr(fd.error === "orchestrator not configured" ? "Upload transcription is not configured on this deployment." : "Couldn't start the upload - try again."); setBusy(false); return; }
+      const up = await fetch(fd.uploadUrl, { method: "POST", headers: { "x-octomeet-meeting": fd.meetingId, "x-octomeet-pass": fd.pass, "content-type": "application/octet-stream" }, body: mediaFile });
+      if (!up.ok) { setErr("Upload failed (the file may exceed the ~115 MB limit). Try the audio track instead."); setBusy(false); return; }
+      if (onUploaded) onUploaded(fd.meetingId);
+    } catch (e) { setErr("Network error during upload - try again."); setBusy(false); }
   };
 
   const generate = async () => {
@@ -6519,11 +6544,7 @@ function UploadModal({ onClose, onSave }) {
           <h2 className="text-xl font-bold text-slate-900">Upload files</h2>
           <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X size={20} /></button>
         </div>
-        <div className="mb-4 flex items-center gap-3 text-sm">
-          <span className="text-slate-500">You have <b className="text-slate-700">200 minutes</b> remaining.</span>
-          <button onClick={() => toast("Get more credits - coming soon")} className="font-semibold text-violet-600 hover:text-violet-800">Get more credits</button>
-          <button onClick={() => toast("Upload supports transcript files today; video transcription is coming soon")} className="font-semibold text-violet-600 hover:text-violet-800">Learn more</button>
-        </div>
+        <div className="mb-4 text-sm text-slate-500">Upload an <b className="text-slate-700">audio or video recording</b> to transcribe and analyze it (up to ~115 MB), or drop a <b className="text-slate-700">transcript</b> file to skip transcription. You get the full report; playback of uploaded files is coming next.</div>
 
         <input ref={inputRef} type="file" accept=".txt,.vtt,.srt,.md,.json,audio/*,video/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
         <div
@@ -6538,7 +6559,7 @@ function UploadModal({ onClose, onSave }) {
           ) : (
             <div className="text-[15px] text-slate-600">Drop a file here, or <span className="font-semibold text-violet-600">browse files</span></div>
           )}
-          <div className="mt-1 text-[12px] text-slate-400">MP4 or M4A, maximum 5GB each - or a transcript (.txt/.vtt/.srt)</div>
+          <div className="mt-1 text-[12px] text-slate-400">MP4, M4A, MP3 or WAV up to ~115 MB - or a transcript (.txt/.vtt/.srt)</div>
         </div>
 
         {showPaste && (
@@ -6563,8 +6584,8 @@ function UploadModal({ onClose, onSave }) {
 
         <div className="mt-5 flex items-center justify-end gap-3">
           <button onClick={onClose} className="text-sm font-semibold text-violet-600 hover:text-violet-800">Cancel</button>
-          <button onClick={generate} disabled={busy} className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-500 disabled:opacity-50">
-            {busy ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : "Generate Reports"}
+          <button onClick={mediaFile ? uploadMedia : generate} disabled={busy} className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-500 disabled:opacity-50">
+            {busy ? <><Loader2 size={15} className="animate-spin" /> {mediaFile ? "Uploading…" : "Generating…"}</> : (mediaFile ? "Transcribe & analyze" : "Generate report")}
           </button>
         </div>
       </div>

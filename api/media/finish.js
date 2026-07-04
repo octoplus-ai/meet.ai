@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     const created = await sb("meetings", {
       method: "POST", prefer: "return=representation",
       body: {
-        user_id: uid, title: body.title || "Live meeting", source: "Meet (botless)",
+        user_id: uid, title: body.title || "Live meeting", source: body.source || "Meet (botless)",
         meeting_url: body.meetingCode ? "https://meet.google.com/" + body.meetingCode : null,
         status: "processing", capture_mode: "media_api",
         start_time: new Date(Date.now() - (durationMin || 0) * 60000).toISOString(),
