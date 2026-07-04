@@ -2493,8 +2493,71 @@ function FoldersView({ onAsk, meetings, onOpenFolder, user }) {
 
 /* ============================ CALENDAR ============================ */
 const CAL_ARMED_KEY = "octomeet:calendar-armed:v1";
+// Google-Calendar-style month grid. Each day cell shows its meetings as colored chips: a recorded
+// meeting shows its score (colored by value), a scheduled one shows violet, live=red, processing=amber.
+// Clicking a chip bubbles the event up for the detail popover (toggle / view report / join).
+function MonthCalendar({ cursor, setCursor, byDay, onPick }) {
+  const y = cursor.getFullYear(), mo = cursor.getMonth();
+  const monthLabel = new Date(y, mo, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" });
+  const startDow = new Date(y, mo, 1).getDay(); // 0 = Sunday (Google Calendar default)
+  const daysInMonth = new Date(y, mo + 1, 0).getDate();
+  const prevDays = new Date(y, mo, 0).getDate();
+  const p2 = (n) => String(n).padStart(2, "0");
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push({ day: prevDays - startDow + 1 + i, out: true });
+  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, ymd: `${y}-${p2(mo + 1)}-${p2(d)}` });
+  let t = 1; while (cells.length % 7) cells.push({ day: t++, out: true });
+  const weekdays = [...Array(7)].map((_, i) => new Date(2024, 5, 2 + i).toLocaleDateString(LOC(), { weekday: "short" })); // 2024-06-02 = Sunday
+  const shift = (n) => setCursor(new Date(y, mo + n, 1));
+  const chipStyle = (ev) => {
+    const m = ev.mtg;
+    if (m && m.status === "done") return { bg: scoreColor(m.scores.engagement || m.scores.overall), fg: "#fff" };
+    if (m && (m.status === "recording" || m.status === "in_call")) return { bg: "#F43F5E", fg: "#fff" };
+    if (m && m.status === "processing") return { bg: "#F59E0B", fg: "#fff" };
+    if (m && (m.status === "skipped" || m.status === "error")) return { bg: "#EEF0F4", fg: "#6B7280" };
+    return { bg: "#EDE9FE", fg: "#6D28D9" }; // scheduled / upcoming
+  };
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <div className="flex items-center gap-1">
+          <button onClick={() => shift(-1)} title="Previous month" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><ChevronLeft size={18} /></button>
+          <button onClick={() => setCursor(new Date())} className="rounded-lg border border-slate-200 px-3 py-1 text-[13px] font-semibold text-slate-600 hover:bg-slate-50">Today</button>
+          <button onClick={() => shift(1)} title="Next month" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><ChevronRight size={18} /></button>
+        </div>
+        <h3 className="text-lg font-bold text-slate-900">{monthLabel}</h3>
+        <div className="w-[112px]" />
+      </div>
+      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+        {weekdays.map((w, i) => <div key={i} className="px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">{w}</div>)}
+      </div>
+      <div className="grid grid-cols-7">
+        {cells.map((c, i) => {
+          const evs = (c.ymd && byDay[c.ymd]) || [];
+          const isToday = c.ymd === REF_TODAY;
+          return (
+            <div key={i} className={"min-h-[116px] border-b border-r border-slate-100 p-1.5 " + (c.out ? "bg-slate-50/40" : "")}>
+              <div className={"mb-1 flex h-6 w-6 items-center justify-center rounded-full text-[12px] " + (isToday ? "bg-violet-600 font-bold text-white" : c.out ? "text-slate-300" : "text-slate-500")}>{c.day}</div>
+              <div className="space-y-1">
+                {evs.slice(0, 4).map((ev, j) => { const st = chipStyle(ev); return (
+                  <button key={j} onClick={() => onPick(ev)} className="flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-left text-[11px] font-medium leading-tight transition hover:brightness-95" style={{ background: st.bg, color: st.fg }}>
+                    {ev.mtg && ev.mtg.status === "done" && <span className="shrink-0 font-bold">{ev.mtg.scores.engagement || ev.mtg.scores.overall}</span>}
+                    <span className="truncate">{ev.timeLabel ? ev.timeLabel.replace(/\s?[AP]M/i, "") + " " : ""}{ev.title}</span>
+                  </button>
+                ); })}
+                {evs.length > 4 && <div className="px-1.5 text-[11px] font-medium text-slate-400">+{evs.length - 4} more</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
-  const [tab, setTab] = useState(initialTab || "upcoming");
+  const [tab, setTab] = useState(initialTab || "month");
+  const [cursor, setCursor] = useState(() => new Date()); // viewed month
+  const [pick, setPick] = useState(null); // event clicked in the grid -> detail popover
   const [realEvents, setRealEvents] = useState(null);
   const [armed, setArmed] = useState({});
   const [autoJoin, setAutoJoin] = useState(true);
@@ -2577,17 +2640,58 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   const display = realEvents && realEvents.length
     ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: false, role: null, url: e.meetingUrl, startIso: e.start, endIso: e.end, eventId: e.id }; })
     : events;
+
+  // Unified event list for the month grid: recorded meetings (past + scheduled, with scores) merged
+  // with upcoming Google Calendar events (which carry the join URL). Deduped by calendar event id.
+  const byDay = useMemo(() => {
+    const map = {}, seen = new Set();
+    const push = (ymd, ev) => { if (!ymd) return; (map[ymd] = map[ymd] || []).push(ev); };
+    (meetings || []).filter((m) => m.real && m.date).forEach((m) => {
+      if (m.status === "skipped" || m.status === "error") return;
+      if (m.calendarEventId) seen.add(m.calendarEventId);
+      push(m.date, { title: m.title, timeLabel: m.timeStart || "", ppl: (m.participants || []).length || (m.attendees || []).length, url: m.meeting_url || null, mtg: m, eventId: m.calendarEventId, startIso: null, endIso: null });
+    });
+    (realEvents || []).forEach((e) => {
+      if (e.id && seen.has(e.id)) return;
+      push(localDateISO(e.start), { title: e.title, timeLabel: fmtEv(e.start).time, ppl: e.attendees, url: e.meetingUrl, mtg: e.id ? byEvent[e.id] : null, eventId: e.id, startIso: e.start, endIso: e.end });
+    });
+    Object.values(map).forEach((a) => a.sort((x, y) => String(x.timeLabel).localeCompare(String(y.timeLabel))));
+    return map;
+  }, [meetings, realEvents]);
+
+  // The detail popover reads live status from byEvent (fresh) and computes the armed state.
+  const pickMtg = pick && pick.eventId ? (byEvent[pick.eventId] || pick.mtg) : (pick && pick.mtg);
+  const pickArmed = pickMtg ? !["error", "skipped"].includes(pickMtg.status) : (pick ? (armed[pick.eventId || (pick.title + "|" + pick.timeLabel)] ?? (autoJoin && !!pick.url)) : false);
+
   return (
     <>
       <SectionTop title="Calendar" onAsk={onAsk} right={<button onClick={async () => { try { await navigator.clipboard.writeText("https://cal.octomeet.ai/nicolas-82n88"); } catch (e) {} toast("Scheduling link copied"); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-violet-500"><Link2 size={15} /> Scheduling Link</button>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="mb-5 flex items-center gap-5 border-b border-slate-200">
-          {[{ k: "upcoming", l: "Upcoming" }, { k: "schedule", l: "Schedule" }, { k: "scheduling", l: "Scheduling" }].map((tb) => (
+          {[{ k: "month", l: "Calendar" }, { k: "upcoming", l: "List" }, { k: "schedule", l: "Schedule" }, { k: "scheduling", l: "Scheduling" }].map((tb) => (
             <button key={tb.k} onClick={() => setTab(tb.k)} className={"border-b-2 pb-2.5 text-sm font-semibold transition " + (tab === tb.k ? "border-violet-600 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{tb.l}</button>
           ))}
         </div>
 
-        {tab === "upcoming" ? (
+        {tab === "month" ? (
+          <>
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3">
+              <OctoLogo size={22} />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">Auto-join your meetings {recallConnected && autoJoin && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Calendar connected</span>}</div>
+                <div className="text-[12px] text-slate-500">Your meetings appear on the calendar below. Recorded ones show their score - click any to open the report or toggle OctoMeet.</div>
+              </div>
+              <CalToggle on={autoJoin} onChange={toggleAutoJoin} />
+            </div>
+            <MonthCalendar cursor={cursor} setCursor={setCursor} byDay={byDay} onPick={setPick} />
+            <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] text-slate-400">
+              <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#EDE9FE" }} /> Scheduled</span>
+              <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#16A34A" }} /> Recorded (shows score)</span>
+              <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#F43F5E" }} /> Recording now</span>
+              <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#F59E0B" }} /> Processing</span>
+            </div>
+          </>
+        ) : tab === "upcoming" ? (
           <>
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3">
               <OctoLogo size={22} />
@@ -2665,6 +2769,39 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
           </div>
         )}
       </div>
+
+      {/* Event detail popover (from a month-grid chip): report link / status / arm toggle + join. */}
+      {pick && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4" onClick={() => setPick(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50"><Video size={18} className="text-violet-600" /></div>
+              <div className="min-w-0 flex-1">
+                <div className="text-base font-bold text-slate-900">{pick.title}</div>
+                <div className="mt-0.5 text-[13px] text-slate-500">{pick.mtg && pick.mtg.date ? fmtDateFull(pick.mtg.date) : (pick.startIso ? fmtEv(pick.startIso).date : "")}{pick.timeLabel ? " · " + pick.timeLabel : ""}</div>
+              </div>
+              <button onClick={() => setPick(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="mb-4 flex items-center gap-1.5 text-[13px] text-slate-500"><Users size={14} className="text-slate-400" /> {(pick.startIso && pick.endIso && totalTime(pick.startIso, pick.endIso, pick.ppl)) || `${pick.ppl || 0} guest${pick.ppl === 1 ? "" : "s"}`}</div>
+            {pickMtg && pickMtg.status === "done" ? (
+              <button onClick={() => { onOpen(pickMtg.id); setPick(null); }} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100">
+                <span className="flex items-center gap-2"><span className="flex h-7 items-center rounded-md px-2 text-[12px] font-bold text-white" style={{ background: scoreColor(pickMtg.scores.engagement || pickMtg.scores.overall) }}>{pickMtg.scores.engagement || pickMtg.scores.overall}</span><span className="text-[13px] font-semibold text-slate-700">OctoMeet Score</span></span>
+                <span className="text-[13px] font-semibold text-violet-600">View report ↗</span>
+              </button>
+            ) : pickMtg && ["recording", "in_call", "processing", "joining"].includes(pickMtg.status) ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><StatusBadge status={pickMtg.status} /></div>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
+                  <span className="text-[13px] font-medium text-slate-700">{pickArmed ? "OctoMeet will join & record" : "OctoMeet is off for this meeting"}</span>
+                  <CalToggle on={pickArmed} onChange={(val) => { arm({ eventId: pick.eventId, url: pick.url, name: pick.title, startIso: pick.startIso }, pick.eventId || (pick.title + "|" + pick.timeLabel), val); setPick(null); }} />
+                </div>
+                {pick.url && <a href={pick.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Video size={15} /> Join with Google Meet</a>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
