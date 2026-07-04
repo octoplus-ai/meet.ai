@@ -54,5 +54,20 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), anthropicProxy(env.ANTHROPIC_API_KEY)],
     server: { port: 5173, open: true },
+    build: {
+      rollupOptions: {
+        output: {
+          // Split heavy, stable vendor code out of the single app chunk. These now download in
+          // parallel with the app code AND stay cached across deploys (an app-code change no longer
+          // busts the vendor cache), so repeat visits and first paint are faster. recharts + its d3
+          // deps are the biggest single slice of the old ~1.2MB monolith.
+          manualChunks: {
+            react: ["react", "react-dom"],
+            recharts: ["recharts"],
+            icons: ["lucide-react"],
+          },
+        },
+      },
+    },
   };
 });

@@ -23,9 +23,11 @@ const VALID_LAYOUTS = ["cover", "agenda", "bullets", "twoColumn", "bigStat", "qu
 // Generate one AI image as a data URL. Tries gpt-image-1, then falls back to dall-e-3 so images
 // NEVER silently break (gpt-image-1 requires an org-verified key; dall-e-3 does not). null only if both fail.
 async function genImageWith(key, model, prompt) {
+  // dall-e-3 is the FALLBACK and only ever a full-bleed background behind a dark scrim, so "hd"
+  // detail is invisible under the scrim - "standard" looks identical, generates faster and costs ~half.
   const body = model === "gpt-image-1"
     ? { model, prompt, size: "1536x1024", quality: "medium", n: 1 }
-    : { model: "dall-e-3", prompt, size: "1792x1024", quality: "hd", response_format: "b64_json", n: 1 };
+    : { model: "dall-e-3", prompt, size: "1792x1024", quality: "standard", response_format: "b64_json", n: 1 };
   const r = await fetch("https://api.openai.com/v1/images/generations", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -38,24 +40,29 @@ async function genImageWith(key, model, prompt) {
   return "data:image/png;base64," + b64;
 }
 
+// If the deployment's OpenAI key is NOT org-verified, gpt-image-1 fails on EVERY image and each one
+// pays a full doomed round-trip before falling back to dall-e-3. Latch the failure once per warm
+// lambda so subsequent images (this deck AND later requests) skip straight to dall-e-3. Set back to
+// false is never needed - a cold start clears it, which re-probes after a possible key upgrade.
+let gptImageBroken = false;
 async function genImage(key, prompt) {
   const p = String(prompt || "").slice(0, 900);
   if (!p) return null;
-  for (const model of ["gpt-image-1", "dall-e-3"]) {
+  const models = gptImageBroken ? ["dall-e-3"] : ["gpt-image-1", "dall-e-3"];
+  for (const model of models) {
     try { return await genImageWith(key, model, p); }
-    catch (e) { console.warn("[slides] image gen failed on", model + ":", e.message); }
+    catch (e) {
+      if (model === "gpt-image-1") gptImageBroken = true; // don't repay this doomed call per-image
+      console.warn("[slides] image gen failed on", model + ":", e.message);
+    }
   }
   return null;
 }
 
-async function loadMeeting(req, body) {
-  const t = parseCookies(req).om_session;
-  if (t) {
-    const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
-    if (s.length && body.meetingId) {
-      const m = await sb(`meetings?id=eq.${enc(body.meetingId)}&user_id=eq.${s[0].user_id}&select=*,reports(*)`);
-      if (m.length) return m[0];
-    }
+async function loadMeeting(req, body, ownerId) {
+  if (ownerId && body.meetingId) {
+    const m = await sb(`meetings?id=eq.${enc(body.meetingId)}&user_id=eq.${ownerId}&select=*,reports(*)`);
+    if (m.length) return m[0];
   }
   if (body.shareToken) {
     const r = await resolveShareToken(body.shareToken);
@@ -67,17 +74,14 @@ async function loadMeeting(req, body) {
   return null;
 }
 
-async function loadMeetings(req, body) {
+async function loadMeetings(req, body, ownerId) {
   if (Array.isArray(body.meetingIds) && body.meetingIds.length) {
-    const t = parseCookies(req).om_session;
-    if (!t) return [];
-    const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
-    if (!s.length) return [];
+    if (!ownerId) return [];
     const ids = body.meetingIds.filter((x) => typeof x === "string").slice(0, 12).map(enc).join(",");
     if (!ids) return [];
-    return (await sb(`meetings?id=in.(${ids})&user_id=eq.${s[0].user_id}&select=*,reports(*)`)) || [];
+    return (await sb(`meetings?id=in.(${ids})&user_id=eq.${ownerId}&select=*,reports(*)`)) || [];
   }
-  const one = await loadMeeting(req, body);
+  const one = await loadMeeting(req, body, ownerId);
   return one ? [one] : [];
 }
 function meetingSection(m, per) {
@@ -103,7 +107,9 @@ export default async function handler(req, res) {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const mtgs = await loadMeetings(req, body);
+    // Resolve session -> owner id ONCE and reuse it (was queried twice, serially).
+    const ownerId = await sessionUser(req);
+    const mtgs = await loadMeetings(req, body, ownerId);
     if (!mtgs.length) return res.status(401).json({ error: "not authorized" });
     const multi = mtgs.length > 1;
     const m = mtgs[0];
@@ -114,7 +120,6 @@ export default async function handler(req, res) {
     const kind = withImages ? "deck_img" : "deck";
 
     // Saved-artifact cache + hidden monthly cap (owner session only).
-    const ownerId = await sessionUser(req);
     const akey = artifactKey(mtgs.map((x) => x.id));
     if (ownerId && !body.regenerate) {
       const a = await getArtifact(ownerId, kind, akey);

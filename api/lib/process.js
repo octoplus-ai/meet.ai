@@ -210,8 +210,12 @@ export async function analyzeTranscript(text, title, participantNames) {
       max_tokens: 8000,
       // The analysis system prompt is large and identical on every meeting AND every
       // batched re-analysis. Caching it makes the prefill ~90% cheaper and faster on
-      // consecutive calls within the cache window (the reprocess-stale batches hit this).
-      system: [{ type: "text", text: sys, cache_control: { type: "ephemeral" } }],
+      // consecutive calls within the cache window. reprocess-stale loops span several
+      // minutes (2 re-analyses / 60s call), so a 5-min TTL would lapse mid-batch and pay a
+      // cold write each time; a 1h TTL keeps the whole batch (and back-to-back user sessions)
+      // hitting the cache. Write is ~2x (vs 1.25x) but reads stay ~0.1x - net win under any
+      // real volume, which this workload always has.
+      system: [{ type: "text", text: sys, cache_control: { type: "ephemeral", ttl: "1h" } }],
       messages: [{ role: "user", content: `Title: ${title}\n\n${known}Transcript:\n${(text || "(no speech captured)").slice(0, 600000)}` }],
     }),
   });

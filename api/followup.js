@@ -29,9 +29,12 @@ export default async function handler(req, res) {
     const m = a.meeting;
 
     if (body.action === "send") {
-      const bot = await getBotSender(); // sender = bot mailbox when connected, else the owner's Gmail
+      // The app_users lookup is independent of the bot/token resolution - run them concurrently.
+      const [bot, u] = await Promise.all([
+        getBotSender(), // sender = bot mailbox when connected, else the owner's Gmail
+        sb(`app_users?id=eq.${a.ownerId}&select=name,email`).then((r) => r[0] || {}),
+      ]);
       const token = (bot && bot.token) || await getValidToken(a.ownerId);
-      const u = (await sb(`app_users?id=eq.${a.ownerId}&select=name,email`))[0] || {};
       const fromAddr = (bot && bot.fromAddress) || u.email;
       if (!token || !fromAddr) return res.status(403).json({ error: "needScope", detail: "Reconnect Google (email permission)." });
       const to = [...new Set((body.to || []).map((e) => String(e).trim().toLowerCase()).filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e)))];

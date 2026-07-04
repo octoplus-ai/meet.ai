@@ -20,15 +20,11 @@ async function sessionUser(req) {
   return s.length ? s[0].user_id : null;
 }
 
-async function loadMeeting(req, body) {
-  // Owner session
-  const t = parseCookies(req).om_session;
-  if (t) {
-    const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
-    if (s.length && body.meetingId) {
-      const m = await sb(`meetings?id=eq.${enc(body.meetingId)}&user_id=eq.${s[0].user_id}&select=*,reports(*)`);
-      if (m.length) return m[0];
-    }
+async function loadMeeting(req, body, ownerId) {
+  // Owner session (ownerId already resolved once by the caller - no second session lookup)
+  if (ownerId && body.meetingId) {
+    const m = await sb(`meetings?id=eq.${enc(body.meetingId)}&user_id=eq.${ownerId}&select=*,reports(*)`);
+    if (m.length) return m[0];
   }
   // Shared viewer/editor token
   if (body.shareToken) {
@@ -42,17 +38,14 @@ async function loadMeeting(req, body) {
 }
 
 // Returns an array of owned meetings (1 for the single path, many for multi-select).
-async function loadMeetings(req, body) {
+async function loadMeetings(req, body, ownerId) {
   if (Array.isArray(body.meetingIds) && body.meetingIds.length) {
-    const t = parseCookies(req).om_session;
-    if (!t) return [];
-    const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
-    if (!s.length) return [];
+    if (!ownerId) return [];
     const ids = body.meetingIds.filter((x) => typeof x === "string").slice(0, 12).map(enc).join(",");
     if (!ids) return [];
-    return (await sb(`meetings?id=in.(${ids})&user_id=eq.${s[0].user_id}&select=*,reports(*)`)) || [];
+    return (await sb(`meetings?id=in.(${ids})&user_id=eq.${ownerId}&select=*,reports(*)`)) || [];
   }
-  const one = await loadMeeting(req, body);
+  const one = await loadMeeting(req, body, ownerId);
   return one ? [one] : [];
 }
 
@@ -79,13 +72,15 @@ export default async function handler(req, res) {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const mtgs = await loadMeetings(req, body);
+    // Resolve the session -> owner id ONCE and reuse it for both the meeting load and the
+    // artifact-cache/quota checks below (previously this session row was queried twice, serially).
+    const ownerId = await sessionUser(req);
+    const mtgs = await loadMeetings(req, body, ownerId);
     if (!mtgs.length) return res.status(401).json({ error: "not authorized" });
     const multi = mtgs.length > 1;
     const m = mtgs[0];
 
     // Saved-artifact cache + hidden monthly cap (owner session only).
-    const ownerId = await sessionUser(req);
     const akey = artifactKey(mtgs.map((x) => x.id));
     if (ownerId && !body.regenerate) {
       const a = await getArtifact(ownerId, "doc", akey);
