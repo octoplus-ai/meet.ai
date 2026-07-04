@@ -112,6 +112,7 @@ const EXTRA = {
     allTypes: "All types", completed: "Completed", inProgressF: "In progress", noReportsYet: "No reports yet.", renameReport: "Rename Report", deleteReport: "Delete Report", selectAll: "Select all",
     // presentation composer
     slides: "Slides", theme: "Theme", images: "Images", noImages: "No images", aiImages: "✨ AI images", customColor: "Custom color", pickColor: "Pick your accent color", lightBg: "Light", darkBg: "Dark",
+    pickColors: "Custom palette", bgColor: "Background color", accentColor: "Accent color",
     // hardcoded-string sweep
     statusScheduled: "🗓️ OctoMeet is scheduled to join this meeting and will start recording automatically at the start time.", statusJoining: "🔄 OctoMeet is joining the meeting now. Admit it from the waiting room to start recording.", statusInCall: "🟡 OctoMeet is in the meeting. Recording will begin once allowed.",
     statusRecording: "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.", statusProcessing: "⏳ Meeting ended - generating your AI report from the transcript. This page updates automatically.", octoMeetScore: "OctoMeet Score",
@@ -201,6 +202,7 @@ const EXTRA = {
     openDoc: "Abrir doc", openSlides: "Abrir slides", newSlides: "Nueva", docTipShort: "Doc pulido en PDF / Word de esta reunión.",
     allTypes: "Todos los tipos", completed: "Completados", inProgressF: "En progreso", noReportsYet: "Todavía no hay reportes.", renameReport: "Renombrar reporte", deleteReport: "Eliminar reporte", selectAll: "Seleccionar todo",
     slides: "Diapositivas", theme: "Tema", images: "Imágenes", noImages: "Sin imágenes", aiImages: "✨ Imágenes IA", customColor: "Color personalizado", pickColor: "Elegí tu color de acento", lightBg: "Claro", darkBg: "Oscuro",
+    pickColors: "Paleta personalizada", bgColor: "Color de fondo", accentColor: "Color de acento",
     // hardcoded-string sweep
     statusScheduled: "🗓️ OctoMeet está programado para unirse a esta reunión y empezará a grabar automáticamente en el horario de inicio.", statusJoining: "🔄 OctoMeet se está uniendo a la reunión ahora. Admitilo desde la sala de espera para empezar a grabar.", statusInCall: "🟡 OctoMeet está en la reunión. La grabación va a empezar una vez que se permita.",
     statusRecording: "🔴 OctoMeet está grabando en vivo. Tu reporte con IA va a aparecer acá automáticamente cuando termine la reunión.", statusProcessing: "⏳ La reunión terminó - generando tu reporte con IA a partir de la transcripción. Esta página se actualiza automáticamente.", octoMeetScore: "OctoMeet Score",
@@ -4565,8 +4567,8 @@ function AskPanel({ meeting, shared, shareTok, savedDeck }) {
   useEffect(() => { setHasDeck(!!savedDeck); }, [savedDeck]);
   const [slideCount, setSlideCount] = useState(8);
   const [themeId, setThemeId] = useState("sleek-dark");
-  const [customAccent, setCustomAccent] = useState("#7C3AED");
-  const [customMode, setCustomMode] = useState("dark");
+  const [customC1, setCustomC1] = useState("#0E1116"); // background/base color
+  const [customC2, setCustomC2] = useState("#7C3AED"); // accent color
   const [withImages, setWithImages] = useState(false); // generate AI images based on the meeting
   const [atts, setAtts] = useState([]); // [{kind:'image'|'file', name, mediaType, data, text}]
   const [genBusy, setGenBusy] = useState(false);
@@ -4596,7 +4598,7 @@ function AskPanel({ meeting, shared, shareTok, savedDeck }) {
       const genImages = Array.isArray(d.genImages) ? d.genImages : [];
       const imgUrls = images.map((im) => `data:${im.mediaType};base64,${im.data}`).concat(genImages);
       const deck = coerceDeck(d.deck, { wantN: slideCount, imageCount: imgUrls.length });
-      const theme = themeId === "custom" ? customTheme(customAccent, customMode) : getTheme(d.themeId || themeId);
+      const theme = themeId === "custom" ? customTheme(customC1, customC2) : getTheme(d.themeId || themeId);
       setDeckState({ deck, theme, imgUrls, meta: d.meta });
       setHasDeck(true); // a saved deck now exists -> button defaults to opening it
       setAtts([]);
@@ -4668,20 +4670,19 @@ function AskPanel({ meeting, shared, shareTok, savedDeck }) {
                   </button>
                 ))}
                 <button onClick={() => setThemeId("custom")} className={"flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left " + (themeId === "custom" ? "border-violet-500" : "border-slate-200")}>
-                  <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full ring-1 ring-black/10" style={{ background: customMode === "light" ? "#FFFFFF" : "#0E1116" }}><span className="h-3 w-3 rounded-full" style={{ background: customAccent }} /></span>
+                  <span className="flex h-5 w-5 overflow-hidden rounded-full ring-1 ring-black/10"><span className="h-full w-1/2" style={{ background: customC1 }} /><span className="h-full w-1/2" style={{ background: customC2 }} /></span>
                   <span className="text-[12px] font-medium text-slate-700">{tr("customColor")}</span>
                 </button>
               </div>
               {themeId === "custom" && (
-                <div className="mb-3 flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50/50 px-2.5 py-2">
-                  <label className="relative h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-full ring-1 ring-black/10" title={tr("pickColor")} style={{ background: customAccent }}>
-                    <input type="color" value={customAccent} onChange={(e) => setCustomAccent(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+                <div className="mb-3 flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50/50 px-2.5 py-2">
+                  <span className="text-[11px] font-semibold text-slate-500">{tr("pickColors")}</span>
+                  <label className="relative ml-auto h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-full ring-1 ring-black/10" title={tr("bgColor")} style={{ background: customC1 }}>
+                    <input type="color" value={customC1} onChange={(e) => setCustomC1(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
                   </label>
-                  <span className="font-mono text-[12px] uppercase text-slate-600">{customAccent}</span>
-                  <div className="ml-auto flex overflow-hidden rounded-lg border border-slate-200">
-                    <button onClick={() => setCustomMode("light")} className={"px-2.5 py-1 text-[12px] font-semibold " + (customMode === "light" ? "bg-violet-600 text-white" : "bg-white text-slate-600")}>{tr("lightBg")}</button>
-                    <button onClick={() => setCustomMode("dark")} className={"px-2.5 py-1 text-[12px] font-semibold " + (customMode === "dark" ? "bg-violet-600 text-white" : "bg-white text-slate-600")}>{tr("darkBg")}</button>
-                  </div>
+                  <label className="relative h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-full ring-1 ring-black/10" title={tr("accentColor")} style={{ background: customC2 }}>
+                    <input type="color" value={customC2} onChange={(e) => setCustomC2(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+                  </label>
                 </div>
               )}
               <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tr("images2")}</div>

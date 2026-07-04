@@ -30,16 +30,32 @@ export const THEMES = {
 export const THEME_LIST = Object.entries(THEMES).map(([id, t]) => ({ id, ...t }));
 export const getTheme = (id) => THEMES[id] || THEMES["sleek-dark"];
 
-// Build a full theme from a single user-picked accent color + light/dark mode.
+// Color helpers.
 function hexToRgb(h) { h = String(h || "").replace("#", ""); if (h.length === 3) h = h.split("").map((c) => c + c).join(""); const n = parseInt(h || "7c3aed", 16); return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }; }
 function relLum(h) { const { r, g, b } = hexToRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
-export function customTheme(accent, mode = "dark") {
-  const a = /^#?[0-9a-fA-F]{3,6}$/.test(String(accent || "")) ? (accent[0] === "#" ? accent : "#" + accent) : "#7C3AED";
-  const accentText = relLum(a) > 0.6 ? "#0B1220" : "#FFFFFF"; // readable text on the accent
-  const base = { name: "Custom", accent: a, accentText, fontHead: `'Poppins','Inter',system-ui,sans-serif`, fontBody: `'Inter',system-ui,sans-serif` };
-  return mode === "light"
-    ? { ...base, mode: "light", bg: "#FFFFFF", surface: "#F6F8FA", heading: "#0B1220", body: "#475467", border: "#E5E9F0", muted: "#94A3B8" }
-    : { ...base, mode: "dark", bg: "#0E1116", surface: "#171B22", heading: "#F5F7FA", body: "#A8B0BD", border: "#262B33", muted: "#6B7280" };
+const normHex = (c, fb) => /^#?[0-9a-fA-F]{3,6}$/.test(String(c || "")) ? (String(c)[0] === "#" ? String(c) : "#" + c) : fb;
+function mix(hex, target, amt) {
+  const a = hexToRgb(hex), b = hexToRgb(target), m = (x, y) => Math.round(x + (y - x) * amt), h = (n) => n.toString(16).padStart(2, "0");
+  return "#" + h(m(a.r, b.r)) + h(m(a.g, b.g)) + h(m(a.b, b.b));
+}
+// Build a full, coherent theme from TWO user-picked colors: c1 = background/base, c2 = accent.
+// Text colors + surfaces are derived from c1's lightness so any pair stays legible.
+export function customTheme(c1, c2) {
+  const bg = normHex(c1, "#0E1116");
+  const accent = normHex(c2, "#7C3AED");
+  const dark = relLum(bg) < 0.5;
+  const accentText = relLum(accent) > 0.6 ? "#0B1220" : "#FFFFFF";
+  return {
+    name: "Custom", mode: dark ? "dark" : "light",
+    bg,
+    surface: dark ? mix(bg, "#FFFFFF", 0.06) : mix(bg, "#000000", 0.04),
+    heading: dark ? "#F5F7FA" : "#0B1220",
+    body: dark ? "#AEB6C2" : "#475467",
+    accent, accentText,
+    border: dark ? mix(bg, "#FFFFFF", 0.12) : mix(bg, "#000000", 0.10),
+    muted: dark ? "#7C8698" : "#94A3B8",
+    fontHead: `'Poppins','Inter',system-ui,sans-serif`, fontBody: `'Inter',system-ui,sans-serif`,
+  };
 }
 
 const LAYOUTS = ["cover", "agenda", "bullets", "twoColumn", "bigStat", "quote", "imageText", "timeline", "closing"];
@@ -84,6 +100,10 @@ export function coerceDeck(raw, { wantN, imageCount = 0 } = {}) {
 }
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// Only render a real image when the src is a well-formed, non-truncated image URL. A missing,
+// empty, malformed or truncated (e.g. a cached deck whose base64 got clipped) image falls back to
+// the clean accent-gradient panel instead of showing a broken image.
+const usableImg = (s) => typeof s === "string" && /^(data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]{200,}|https?:\/\/\S+)$/i.test(s.trim());
 
 function slideInner(s, t, imgs) {
   const ul = (b) => (b && b.length ? `<ul>${b.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
@@ -101,7 +121,7 @@ function slideInner(s, t, imgs) {
     case "quote":
       return `<div class="quotewrap"><div class="mark">&ldquo;</div><blockquote>${esc(s.quote)}</blockquote>${s.attribution ? `<div class="attr">— ${esc(s.attribution)}</div>` : ""}</div>`;
     case "imageText": {
-      const src = (s.imageRef != null && imgs[s.imageRef]) ? imgs[s.imageRef] : null;
+      const src = (s.imageRef != null && usableImg(imgs[s.imageRef])) ? imgs[s.imageRef] : null;
       const panel = src ? `<div class="imgpanel" style="background-image:url('${src}')"></div>` : `<div class="imgpanel accentpanel"></div>`;
       const txt = `<div class="txtpanel"><h2>${esc(s.title)}</h2>${s.body ? `<p>${esc(s.body)}</p>` : ""}${ul(s.bullets)}</div>`;
       return `<div class="split ${s.imageSide === "left" ? "imgleft" : ""}">${s.imageSide === "left" ? panel + txt : txt + panel}</div>`;
@@ -167,7 +187,7 @@ export function deckCSS(t) {
 // imgs = array of data: URLs (base64 with prefix). opts.fit -> scale a single slide to fit the viewport (preview).
 export function deckHTML(deck, theme, imgs = [], opts = {}) {
   const body = deck.slides.map((s) => {
-    const hasBg = s.bgImage != null && imgs[s.bgImage];
+    const hasBg = s.bgImage != null && usableImg(imgs[s.bgImage]);
     const bg = hasBg ? `<div class="bgimg" style="background-image:url('${imgs[s.bgImage]}')"></div><div class="scrim"></div>` : "";
     return `<section class="slide${hasBg ? " hasbg" : ""}">${bg}<div class="content">${slideInner(s, theme, imgs)}</div></section>`;
   }).join("");

@@ -300,7 +300,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Abrir doc",
     "openSlides": "Abrir slides",
     "newSlides": "Nova",
-    "docTipShort": "Doc bem-feito em PDF / Word desta reunião."
+    "docTipShort": "Doc bem-feito em PDF / Word desta reunião.",
+    "pickColors": "Paleta personalizada",
+    "bgColor": "Cor de fundo",
+    "accentColor": "Cor de destaque"
   },
   "fr": {
     "audioTranslation": "Traduction audio",
@@ -600,7 +603,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Ouvrir le doc",
     "openSlides": "Ouvrir les slides",
     "newSlides": "Nouveau",
-    "docTipShort": "Doc soigné en PDF / Word de cette réunion."
+    "docTipShort": "Doc soigné en PDF / Word de cette réunion.",
+    "pickColors": "Palette personnalisée",
+    "bgColor": "Couleur de fond",
+    "accentColor": "Couleur d'accent"
   },
   "hi": {
     "audioTranslation": "ऑडियो अनुवाद",
@@ -900,7 +906,10 @@ export const EXTRA_LANGS = {
     "openDoc": "दस्तावेज़ खोलें",
     "openSlides": "स्लाइड्स खोलें",
     "newSlides": "नया",
-    "docTipShort": "इस मीटिंग का परिष्कृत PDF / Word दस्तावेज़।"
+    "docTipShort": "इस मीटिंग का परिष्कृत PDF / Word दस्तावेज़।",
+    "pickColors": "कस्टम पैलेट",
+    "bgColor": "पृष्ठभूमि रंग",
+    "accentColor": "एक्सेंट रंग"
   },
   "it": {
     "audioTranslation": "Traduzione audio",
@@ -1200,7 +1209,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Apri doc",
     "openSlides": "Apri slide",
     "newSlides": "Nuova",
-    "docTipShort": "Doc curato in PDF / Word di questa riunione."
+    "docTipShort": "Doc curato in PDF / Word di questa riunione.",
+    "pickColors": "Palette personalizzata",
+    "bgColor": "Colore di sfondo",
+    "accentColor": "Colore d'accento"
   },
   "ru": {
     "audioTranslation": "Перевод аудио",
@@ -1500,7 +1512,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Открыть документ",
     "openSlides": "Открыть слайды",
     "newSlides": "Новая",
-    "docTipShort": "Аккуратный документ этой встречи в PDF / Word."
+    "docTipShort": "Аккуратный документ этой встречи в PDF / Word.",
+    "pickColors": "Своя палитра",
+    "bgColor": "Цвет фона",
+    "accentColor": "Акцентный цвет"
   },
   "de": {
     "audioTranslation": "Audioübersetzung",
@@ -1800,7 +1815,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Doc öffnen",
     "openSlides": "Slides öffnen",
     "newSlides": "Neu",
-    "docTipShort": "Sauberes PDF-/Word-Dokument dieses Meetings."
+    "docTipShort": "Sauberes PDF-/Word-Dokument dieses Meetings.",
+    "pickColors": "Eigene Palette",
+    "bgColor": "Hintergrundfarbe",
+    "accentColor": "Akzentfarbe"
   },
   "zh": {
     "audioTranslation": "音频翻译",
@@ -2100,7 +2118,10 @@ export const EXTRA_LANGS = {
     "openDoc": "打开文档",
     "openSlides": "打开幻灯片",
     "newSlides": "新建",
-    "docTipShort": "本次会议的精美 PDF / Word 文档。"
+    "docTipShort": "本次会议的精美 PDF / Word 文档。",
+    "pickColors": "自定义配色",
+    "bgColor": "背景色",
+    "accentColor": "强调色"
   },
   "ja": {
     "audioTranslation": "音声翻訳",
@@ -2400,7 +2421,10 @@ export const EXTRA_LANGS = {
     "openDoc": "ドキュメントを開く",
     "openSlides": "スライドを開く",
     "newSlides": "新規",
-    "docTipShort": "この会議の洗練された PDF / Word 文書。"
+    "docTipShort": "この会議の洗練された PDF / Word 文書。",
+    "pickColors": "カスタムパレット",
+    "bgColor": "背景色",
+    "accentColor": "アクセント色"
   },
   "nl": {
     "audioTranslation": "Audiovertaling",
@@ -2700,7 +2724,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Doc openen",
     "openSlides": "Slides openen",
     "newSlides": "Nieuw",
-    "docTipShort": "Verzorgd PDF-/Word-document van deze meeting."
+    "docTipShort": "Verzorgd PDF-/Word-document van deze meeting.",
+    "pickColors": "Aangepast palet",
+    "bgColor": "Achtergrondkleur",
+    "accentColor": "Accentkleur"
   },
   "da": {
     "audioTranslation": "Lydoversættelse",
@@ -3000,7 +3027,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Åbn dok",
     "openSlides": "Åbn slides",
     "newSlides": "Ny",
-    "docTipShort": "Poleret PDF-/Word-dokument af dette møde."
+    "docTipShort": "Poleret PDF-/Word-dokument af dette møde.",
+    "pickColors": "Tilpasset palet",
+    "bgColor": "Baggrundsfarve",
+    "accentColor": "Accentfarve"
   },
   "fi": {
     "audioTranslation": "Äänen käännös",
@@ -3300,7 +3330,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Avaa doc",
     "openSlides": "Avaa diat",
     "newSlides": "Uusi",
-    "docTipShort": "Viimeistelty PDF-/Word-dokumentti tästä kokouksesta."
+    "docTipShort": "Viimeistelty PDF-/Word-dokumentti tästä kokouksesta.",
+    "pickColors": "Mukautettu paletti",
+    "bgColor": "Taustaväri",
+    "accentColor": "Korostusväri"
   },
   "sv": {
     "audioTranslation": "Ljudöversättning",
@@ -3600,7 +3633,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Öppna dok",
     "openSlides": "Öppna slides",
     "newSlides": "Ny",
-    "docTipShort": "Polerat PDF-/Word-dokument av detta möte."
+    "docTipShort": "Polerat PDF-/Word-dokument av detta möte.",
+    "pickColors": "Anpassad palett",
+    "bgColor": "Bakgrundsfärg",
+    "accentColor": "Accentfärg"
   },
   "no": {
     "audioTranslation": "Lydoversettelse",
@@ -3900,7 +3936,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Åpne dok",
     "openSlides": "Åpne slides",
     "newSlides": "Ny",
-    "docTipShort": "Forseggjort PDF-/Word-dokument av dette møtet."
+    "docTipShort": "Forseggjort PDF-/Word-dokument av dette møtet.",
+    "pickColors": "Egendefinert palett",
+    "bgColor": "Bakgrunnsfarge",
+    "accentColor": "Aksentfarge"
   },
   "ca": {
     "audioTranslation": "Traducció d'àudio",
@@ -4200,7 +4239,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Obre el doc",
     "openSlides": "Obre els slides",
     "newSlides": "Nova",
-    "docTipShort": "Doc polit en PDF / Word d'aquesta reunió."
+    "docTipShort": "Doc polit en PDF / Word d'aquesta reunió.",
+    "pickColors": "Paleta personalitzada",
+    "bgColor": "Color de fons",
+    "accentColor": "Color d'accent"
   },
   "ko": {
     "audioTranslation": "오디오 번역",
@@ -4500,7 +4542,10 @@ export const EXTRA_LANGS = {
     "openDoc": "문서 열기",
     "openSlides": "슬라이드 열기",
     "newSlides": "새로 만들기",
-    "docTipShort": "이 회의의 깔끔한 PDF / Word 문서."
+    "docTipShort": "이 회의의 깔끔한 PDF / Word 문서.",
+    "pickColors": "맞춤 팔레트",
+    "bgColor": "배경색",
+    "accentColor": "강조색"
   },
   "pl": {
     "audioTranslation": "Tłumaczenie dźwięku",
@@ -4800,7 +4845,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Otwórz dok",
     "openSlides": "Otwórz slajdy",
     "newSlides": "Nowa",
-    "docTipShort": "Dopracowany dokument PDF / Word z tego spotkania."
+    "docTipShort": "Dopracowany dokument PDF / Word z tego spotkania.",
+    "pickColors": "Własna paleta",
+    "bgColor": "Kolor tła",
+    "accentColor": "Kolor akcentu"
   },
   "uk": {
     "audioTranslation": "Переклад аудіо",
@@ -5100,7 +5148,10 @@ export const EXTRA_LANGS = {
     "openDoc": "Відкрити документ",
     "openSlides": "Відкрити слайди",
     "newSlides": "Нова",
-    "docTipShort": "Охайний документ цієї зустрічі у PDF / Word."
+    "docTipShort": "Охайний документ цієї зустрічі у PDF / Word.",
+    "pickColors": "Власна палітра",
+    "bgColor": "Колір фону",
+    "accentColor": "Акцентний колір"
   },
   "he": {
     "audioTranslation": "תרגום אודיו",
@@ -5400,6 +5451,9 @@ export const EXTRA_LANGS = {
     "openDoc": "פתח מסמך",
     "openSlides": "פתח מצגת",
     "newSlides": "חדש",
-    "docTipShort": "מסמך PDF / Word מלוטש של הפגישה הזו."
+    "docTipShort": "מסמך PDF / Word מלוטש של הפגישה הזו.",
+    "pickColors": "פלטה מותאמת",
+    "bgColor": "צבע רקע",
+    "accentColor": "צבע הדגשה"
   }
 };
