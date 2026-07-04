@@ -40,9 +40,16 @@ export default async function handler(req, res) {
       if (!m) return res.status(401).end();
       const dub = (m.dubs && m.dubs[lang]) || null;
       if (!dub || !dub.id) return res.status(404).end();
-      const up = await fetch(`${EL}/dubbing/${enc(dub.id)}/audio/${enc(lang)}`, { headers: { "xi-api-key": KEY } });
-      if (!up.ok) return res.status(502).end();
+      // Pass through the browser's Range header so the dubbed video seeks smoothly (a plain full
+      // download would re-fetch the whole file on every scrub).
+      const range = req.headers.range;
+      const up = await fetch(`${EL}/dubbing/${enc(dub.id)}/audio/${enc(lang)}`, { headers: { "xi-api-key": KEY, ...(range ? { Range: range } : {}) } });
+      if (!up.ok && up.status !== 206) return res.status(502).end();
+      res.status(up.status === 206 ? 206 : 200);
       res.setHeader("Content-Type", up.headers.get("content-type") || "video/mp4");
+      res.setHeader("Accept-Ranges", up.headers.get("accept-ranges") || "bytes");
+      const cr = up.headers.get("content-range"); if (cr) res.setHeader("Content-Range", cr);
+      const cl = up.headers.get("content-length"); if (cl) res.setHeader("Content-Length", cl);
       res.setHeader("Cache-Control", "private, max-age=3600");
       res.end(Buffer.from(await up.arrayBuffer()));
       return;
@@ -58,6 +65,16 @@ export default async function handler(req, res) {
     if (!lang) return res.status(400).json({ error: "no lang" });
     const dubs = (m.dubs && typeof m.dubs === "object") ? m.dubs : {};
 
+    // Diagnostic: report the ElevenLabs plan + remaining credits so the UI can tell the user
+    // exactly why a dub can't run (e.g. out of credits) instead of a vague failure.
+    if (body.action === "account") {
+      const r = await fetch(`${EL}/user/subscription`, { headers: { "xi-api-key": KEY } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return res.status(200).json({ ok: false, detail: (d && (d.detail && d.detail.message || d.message)) || `elevenlabs ${r.status}` });
+      const remaining = Math.max(0, (d.character_limit || 0) - (d.character_count || 0));
+      return res.status(200).json({ ok: true, tier: d.tier || "free", used: d.character_count || 0, limit: d.character_limit || 0, remaining, canDub: remaining > 0 });
+    }
+
     if (body.action === "status") {
       const dub = dubs[lang];
       if (!dub || !dub.id) return res.status(200).json({ status: "none" });
@@ -69,8 +86,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ status, ready: status === "dubbed" });
     }
 
-    // action: start. In-house recordings live at meetings.recording_url (R2) - getBot only
-    // resolves real Recall bot ids, so that path stays the fallback.
+    // action: start. If this language was already dubbed, just hand it back - never re-dub (that
+    // would spend ElevenLabs credits again). The client switches to it instantly.
+    if (dubs[lang] && dubs[lang].id && dubs[lang].status === "dubbed") {
+      return res.status(200).json({ id: dubs[lang].id, status: "dubbed", ready: true, cached: true });
+    }
+    // In-house recordings live at meetings.recording_url (R2) - getBot only resolves real Recall
+    // bot ids, so that path stays the fallback.
     let src = null;
     if (m.capture_mode === "inhouse_bot" && m.recording_url) src = m.recording_url;
     else { const bot = m.bot_id ? await getBot(m.bot_id) : null; src = bot ? videoUrl(bot) : null; }

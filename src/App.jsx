@@ -728,6 +728,7 @@ function adaptReal(m) {
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
     subtitles: (r.subtitles && typeof r.subtitles === "object") ? r.subtitles : {},
+    dubs: (m.dubs && typeof m.dubs === "object") ? m.dubs : {},
     video: (done && m.capture_mode === "inhouse_bot" && m.recording_url) ? m.recording_url
       : ((done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null),
     // Owner's Link Access choice; legacy rows with a minted token default to public (their
@@ -4521,7 +4522,7 @@ function splitPhrases(text) {
   return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone }) {
+function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, dubs = {} }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -4546,6 +4547,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [dubLang, setDubLang] = useState(null);
   const [dubStatus, setDubStatus] = useState("idle"); // idle | dubbing | ready | error
   const dubPollRef = useRef(null);
+  // Languages already dubbed (from the persisted meeting.dubs) - switchable instantly, no re-dub.
+  const [availDubs, setAvailDubs] = useState(() => Object.keys(dubs || {}).filter((k) => dubs[k] && dubs[k].status === "dubbed"));
+  const [dubAcct, setDubAcct] = useState(null); // ElevenLabs plan + remaining credits (for the menu)
+  const dubMediaUrl = (lang) => `/api/dub?meetingId=${encodeURIComponent(meetingId)}&lang=${encodeURIComponent(lang)}${shareTok ? `&share=${encodeURIComponent(shareTok)}` : ""}`;
   const [subCache, setSubCache] = useState(() => (subtitles && typeof subtitles === "object") ? subtitles : {}); // { lang: [translated text per turn] }, pre-loaded from the report
   const [subBusy, setSubBusy] = useState(false);
   const cc = subLang !== "off";
@@ -4668,26 +4673,43 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const DUB_LANGS = [["es", "Español"], ["en", "English"], ["pt", "Português"], ["fr", "Français"], ["de", "Deutsch"], ["it", "Italiano"], ["ja", "日本語"], ["ko", "한국어"], ["zh", "中文"], ["hi", "हिन्दी"], ["ru", "Русский"], ["ar", "العربية"]];
   const DUB_USD_PER_MIN = 0.33;
   const dubCost = "$" + (Math.max((dur || (meetingId ? 60 : 0)) / 60, 1) * DUB_USD_PER_MIN).toFixed(2);
+  const switchToDub = (lang) => { setDubLang(lang); setDubUrl(dubMediaUrl(lang)); setDubStatus("ready"); startedRef.current = false; setEverPlayed(false); };
   const startDub = async (lang) => {
     setDubMenu(false);
     if (dubPollRef.current) { clearInterval(dubPollRef.current); dubPollRef.current = null; }
     if (lang === "original") { setDubUrl(null); setDubLang(null); setDubStatus("idle"); return; }
+    // Already dubbed -> switch instantly (no re-dub: it feels seamless and never re-spends credits).
+    if (availDubs.includes(lang)) { switchToDub(lang); return; }
     setDubLang(lang); setDubStatus("dubbing"); setDubUrl(null);
     try {
       const r = await fetch("/api/dub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", meetingId, lang }) });
-      const d = await r.json();
-      if (!r.ok) { setDubStatus("error"); toast(d.error === "no_elevenlabs_key" ? "Dubbing not configured yet" : d.error === "no_recording" ? "This meeting has no recording to dub" : "Couldn't start dubbing"); return; }
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setDubStatus("error");
+        toast(d.error === "no_elevenlabs_key" ? "Dubbing is not configured yet"
+          : d.error === "no_recording" ? "This meeting has no recording to dub (older recordings expire after 7 days)"
+          : ("Dubbing could not start: " + (d.detail || d.error || "unknown error")));
+        return;
+      }
+      if (d.ready) { setAvailDubs((a) => a.includes(lang) ? a : [...a, lang]); switchToDub(lang); return; } // was already dubbed server-side
       dubPollRef.current = setInterval(async () => {
         try {
           const sr = await fetch("/api/dub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "status", meetingId, lang }) });
-          const sd = await sr.json();
-          if (sd.ready) { clearInterval(dubPollRef.current); dubPollRef.current = null; setDubUrl(`/api/dub?meetingId=${encodeURIComponent(meetingId)}&lang=${encodeURIComponent(lang)}${shareTok ? `&share=${encodeURIComponent(shareTok)}` : ""}`); setDubStatus("ready"); startedRef.current = false; setEverPlayed(false); toast(tr("dubbedVideoReady")); }
-          else if (sd.status === "failed") { clearInterval(dubPollRef.current); dubPollRef.current = null; setDubStatus("error"); toast("Dubbing failed - try again"); }
+          const sd = await sr.json().catch(() => ({}));
+          if (sd.ready) { clearInterval(dubPollRef.current); dubPollRef.current = null; setAvailDubs((a) => a.includes(lang) ? a : [...a, lang]); switchToDub(lang); toast(tr("dubbedVideoReady")); }
+          else if (sd.status === "failed") { clearInterval(dubPollRef.current); dubPollRef.current = null; setDubStatus("error"); toast("Dubbing failed - the recording may be too long, or you may be out of ElevenLabs credits"); }
         } catch (e) {}
       }, 6000);
     } catch (e) { setDubStatus("error"); toast("Network error"); }
   };
   useEffect(() => () => { if (dubPollRef.current) clearInterval(dubPollRef.current); }, []);
+  // Check the ElevenLabs plan/credits the first time the dubbing menu opens, so the user can see
+  // up front whether a dub can run (out of credits is the usual reason it "does nothing").
+  useEffect(() => {
+    if (!dubMenu || dubAcct || !meetingId || shareTok) return;
+    fetch("/api/dub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "account", meetingId, lang: "en" }) })
+      .then((r) => r.json()).then((d) => setDubAcct(d || { ok: false })).catch(() => {});
+  }, [dubMenu, dubAcct, meetingId, shareTok]);
   // Translate (once) via the server, which caches into reports.subtitles so it is instant next time.
   const fetchLang = async (k) => {
     const texts = (turns || []).map((t) => t.text || "");
@@ -4799,15 +4821,26 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
               <div className="fixed inset-0 z-40" onClick={() => setDubMenu(false)} />
               <div className="absolute right-0 top-11 z-50 max-h-[20rem] w-64 overflow-y-auto rounded-2xl border border-white/10 bg-neutral-950/95 p-2 text-white shadow-2xl">
                 <div className="flex items-center justify-center gap-1.5 px-3 pt-2 text-center text-[13px] font-bold"><Languages size={14} /> {tr("audioTranslation")}</div>
-                <div className="px-3 pb-2 text-center text-[11px] text-white/50">{tr("dubKeepsVoices")} · ~{dubCost}</div>
+                <div className="px-3 pb-1 text-center text-[11px] text-white/50">{tr("dubKeepsVoices")} · ~{dubCost}</div>
+                {dubAcct && (dubAcct.ok
+                  ? <div className={"px-3 pb-2 text-center text-[10.5px] " + (dubAcct.canDub ? "text-white/35" : "text-rose-300")}>{dubAcct.canDub ? `ElevenLabs: ${(dubAcct.remaining || 0).toLocaleString()} credits left` : "Out of ElevenLabs credits - top up to dub"}</div>
+                  : <div className="px-3 pb-2 text-center text-[10.5px] text-rose-300">ElevenLabs: {String(dubAcct.detail || "unavailable").slice(0, 60)}</div>)}
                 <button onClick={() => startDub("original")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10"><span className="w-4">{!dubUrl && <Check size={15} className="text-violet-300" />}</span>{tr("original")}</button>
-                {DUB_LANGS.map(([code, label]) => (
-                  <button key={code} onClick={() => startDub(code)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
-                    <span className="w-4">{dubLang === code && dubUrl && <Check size={15} className="text-violet-300" />}</span>
-                    <span className={dubLang === code ? "font-semibold" : "text-white/85"}>{label}</span>
-                    {dubLang === code && dubStatus === "dubbing" && <Loader2 size={13} className="ml-auto animate-spin text-white/60" />}
-                  </button>
-                ))}
+                {DUB_LANGS.map(([code, label]) => {
+                  const active = dubLang === code && dubUrl;
+                  const ready = availDubs.includes(code);
+                  const busy = dubLang === code && dubStatus === "dubbing";
+                  return (
+                    <button key={code} onClick={() => startDub(code)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] hover:bg-white/10">
+                      <span className="w-4">{active && <Check size={15} className="text-violet-300" />}</span>
+                      <span className={active ? "font-semibold" : "text-white/85"}>{label}</span>
+                      <span className="ml-auto flex items-center gap-1.5">
+                        {busy && <Loader2 size={13} className="animate-spin text-white/60" />}
+                        {ready && !active && !busy && <span className="rounded-full bg-violet-500/25 px-1.5 py-0.5 text-[10px] font-semibold text-violet-200">Ready</span>}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
@@ -5586,12 +5619,18 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     else if (kind === "doc") dl(base + ".doc", reportHtml(), "application/msword");
     else if (kind === "transcript") dl(base + "_transcript.txt", meeting.transcript.map((tt) => `[${tt.t}] ${tt.speaker}: ${tt.text}`).join("\n"), "text/plain");
     else if (kind === "video") { if (meeting.video) { const a = document.createElement("a"); a.href = meeting.video; a.download = base + ".mp4"; a.target = "_blank"; a.click(); } else toast("No recording to download"); return; }
+    else if (kind.startsWith("dubvid:")) { const lang = kind.slice(7); const a = document.createElement("a"); a.href = `/api/dub?meetingId=${encodeURIComponent(meeting.id)}&lang=${encodeURIComponent(lang)}${shared && shareTok ? "&share=" + encodeURIComponent(shareTok) : ""}`; a.download = base + "_" + lang + ".mp4"; a.target = "_blank"; a.click(); return; }
     else if (kind === "pdf") { const w = window.open("", "_blank"); if (w) { w.document.write(reportHtml()); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350); } toast("Opening printable report - choose 'Save as PDF'"); return; }
     toast("Downloaded");
   };
+  // Video downloads: Original plus any dubbed language (so a user can grab one or several versions).
+  const DUB_DL_LABELS = { es: "Español", en: "English", pt: "Português", fr: "Français", de: "Deutsch", it: "Italiano", ja: "日本語", ko: "한국어", zh: "中文", hi: "हिन्दी", ru: "Русский", ar: "العربية" };
+  const readyDubs = Object.keys(meeting.dubs || {}).filter((k) => meeting.dubs[k] && meeting.dubs[k].status === "dubbed");
   const DOWNLOAD_OPTS = [
     { k: "pdf", label: "PDF (print / save)" }, { k: "doc", label: "Word (.doc)" }, { k: "md", label: "Markdown (.md)" },
-    { k: "txt", label: "Plain text (.txt)" }, { k: "transcript", label: "Transcript (.txt)" }, { k: "video", label: "Video (.mp4)" },
+    { k: "txt", label: "Plain text (.txt)" }, { k: "transcript", label: "Transcript (.txt)" },
+    { k: "video", label: readyDubs.length ? "Video - Original (.mp4)" : "Video (.mp4)" },
+    ...readyDubs.map((code) => ({ k: "dubvid:" + code, label: "Video - " + (DUB_DL_LABELS[code] || code.toUpperCase()) + " (.mp4)" })),
   ];
   const PUSH_OPTS = [
     { key: "confluence", name: "Confluence", brand: "confluence", kind: "webhook" },
@@ -5859,7 +5898,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} dubs={meeting.dubs} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
