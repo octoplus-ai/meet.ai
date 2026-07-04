@@ -237,6 +237,9 @@ function mergeParticipants(stats, aiParts) {
   const totalWords = stats.reduce((s, p) => s + (p.words || 0), 0);
   const haveTime = totalSec > 0;            // word-level timestamps present?
   const denomSec = totalSec || 1;
+  // Meeting-average pace FLOOR so any speaker with words gets a real WPM instead of 0, clamped
+  // to a sane 60-260 range. Only true non-speakers (0 words) stay at 0.
+  const avgWpm = Math.min(260, Math.max(60, totalSec > 5 ? Math.round(totalWords / (totalSec / 60)) : 140));
   const byName = {};
   (aiParts || []).forEach((p) => { if (p && p.name) byName[p.name.toLowerCase()] = p; });
   return stats.map((s) => {
@@ -248,7 +251,7 @@ function mergeParticipants(stats, aiParts) {
       // Prefer real talk-seconds; when word timestamps are missing, fall back to word share
       // so Participation/Balance reflect reality instead of collapsing to 0%.
       talkPct: haveTime ? Math.round((s.talkSec / denomSec) * 100) : (totalWords ? Math.round((s.words / totalWords) * 100) : 0),
-      wpm: talkMin > 0.1 ? Math.round(s.words / talkMin) : 0,
+      wpm: talkMin > 0.1 ? Math.round(s.words / talkMin) : ((s.words || 0) > 0 ? avgWpm : 0),
       sentiment: ai.sentiment || "Neutral",
       isHost: s.isHost,
     };

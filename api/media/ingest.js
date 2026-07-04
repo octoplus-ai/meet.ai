@@ -130,12 +130,17 @@ export default async function handler(req, res) {
       rec.secs += dur;
     });
     const totalW = Object.values(byName).reduce((a, b) => a + b.words, 0) || 1;
-    const fallbackWpm = (haveTimes || !body.durationMin) ? 0 : Math.round(totalW / body.durationMin);
+    const totalSecs = Object.values(byName).reduce((a, b) => a + b.secs, 0);
+    // Meeting-average pace FLOOR so EVERY speaker who spoke gets a real WPM (never 0): measured
+    // speech time when we have it, else the meeting duration, else a normal default, clamped 60-260.
+    const fallbackWpm = Math.min(260, Math.max(60,
+      totalSecs > 5 ? Math.round(totalW / (totalSecs / 60))
+      : (body.durationMin ? Math.round(totalW / body.durationMin) : 140)));
     const aiParts = {}; (ai.participants || []).forEach((p) => { if (p && p.name) aiParts[p.name.toLowerCase()] = p; });
     const participants = Object.values(byName).map((s) => {
       const x = aiParts[s.name.toLowerCase()] || {};
       const min = s.secs / 60;
-      const wpm = min > 0.1 ? Math.round(s.words / min) : fallbackWpm;
+      const wpm = min > 0.1 ? Math.round(s.words / min) : (s.words > 0 ? fallbackWpm : 0);
       return { name: s.name, role: x.role || "Participant", talkPct: Math.round((s.words / totalW) * 100), wpm, sentiment: x.sentiment || "Neutral", isHost: !!x.isHost };
     });
     const sc = ai.scores || {};
