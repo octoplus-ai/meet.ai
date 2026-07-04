@@ -296,7 +296,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Aplicar",
     "dateClear": "Limpar",
     "dateStart": "Data inicial",
-    "dateEnd": "Data final"
+    "dateEnd": "Data final",
+    "openDoc": "Abrir doc",
+    "openSlides": "Abrir slides",
+    "newSlides": "Nova",
+    "docTipShort": "Doc bem-feito em PDF / Word desta reunião."
   },
   "fr": {
     "audioTranslation": "Traduction audio",
@@ -592,7 +596,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Appliquer",
     "dateClear": "Effacer",
     "dateStart": "Date de début",
-    "dateEnd": "Date de fin"
+    "dateEnd": "Date de fin",
+    "openDoc": "Ouvrir le doc",
+    "openSlides": "Ouvrir les slides",
+    "newSlides": "Nouveau",
+    "docTipShort": "Doc soigné en PDF / Word de cette réunion."
   },
   "hi": {
     "audioTranslation": "ऑडियो अनुवाद",
@@ -888,7 +896,11 @@ export const EXTRA_LANGS = {
     "dateApply": "लागू करें",
     "dateClear": "साफ़ करें",
     "dateStart": "आरंभ तिथि",
-    "dateEnd": "समाप्ति तिथि"
+    "dateEnd": "समाप्ति तिथि",
+    "openDoc": "दस्तावेज़ खोलें",
+    "openSlides": "स्लाइड्स खोलें",
+    "newSlides": "नया",
+    "docTipShort": "इस मीटिंग का परिष्कृत PDF / Word दस्तावेज़।"
   },
   "it": {
     "audioTranslation": "Traduzione audio",
@@ -1184,7 +1196,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Applica",
     "dateClear": "Cancella",
     "dateStart": "Data inizio",
-    "dateEnd": "Data fine"
+    "dateEnd": "Data fine",
+    "openDoc": "Apri doc",
+    "openSlides": "Apri slide",
+    "newSlides": "Nuova",
+    "docTipShort": "Doc curato in PDF / Word di questa riunione."
   },
   "ru": {
     "audioTranslation": "Перевод аудио",
@@ -1480,7 +1496,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Применить",
     "dateClear": "Очистить",
     "dateStart": "Дата начала",
-    "dateEnd": "Дата окончания"
+    "dateEnd": "Дата окончания",
+    "openDoc": "Открыть документ",
+    "openSlides": "Открыть слайды",
+    "newSlides": "Новая",
+    "docTipShort": "Аккуратный документ этой встречи в PDF / Word."
   },
   "de": {
     "audioTranslation": "Audioübersetzung",
@@ -1776,7 +1796,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Anwenden",
     "dateClear": "Löschen",
     "dateStart": "Startdatum",
-    "dateEnd": "Enddatum"
+    "dateEnd": "Enddatum",
+    "openDoc": "Doc öffnen",
+    "openSlides": "Slides öffnen",
+    "newSlides": "Neu",
+    "docTipShort": "Sauberes PDF-/Word-Dokument dieses Meetings."
   },
   "zh": {
     "audioTranslation": "音频翻译",
@@ -2072,7 +2096,11 @@ export const EXTRA_LANGS = {
     "dateApply": "应用",
     "dateClear": "清除",
     "dateStart": "开始日期",
-    "dateEnd": "结束日期"
+    "dateEnd": "结束日期",
+    "openDoc": "打开文档",
+    "openSlides": "打开幻灯片",
+    "newSlides": "新建",
+    "docTipShort": "本次会议的精美 PDF / Word 文档。"
   },
   "ja": {
     "audioTranslation": "音声翻訳",
@@ -2368,7 +2396,11 @@ export const EXTRA_LANGS = {
     "dateApply": "適用",
     "dateClear": "クリア",
     "dateStart": "開始日",
-    "dateEnd": "終了日"
+    "dateEnd": "終了日",
+    "openDoc": "ドキュメントを開く",
+    "openSlides": "スライドを開く",
+    "newSlides": "新規",
+    "docTipShort": "この会議の洗練された PDF / Word 文書。"
   },
   "nl": {
     "audioTranslation": "Audiovertaling",
@@ -2664,7 +2696,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Toepassen",
     "dateClear": "Wissen",
     "dateStart": "Begindatum",
-    "dateEnd": "Einddatum"
+    "dateEnd": "Einddatum",
+    "openDoc": "Doc openen",
+    "openSlides": "Slides openen",
+    "newSlides": "Nieuw",
+    "docTipShort": "Verzorgd PDF-/Word-document van deze meeting."
   },
   "da": {
     "audioTranslation": "Lydoversættelse",
@@ -2960,7 +2996,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Anvend",
     "dateClear": "Ryd",
     "dateStart": "Startdato",
-    "dateEnd": "Slutdato"
+    "dateEnd": "Slutdato",
+    "openDoc": "Åbn dok",
+    "openSlides": "Åbn slides",
+    "newSlides": "Ny",
+    "docTipShort": "Poleret PDF-/Word-dokument af dette møde."
   },
   "fi": {
     "audioTranslation": "Äänen käännös",
@@ -3256,7 +3296,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Käytä",
     "dateClear": "Tyhjennä",
     "dateStart": "Alkupäivä",
-    "dateEnd": "Loppupäivä"
+    "dateEnd": "Loppupäivä",
+    "openDoc": "Avaa doc",
+    "openSlides": "Avaa diat",
+    "newSlides": "Uusi",
+    "docTipShort": "Viimeistelty PDF-/Word-dokumentti tästä kokouksesta."
   },
   "sv": {
     "audioTranslation": "Ljudöversättning",
@@ -3552,7 +3596,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Använd",
     "dateClear": "Rensa",
     "dateStart": "Startdatum",
-    "dateEnd": "Slutdatum"
+    "dateEnd": "Slutdatum",
+    "openDoc": "Öppna dok",
+    "openSlides": "Öppna slides",
+    "newSlides": "Ny",
+    "docTipShort": "Polerat PDF-/Word-dokument av detta möte."
   },
   "no": {
     "audioTranslation": "Lydoversettelse",
@@ -3848,7 +3896,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Bruk",
     "dateClear": "Tøm",
     "dateStart": "Startdato",
-    "dateEnd": "Sluttdato"
+    "dateEnd": "Sluttdato",
+    "openDoc": "Åpne dok",
+    "openSlides": "Åpne slides",
+    "newSlides": "Ny",
+    "docTipShort": "Forseggjort PDF-/Word-dokument av dette møtet."
   },
   "ca": {
     "audioTranslation": "Traducció d'àudio",
@@ -4144,7 +4196,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Aplica",
     "dateClear": "Esborra",
     "dateStart": "Data d'inici",
-    "dateEnd": "Data de fi"
+    "dateEnd": "Data de fi",
+    "openDoc": "Obre el doc",
+    "openSlides": "Obre els slides",
+    "newSlides": "Nova",
+    "docTipShort": "Doc polit en PDF / Word d'aquesta reunió."
   },
   "ko": {
     "audioTranslation": "오디오 번역",
@@ -4440,7 +4496,11 @@ export const EXTRA_LANGS = {
     "dateApply": "적용",
     "dateClear": "지우기",
     "dateStart": "시작일",
-    "dateEnd": "종료일"
+    "dateEnd": "종료일",
+    "openDoc": "문서 열기",
+    "openSlides": "슬라이드 열기",
+    "newSlides": "새로 만들기",
+    "docTipShort": "이 회의의 깔끔한 PDF / Word 문서."
   },
   "pl": {
     "audioTranslation": "Tłumaczenie dźwięku",
@@ -4736,7 +4796,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Zastosuj",
     "dateClear": "Wyczyść",
     "dateStart": "Data początkowa",
-    "dateEnd": "Data końcowa"
+    "dateEnd": "Data końcowa",
+    "openDoc": "Otwórz dok",
+    "openSlides": "Otwórz slajdy",
+    "newSlides": "Nowa",
+    "docTipShort": "Dopracowany dokument PDF / Word z tego spotkania."
   },
   "uk": {
     "audioTranslation": "Переклад аудіо",
@@ -5032,7 +5096,11 @@ export const EXTRA_LANGS = {
     "dateApply": "Застосувати",
     "dateClear": "Очистити",
     "dateStart": "Дата початку",
-    "dateEnd": "Дата завершення"
+    "dateEnd": "Дата завершення",
+    "openDoc": "Відкрити документ",
+    "openSlides": "Відкрити слайди",
+    "newSlides": "Нова",
+    "docTipShort": "Охайний документ цієї зустрічі у PDF / Word."
   },
   "he": {
     "audioTranslation": "תרגום אודיו",
@@ -5328,6 +5396,10 @@ export const EXTRA_LANGS = {
     "dateApply": "החל",
     "dateClear": "נקה",
     "dateStart": "תאריך התחלה",
-    "dateEnd": "תאריך סיום"
+    "dateEnd": "תאריך סיום",
+    "openDoc": "פתח מסמך",
+    "openSlides": "פתח מצגת",
+    "newSlides": "חדש",
+    "docTipShort": "מסמך PDF / Word מלוטש של הפגישה הזו."
   }
 };

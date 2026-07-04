@@ -108,6 +108,7 @@ const EXTRA = {
     selMeetingsAnalytics: "Select one or more meetings to see analytics.", selMeetingsDoc: "Select one or more meetings to generate a document.", selMeetingsPres: "Select one or more meetings to generate a presentation.",
     participants: "Participants", copyEmails: "Copy emails", copyGuestEmails: "Copy guest emails", emailGuests: "Email guests", noParticipantData: "No participant data.", noEmailOnFile: "no email on file", invitedDidntJoin: "Invited - didn't join",
     dateCustom: "Custom", dateApply: "Apply", dateClear: "Clear", dateStart: "Start date", dateEnd: "End date",
+    openDoc: "Open doc", openSlides: "Open slides", newSlides: "New", docTipShort: "Polished PDF / Word doc of this meeting.",
     allTypes: "All types", completed: "Completed", inProgressF: "In progress", noReportsYet: "No reports yet.", renameReport: "Rename Report", deleteReport: "Delete Report", selectAll: "Select all",
     // presentation composer
     slides: "Slides", theme: "Theme", images: "Images", noImages: "No images", aiImages: "✨ AI images", customColor: "Custom color", pickColor: "Pick your accent color", lightBg: "Light", darkBg: "Dark",
@@ -197,6 +198,7 @@ const EXTRA = {
     selMeetingsAnalytics: "Seleccioná una o más reuniones para ver analytics.", selMeetingsDoc: "Seleccioná una o más reuniones para generar un documento.", selMeetingsPres: "Seleccioná una o más reuniones para generar una presentación.",
     participants: "Participantes", copyEmails: "Copiar emails", copyGuestEmails: "Copiar emails de invitados", emailGuests: "Enviar email a invitados", noParticipantData: "Sin datos de participantes.", noEmailOnFile: "sin email registrado", invitedDidntJoin: "Invitado - no se unió",
     dateCustom: "Personalizado", dateApply: "Aplicar", dateClear: "Limpiar", dateStart: "Fecha inicial", dateEnd: "Fecha final",
+    openDoc: "Abrir doc", openSlides: "Abrir slides", newSlides: "Nueva", docTipShort: "Doc pulido en PDF / Word de esta reunión.",
     allTypes: "Todos los tipos", completed: "Completados", inProgressF: "En progreso", noReportsYet: "Todavía no hay reportes.", renameReport: "Renombrar reporte", deleteReport: "Eliminar reporte", selectAll: "Seleccionar todo",
     slides: "Diapositivas", theme: "Tema", images: "Imágenes", noImages: "Sin imágenes", aiImages: "✨ Imágenes IA", customColor: "Color personalizado", pickColor: "Elegí tu color de acento", lightBg: "Claro", darkBg: "Oscuro",
     // hardcoded-string sweep
@@ -4492,13 +4494,17 @@ function TimeChip({ t, onClick, className = "" }) {
 }
 
 // Side chat - answers questions about THIS meeting from its transcript + report.
-function AskPanel({ meeting, shared, shareTok }) {
+function AskPanel({ meeting, shared, shareTok, savedDeck }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const endRef = useRef(null);
   // Presentation composer
   const [showComposer, setShowComposer] = useState(false);
+  // A deck already exists for this meeting -> the button opens it by default (cached), with a small
+  // "+" to compose a new one. Kept in sync with the parent's existence check + our own generation.
+  const [hasDeck, setHasDeck] = useState(!!savedDeck);
+  useEffect(() => { setHasDeck(!!savedDeck); }, [savedDeck]);
   const [slideCount, setSlideCount] = useState(8);
   const [themeId, setThemeId] = useState("sleek-dark");
   const [customAccent, setCustomAccent] = useState("#7C3AED");
@@ -4534,6 +4540,7 @@ function AskPanel({ meeting, shared, shareTok }) {
       const deck = coerceDeck(d.deck, { wantN: slideCount, imageCount: imgUrls.length });
       const theme = themeId === "custom" ? customTheme(customAccent, customMode) : getTheme(d.themeId || themeId);
       setDeckState({ deck, theme, imgUrls, meta: d.meta });
+      setHasDeck(true); // a saved deck now exists -> button defaults to opening it
       setAtts([]);
     } catch (e) { toast("Network error"); } finally { setGenBusy(false); }
   };
@@ -4641,7 +4648,14 @@ function AskPanel({ meeting, shared, shareTok }) {
           </>
         )}
         <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 focus-within:border-violet-400">
-          <button onClick={() => canPresent ? setShowComposer((v) => !v) : toast(tr("availableWhenReportReady"))} disabled={genBusy} title={tr("generatePresentationTitle")} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 transition hover:bg-violet-200 disabled:opacity-50">{genBusy ? <Loader2 size={18} className="animate-spin" /> : <Presentation size={18} />}</button>
+          {hasDeck ? (
+            <div className="flex shrink-0 items-center overflow-hidden rounded-lg bg-violet-100 text-violet-700">
+              <button onClick={() => generate(false)} disabled={genBusy} title={tr("openSlides")} className="flex h-8 items-center gap-1 pl-2 pr-1.5 transition hover:bg-violet-200 disabled:opacity-50">{genBusy ? <Loader2 size={16} className="animate-spin" /> : <Presentation size={16} />}</button>
+              <button onClick={() => canPresent ? setShowComposer((v) => !v) : toast(tr("availableWhenReportReady"))} disabled={genBusy} title={tr("newSlides")} className="flex h-8 w-6 items-center justify-center border-l border-violet-200 transition hover:bg-violet-200 disabled:opacity-50"><Plus size={13} /></button>
+            </div>
+          ) : (
+            <button onClick={() => canPresent ? setShowComposer((v) => !v) : toast(tr("availableWhenReportReady"))} disabled={genBusy} title={tr("generatePresentationTitle")} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 transition hover:bg-violet-200 disabled:opacity-50">{genBusy ? <Loader2 size={18} className="animate-spin" /> : <Presentation size={18} />}</button>
+          )}
           <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} placeholder={tr("askOctoPlaceholder")} className="flex-1 bg-transparent text-sm outline-none" />
           <button onClick={() => ask()} disabled={busy} className="text-violet-600 transition disabled:text-slate-300"><Send size={16} /></button>
         </div>
@@ -4878,6 +4892,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   const [menu, setMenu] = useState(null); // header dropdown: "download" | "push" | "more" | null
   const [docBusy, setDocBusy] = useState(false); // generating in the background (button spinner)
   const [docData, setDocData] = useState(null); // { doc, meta } -> opens the modal when ready
+  // Which generations already exist for this meeting -> the doc/slides buttons default to OPENING
+  // the saved version instead of generating a new one (generation is cached server-side anyway).
+  const [saved, setSaved] = useState({ doc: false, deck: false });
+  useEffect(() => {
+    let ok = true;
+    fetch("/api/artifacts?meetingId=" + encodeURIComponent(meeting.id) + (shared ? "&shareToken=" + encodeURIComponent(shareTok || "") : ""))
+      .then((r) => (r.ok ? r.json() : null)).then((d) => { if (ok && d) setSaved({ doc: !!d.doc, deck: !!d.deck }); }).catch(() => {});
+    return () => { ok = false; };
+  }, [meeting.id, shared, shareTok]);
   const [fupBusy, setFupBusy] = useState(false);
   const [fupData, setFupData] = useState(null); // { subject, body, to } -> opens the follow-up modal
   const [renaming, setRenaming] = useState(false);
@@ -5059,6 +5082,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       const d = await r.json();
       if (r.status === 429) { toast("You've reached this month's limit for AI documents."); return; }
       if (!r.ok || !d.doc) { toast("Couldn't generate the document - try again"); return; }
+      setSaved((s) => ({ ...s, doc: true })); // a saved version now exists -> button becomes "Open doc"
       setDocData({ doc: d.doc, meta: d.meta || { title: meeting.title, date: meeting.date } }); // opens the modal (saved or fresh)
     } catch (e) { toast("Network error"); } finally { setDocBusy(false); }
   };
@@ -5115,9 +5139,9 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           <div className="flex items-center gap-2">
             {/* AI Document - Claude builds a polished, well-structured doc (PDF + Word) */}
             <div className="group relative">
-              <button onClick={() => genDoc(false)} disabled={docBusy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{docBusy ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <><Sparkles size={14} /> AI Doc</>}</button>
-              <div className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-64 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">
-                Turns this meeting into a polished, well-structured document (summary, decisions, action items) - download as <b>PDF</b> or <b>Word</b>.
+              <button onClick={() => genDoc(false)} disabled={docBusy} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-70">{docBusy ? <><Loader2 size={14} className="animate-spin" /> {tr("generating")}</> : saved.doc ? <><FileText size={14} /> {tr("openDoc")}</> : <><Sparkles size={14} /> {tr("aiDoc")}</>}</button>
+              <div className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-56 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">
+                {saved.doc ? tr("openDoc") + " - " + tr("docTipShort") : tr("docTipShort")}
               </div>
             </div>
             {/* Write a follow-up email (owner only - sends from their Gmail) */}
@@ -5685,7 +5709,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
         )}
       </div>
       </div>
-      {!shared && <AskPanel meeting={meeting} shared={shared} shareTok={shareTok} />}
+      {!shared && <AskPanel meeting={meeting} shared={shared} shareTok={shareTok} savedDeck={saved.deck} />}
       {docData && <DocModal loading={docData.loading} doc={docData.doc} meta={docData.meta} onClose={() => setDocData(null)} onRegenerate={() => genDoc(true)} regenerating={docBusy} />}
       {fupData && <FollowupModal data={fupData} meetingId={meeting.id} onClose={() => setFupData(null)} />}
     </div>
