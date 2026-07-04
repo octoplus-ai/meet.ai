@@ -3261,8 +3261,8 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
     <>
       <SectionTop title="For You" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> {rangeLabel(real)}</span>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
-          <div className="space-y-5">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0 space-y-5">
             {/* Greeting recap */}
             <div className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
               <h2 className="text-2xl font-bold text-violet-700">{hi}, {uName}</h2>
