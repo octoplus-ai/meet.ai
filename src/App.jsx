@@ -922,7 +922,7 @@ const KPI_INFO = {
 // Grey, semi-transparent hover tooltip (lighter/translucent version of the app's dark tooltips).
 // Render inside a container that has `group/tip relative`.
 const kpiTip = (text) => text ? (
-  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 w-56 max-w-[80vw] -translate-x-1/2 rounded-lg bg-slate-500/80 px-2.5 py-1.5 text-left text-[11px] font-medium leading-snug text-white opacity-0 shadow-lg backdrop-blur-sm transition-opacity duration-150 group-hover/tip:opacity-100">{text}</span>
+  <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-56 max-w-[80vw] -translate-x-1/2 rounded-lg bg-slate-500/80 px-2.5 py-1.5 text-left text-[11px] font-medium leading-snug text-white opacity-0 shadow-lg backdrop-blur-sm transition-opacity duration-150 group-hover/tip:opacity-100">{text}</span>
 ) : null;
 
 function ScorePill({ label, value, info }) {
@@ -1268,8 +1268,8 @@ export default function App() {
         {view === "folders" && <FoldersView onAsk={goAsk} meetings={allMeetings} onOpenFolder={(name) => { setFolderFilter(name); setView("reports"); }} user={user} />}
         {view === "calendar" && <CalendarView onAsk={goAsk} initialTab={calTab} meetings={allMeetings} onOpen={openMeeting} />}
         {view === "for-you" && <ForYouView meetings={allMeetings} onOpen={openMeeting} onAsk={goAsk} user={user} />}
-        {view === "coaching" && <CoachingView onAsk={goAsk} />}
-        {view === "recommendations" && <RecommendationsView onAsk={goAsk} />}
+        {view === "coaching" && <CoachingView meetings={allMeetings} onOpen={openMeeting} onAsk={goAsk} user={user} />}
+        {view === "recommendations" && <RecommendationsView meetings={allMeetings} onOpen={openMeeting} onAsk={goAsk} user={user} />}
         {view === "integrations" && <IntegrationsView onAsk={goAsk} />}
         {view === "meeting-policy" && <MeetingPolicyView onAsk={goAsk} />}
       </main>
@@ -2915,30 +2915,62 @@ function AnalyticsPanel({ meetings, onOpen, onClose }) {
 }
 
 /* ============================ FOR YOU ============================= */
+// ---- Personal aggregation helpers (For You / Coaching / Recommendations), all from REAL data ----
+// Match a participant/speaker name to the signed-in user ("me").
+const meNameTokens = (user) => String((user && (user.name || user.email)) || "").toLowerCase().split(/[\s@._-]+/).filter((t) => t.length > 1);
+const isMe = (name, user) => { const ft = firstToken(name); if (!ft) return false; return meNameTokens(user).some((t) => t === ft || t.startsWith(ft) || ft.startsWith(t)); };
+const myPart = (m, user) => (m.participants || []).find((p) => p && isMe(p.name, user)) || (m.participants || []).find((p) => p && p.isHost) || null;
+const myTurns = (m, user) => (m.transcript || []).filter((t) => t && isMe(t.speaker, user));
+const FILLER_RE = /\b(um+|uh+|er+|mm+|hmm+|you know|i mean)\b/gi;
+const fillerPctOf = (turns) => { const text = turns.map((t) => t.text || "").join(" "); const w = text.split(/\s+/).filter(Boolean).length; return w ? Math.round(((text.match(FILLER_RE) || []).length / w) * 1000) / 10 : null; };
+const questionsOf = (turns) => turns.reduce((n, t) => n + (((t.text || "").match(/\?/g) || []).length), 0);
+// Real, completed meetings the user attended, each with their per-meeting coaching metrics.
+function myMeetingStats(meetings, user) {
+  const out = [];
+  for (const m of (meetings || [])) {
+    if (!m || !m.real || (m.status && m.status !== "done")) continue;
+    const p = myPart(m, user); if (!p) continue;
+    const turns = myTurns(m, user);
+    out.push({ m, talkPct: p.talkPct || 0, wpm: p.wpm || 0, fillerPct: turns.length ? fillerPctOf(turns) : null, questions: questionsOf(turns), charisma: (m.scores && m.scores.charisma) || 0, balance: (m.scores && m.scores.balance) || 0 });
+  }
+  return out.sort((a, b) => whenMs(b.m) - whenMs(a.m));
+}
+const rangeLabel = (list) => { const ds = list.map((m) => m.date).filter(Boolean).sort(); return ds.length ? `${fmtDateShort(ds[0])} - ${fmtDateShort(ds[ds.length - 1])}` : ""; };
+const avgOf = (arr, f) => { const v = arr.map(f).filter((x) => x != null && !Number.isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+
 function ForYouView({ meetings, onOpen, onAsk, user }) {
-  const [aiFilter, setAiFilter] = useState("all");
+  const [aiFilter, setAiFilter] = useState("me");
+  const real = useMemo(() => (meetings || []).filter((m) => m.real && m.status === "done"), [meetings]);
   const uName = ((user && user.name) || (user && user.email) || "there").split(" ")[0];
-  const meRe = new RegExp(uName.replace(/[^a-z0-9]/gi, ""), "i");
-  const allActions = meetings.flatMap((m) => (m.actionItems || []).map((a) => ({ ...a, meeting: m.title, id: m.id, date: m.date })));
-  const actions = (aiFilter === "me" ? allActions.filter((a) => meRe.test(a.owner || "")) : allActions).slice(0, 8);
-  const topicCount = {};
-  meetings.forEach((m) => (m.topics || []).forEach((t) => { topicCount[t] = (topicCount[t] || 0) + 1; }));
-  const topTopics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  const summaries = meetings.filter((m) => m.summary && m.summary.length > 30);
-  const lead = summaries[0];
   const hi = (() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; })();
+  const allActions = real.flatMap((m) => (m.actionItems || []).filter((a) => a.task).map((a) => ({ ...a, meeting: m.title, id: m.id, date: m.date })));
+  const actions = (aiFilter === "me" ? allActions.filter((a) => isMe(a.owner, user)) : allActions).slice(0, 12);
+  const topicCount = {};
+  real.forEach((m) => (m.topics || []).forEach((t) => { topicCount[t] = (topicCount[t] || 0) + 1; }));
+  const topTopics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const summaries = real.filter((m) => m.summary && m.summary.length > 30);
+  const lead = summaries[0];
+  const qas = real.flatMap((m) => (m.keyQA || []).filter((q) => q.q).map((q) => ({ ...q, meeting: m.title, id: m.id, date: m.date }))).slice(0, 8);
+  const recapFull = summaries.slice(0, 3).map((m) => (m.summary || "").replace(/\s+/g, " ").trim()).join(" ");
+  const recap = recapFull.length > 520 ? recapFull.slice(0, 520) + "…" : recapFull;
+  if (!real.length) return (
+    <>
+      <SectionTop title="For You" onAsk={onAsk} />
+      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-slate-400">Once your meetings are recorded and analyzed, your personalized digest - topics, action items and key questions across meetings - will appear here.</div>
+    </>
+  );
   return (
     <>
-      <SectionTop title="For You" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> {meetings.length} meeting{meetings.length === 1 ? "" : "s"}</span>} />
+      <SectionTop title="For You" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> {rangeLabel(real)}</span>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+        <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
           <div className="space-y-5">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+            <div className="rounded-2xl border border-violet-200 bg-white shadow-sm p-5">
               <h2 className="text-2xl font-bold text-violet-700">{hi}, {uName}</h2>
-              <p className="mt-1 text-sm font-medium text-slate-500">A digest from your {meetings.length} most recent meeting{meetings.length === 1 ? "" : "s"}</p>
+              <p className="mt-1 text-sm font-medium text-slate-500">Here's what happened across your {real.length} recent meeting{real.length === 1 ? "" : "s"}</p>
               <div className="mt-3 flex gap-4">
-                <p className="flex-1 text-sm leading-relaxed text-slate-600">{lead ? lead.summary : "Once your meetings are analyzed, your personalized digest - top topics, summaries and action items across meetings - will appear here."}</p>
-                <VideoThumb src={(lead && lead.video) || VIDEOS[0]} source={(lead && lead.source) || "Google Meet"} size={120} rounded="rounded-xl" showBadge={false} />
+                <p className="flex-1 text-sm leading-relaxed text-slate-600">{recap || (lead && lead.summary) || "Your digest will appear here."}</p>
+                {lead && lead.video && <VideoThumb src={lead.video} source={lead.source} poster={lead.cover_url} at={lead.coverAt} size={120} rounded="rounded-xl" showBadge={false} onClick={() => onOpen(lead.id)} />}
               </div>
             </div>
             <Card title="Topics" icon={MessageSquareText}>
@@ -2948,17 +2980,30 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
                   <div key={i} className="rounded-xl bg-violet-50/60 p-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold text-slate-800">{t}</h4>
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-violet-600">{Math.round((n / meetings.length) * 100)}% of meetings</span>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-violet-600">{Math.round((n / real.length) * 100)}% of meetings</span>
                     </div>
                     <div className="mt-1 text-[12px] text-slate-400">From {n} meeting{n === 1 ? "" : "s"}</div>
                   </div>
                 ))}
-              </div> : <p className="text-sm text-slate-400">No topics yet - analyze a meeting to see topic trends.</p>}
+              </div> : <p className="text-sm text-slate-400">No topics yet.</p>}
             </Card>
+            {qas.length > 0 && (
+              <Card title="Key Questions & Answers" icon={Quote}>
+                <div className="space-y-3">
+                  {qas.map((q, i) => (
+                    <div key={i} className="border-b border-slate-100 pb-3 last:border-0">
+                      <button onClick={() => onOpen(q.id)} className="text-left text-[13px] font-semibold text-slate-700 hover:text-violet-700">{q.q}</button>
+                      {q.a && <p className="mt-1 text-[13px] text-slate-500">{q.a}</p>}
+                      <div className="mt-1 text-[11px] text-slate-400">{q.meeting}</div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
             <Card title={tr("summary")} icon={Sparkles}>
               {summaries.length ? <div className="space-y-3">
-                {summaries.slice(0, 3).map((m, i) => (
-                  <button key={i} onClick={() => onOpen(m.id)} className="block w-full text-left">
+                {summaries.slice(0, 4).map((m, i) => (
+                  <button key={i} onClick={() => onOpen(m.id)} className="block w-full border-b border-slate-100 pb-3 text-left last:border-0">
                     <div className="text-[13px] font-semibold text-slate-700">{m.title}</div>
                     <p className="text-sm leading-relaxed text-slate-600">{m.summary}</p>
                   </button>
@@ -2968,24 +3013,33 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
           </div>
 
           <div className="space-y-5">
-            <div className="rounded-2xl bg-violet-900 p-5 text-white">
-              <div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-base font-bold">Daily Read <span className="rounded bg-violet-500 px-1.5 py-0.5 text-[10px]">✨ beta</span></h3><Link2 size={15} className="text-violet-300" /></div>
-              <p className="mt-0.5 text-sm text-violet-200">June 26, 2026</p>
-              <div className="mt-3 h-1 w-full rounded-full bg-violet-700"><div className="h-1 w-0 rounded-full bg-white" /></div>
-              <div className="mt-2 flex items-center gap-3"><Play size={18} fill="white" /><span className="text-[12px] text-violet-300">--:-- / --:--</span></div>
-              <div className="mt-3 flex items-start gap-2 rounded-lg bg-violet-800 p-2.5 text-[12px] text-violet-200">ℹ The text-to-speech voice you are hearing is AI-generated and not a human voice.</div>
-            </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><CheckCircle2 size={16} className="text-violet-500" /> Action Items</h3><div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]"><button onClick={() => setAiFilter("me")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "me" ? "bg-violet-600 text-white" : "text-slate-500")}>For me</button><button onClick={() => setAiFilter("all")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "all" ? "bg-violet-600 text-white" : "text-slate-500")}>All</button></div></div>
-              <div className="space-y-3">
-                {actions.map((a, i) => (
-                  <button key={i} onClick={() => onOpen(a.id)} className="block w-full border-b border-slate-100 pb-3 text-left last:border-0">
-                    <div className="text-[13px] text-slate-700">{a.task} <span className="font-semibold text-violet-600">Ask Octo</span></div>
-                    <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><Calendar size={11} /> {a.date ? fmtDateFull(a.date) : ""} · <FileText size={11} /> {a.meeting}</div>
-                  </button>
-                ))}
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><CheckCircle2 size={16} className="text-violet-500" /> Action Items</h3>
+                <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]"><button onClick={() => setAiFilter("me")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "me" ? "bg-violet-600 text-white" : "text-slate-500")}>For me</button><button onClick={() => setAiFilter("all")} className={"rounded-md px-2 py-0.5 font-semibold " + (aiFilter === "all" ? "bg-violet-600 text-white" : "text-slate-500")}>All</button></div>
               </div>
+              {actions.length ? <div className="space-y-3">
+                {actions.map((a, i) => (
+                  <div key={i} className="border-b border-slate-100 pb-3 last:border-0">
+                    <button onClick={() => onOpen(a.id)} className="block text-left text-[13px] text-slate-700 hover:text-violet-700">{a.owner ? <b>{a.owner}: </b> : ""}{a.task}</button>
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><Calendar size={11} /> {a.date ? fmtDateShort(a.date) : ""} · {a.meeting}</div>
+                  </div>
+                ))}
+              </div> : <p className="text-sm text-slate-400">{aiFilter === "me" ? "No action items assigned to you." : "No action items yet."}</p>}
             </div>
+            {qas.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800"><Quote size={16} className="text-amber-500" /> Key Questions</h3>
+                <div className="space-y-2.5">
+                  {qas.slice(0, 6).map((q, i) => (
+                    <button key={i} onClick={() => onOpen(q.id)} className="block w-full text-left">
+                      <div className="text-[13px] text-slate-700 hover:text-violet-700">{q.q}</div>
+                      <div className="mt-0.5 text-[11px] text-slate-400">{q.date ? fmtDateShort(q.date) : ""} · {q.meeting}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2994,65 +3048,93 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
 }
 
 /* ============================ COACHING ============================ */
-function CoachingView({ onAsk }) {
-  const moments = [{ w: 223, m: "Vertex Retail" }, { w: 225, m: "Vertex Retail" }, { w: 244, m: "Acme - Outreach" }, { w: 224, m: "Northwind" }];
+function CoachingView({ meetings, onAsk, onOpen, user }) {
+  const stats = useMemo(() => myMeetingStats(meetings, user), [meetings, user]);
+  const [metric, setMetric] = useState("pace");
+  const avgWpm = avgOf(stats.filter((s) => s.wpm > 0), (s) => s.wpm);
+  const avgFiller = avgOf(stats.filter((s) => s.fillerPct != null), (s) => s.fillerPct);
+  const avgChar = avgOf(stats.filter((s) => s.charisma > 0), (s) => s.charisma);
+  const avgQ = avgOf(stats, (s) => s.questions);
+  const avgBal = avgOf(stats.filter((s) => s.balance > 0), (s) => s.balance);
+  const r1 = (v) => (v == null ? "-" : Math.round(v));
+  const r10 = (v) => (v == null ? "-" : Math.round(v * 10) / 10);
+  const clamp = (x) => Math.max(0, Math.min(1, x));
+  const paceOk = avgWpm != null && avgWpm >= 130 && avgWpm <= 175;
+  const fillerOk = avgFiller != null && avgFiller <= 4;
+  const charOk = avgChar != null && avgChar >= 70;
+
+  const METRICS = {
+    pace: { label: "Talking pace", icon: Activity, val: avgWpm == null ? "-" : r1(avgWpm) + " wpm", ok: paceOk, head: avgWpm == null ? "-" : r1(avgWpm) + " wpm",
+      desc: avgWpm == null ? "Not enough data yet." : `Your average rate of speech in words per minute. You speak at ${r1(avgWpm)} WPM${paceOk ? ", within the recommended 130-175 WPM range. Keep it up!" : avgWpm < 130 ? ", a bit below the recommended 130-175 WPM range." : ", above the recommended 130-175 WPM range - try slowing down."}`,
+      lo: 130, hi: 270, pos: avgWpm == null ? 0 : clamp((avgWpm - 130) / 140), grad: "linear-gradient(90deg,#10B981,#F59E0B,#F43F5E)", colLabel: "WPM", fmt: (s) => (s.wpm ? r1(s.wpm) : "-") },
+    filler: { label: "Filler words", icon: MessageSquareText, val: avgFiller == null ? "-" : r10(avgFiller) + "%", ok: fillerOk, head: avgFiller == null ? "-" : r10(avgFiller) + "% of speech",
+      desc: avgFiller == null ? "Not enough data yet." : `The share of your words that are fillers (um, uh, you know). ${r10(avgFiller)}% of your speech is filler words${fillerOk ? ", within the 4% target. Keep it up!" : " - aim for 4% or lower."}`,
+      lo: 0, hi: 5, pos: avgFiller == null ? 0 : clamp(avgFiller / 5), grad: "linear-gradient(90deg,#10B981,#F59E0B,#F43F5E)", colLabel: "% Filler", fmt: (s) => (s.fillerPct == null ? "-" : r10(s.fillerPct) + "%") },
+    charisma: { label: "Charisma", icon: Sparkles, val: avgChar == null ? "-" : r1(avgChar), ok: charOk, head: avgChar == null ? "-" : r1(avgChar),
+      desc: avgChar == null ? "Not enough data yet." : `Your presence and delivery when you speak, out of 100. Your average charisma is ${r1(avgChar)}${charOk ? ", within the target of 70 or higher. Nice!" : " - room to grow with more energy and confidence."}`,
+      lo: 50, hi: 100, pos: avgChar == null ? 0 : clamp((avgChar - 50) / 50), grad: "linear-gradient(90deg,#F43F5E,#F59E0B,#10B981)", colLabel: "Charisma", fmt: (s) => (s.charisma ? r1(s.charisma) : "-") },
+    questions: { label: "Questions asked", icon: HelpCircle, val: avgQ == null ? "-" : (avgQ < 1 ? "<1" : r10(avgQ)) + " per meeting", ok: avgQ != null && avgQ >= 1, head: avgQ == null ? "-" : (avgQ < 1 ? "<1" : r10(avgQ)) + " per meeting",
+      desc: avgQ == null ? "Not enough data yet." : `Questions you asked during your meetings. On average you ask ${avgQ < 1 ? "less than 1" : r10(avgQ)} question${avgQ >= 1 && avgQ < 2 ? "" : "s"} per meeting. Asking questions helps balance talk time and makes others feel included.`,
+      lo: 0, hi: 5, pos: avgQ == null ? 0 : clamp(avgQ / 5), grad: "linear-gradient(90deg,#F59E0B,#10B981)", colLabel: "# Questions", fmt: (s) => String(s.questions) },
+    balance: { label: "Talk-time balance", icon: Users, val: avgBal == null ? "-" : r1(avgBal), ok: avgBal != null && avgBal >= 60, head: avgBal == null ? "-" : r1(avgBal),
+      desc: avgBal == null ? "Not enough data yet." : `How evenly talk time was shared in your meetings, out of 100. Your average is ${r1(avgBal)}${avgBal >= 60 ? " - well balanced." : " - try inviting others to speak more."}`,
+      lo: 0, hi: 100, pos: avgBal == null ? 0 : clamp(avgBal / 100), grad: "linear-gradient(90deg,#F43F5E,#F59E0B,#10B981)", colLabel: "Balance", fmt: (s) => (s.balance ? r1(s.balance) : "-") },
+  };
+  const M = METRICS[metric];
+  const groups = [["Clarity", ["pace", "filler"]], ["Impact", ["charisma", "questions", "balance"]]];
+
+  if (!stats.length) return (
+    <>
+      <SectionTop title="Coaching" onAsk={onAsk} />
+      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-slate-400">Your speaking coaching - talking pace, filler words, charisma and more - appears here once you've recorded a few meetings.</div>
+    </>
+  );
   return (
     <>
-      <SectionTop title="Coaching" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> May 27 - Jun 26, 2026</span>} />
+      <SectionTop title="Coaching" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> {rangeLabel(stats.map((s) => s.m))}</span>} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
           <div className="space-y-5">
-            <div>
-              <div className="mb-2 flex items-center gap-2"><h3 className="text-base font-bold text-slate-900">Clarity</h3><span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">GOOD</span></div>
-              <div className="space-y-2">
-                <CoachMetric icon={Activity} label="Talking pace" value="130 wpm" ok active />
-                <CoachMetric icon={MessageSquareText} label="Filler words" value="1% of speech" ok />
+            {groups.map(([g, keys]) => (
+              <div key={g}>
+                <h3 className="mb-2 text-base font-bold text-slate-900">{g}</h3>
+                <div className="space-y-2">
+                  {keys.map((k) => { const mm = METRICS[k]; const Ic = mm.icon; return (
+                    <button key={k} onClick={() => setMetric(k)} className={"flex w-full items-center justify-between rounded-xl border bg-white p-3.5 text-left transition " + (metric === k ? "border-violet-300 ring-1 ring-violet-200" : "border-slate-200 hover:bg-slate-50")}>
+                      <span className="flex items-center gap-2 text-sm text-slate-700"><Ic size={15} className="text-violet-400" /> {mm.label}</span>
+                      <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">{mm.val} {mm.ok && <CheckCircle2 size={15} className="text-emerald-500" />}</span>
+                    </button>
+                  ); })}
+                </div>
               </div>
-            </div>
-            <div>
-              <h3 className="mb-2 text-base font-bold text-slate-900">Inclusion</h3>
-              <CoachMetric icon={X} label="Non-inclusive terms" value="<1 per meeting" ok />
-            </div>
-            <div>
-              <div className="mb-2 flex items-center gap-2"><h3 className="text-base font-bold text-slate-900">Impact</h3><span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">GOOD</span></div>
-              <div className="space-y-2">
-                <CoachMetric icon={Target} label="Bias" value="80" ok />
-                <CoachMetric icon={Sparkles} label="Charisma" value="80" ok />
-                <CoachMetric icon={HelpCircle} label="Questions asked" value="<1 per meeting" />
-              </div>
-            </div>
+            ))}
           </div>
 
           <div className="space-y-6">
             <div>
-              <div className="flex items-center justify-between"><h3 className="text-xl font-bold text-slate-900">Talking pace</h3><span className="flex items-center gap-1 text-lg font-bold text-slate-900">130 wpm <CheckCircle2 size={16} className="text-emerald-500" /></span></div>
-              <p className="mt-1 text-sm text-slate-500">Your average rate of speech in words per minute. <b>You speak at 130 WPM, within the recommended range of 130-175 WPM. Keep it up!</b></p>
+              <div className="flex items-center justify-between"><h3 className="text-xl font-bold text-slate-900">{M.label}</h3><span className="flex items-center gap-1 text-lg font-bold text-slate-900">{M.head} {M.ok && <CheckCircle2 size={16} className="text-emerald-500" />}</span></div>
+              <p className="mt-1 text-sm text-slate-500">{M.desc}</p>
               <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                <div className="flex items-center justify-between text-[12px] text-slate-400"><span>Range</span><span>Your pace</span></div>
-                <div className="relative mt-2 h-2 rounded-full" style={{ background: "linear-gradient(90deg,#10B981,#F59E0B,#F43F5E)" }}><span className="absolute -top-1 h-4 w-4 rounded-full border-2 border-violet-600 bg-white" style={{ left: "0%" }} /></div>
-                <div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>130</span><span>270</span></div>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Moments</h3>
-              <p className="mb-3 text-sm text-slate-500">Review your moments with talking speed outside of the target zone.</p>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {moments.map((mm, i) => (
-                  <div key={i}>
-                    <VideoThumb src={VIDEOS[i]} source="Google Meet" size={150} rounded="rounded-xl" showBadge={false} />
-                    <div className="mt-1 text-[12px] font-medium text-slate-700">Very fast ({mm.w} wpm)</div>
-                    <div className="text-[11px] text-slate-400">{mm.m}</div>
-                  </div>
-                ))}
+                <div className="flex items-center justify-between text-[12px] text-slate-400"><span>Range</span><span>Your average</span></div>
+                <div className="relative mt-2 h-2 rounded-full" style={{ background: M.grad }}><span className="absolute -top-1 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-violet-600 bg-white" style={{ left: (M.pos * 100) + "%" }} /></div>
+                <div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>{M.lo}</span><span>{M.hi}</span></div>
               </div>
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900">Meetings</h3>
-              <p className="mb-2 text-sm text-slate-500">Review meeting reports where your talking speed was outside the target zone.</p>
-              <div className="grid grid-cols-[1.6fr_1fr_90px_70px_70px] border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase text-slate-400"><div>Meeting</div><div>Date &amp; Time</div><div>Talk Time</div><div>WPM</div><div>% Filler</div></div>
-              <div className="grid grid-cols-[1.6fr_1fr_90px_70px_70px] items-center border-b border-slate-100 px-3 py-3 text-[13px]">
-                <div><div className="font-semibold text-slate-800">Vertex Retail</div><div className="text-[12px] text-slate-400">2 participants</div></div>
-                <div className="text-slate-500">Tue 6/16/26<br />12:02 - 12:11 PM</div><div className="text-slate-600">23%</div><div className="flex items-center gap-1 text-slate-600">181 <AlertTriangle size={12} className="text-amber-500" /></div><div className="text-slate-600">1%</div>
+              <p className="mb-2 text-sm text-slate-500">Your {M.label.toLowerCase()} per meeting.</p>
+              <div className="overflow-x-auto">
+                <div className="min-w-[560px]">
+                  <div className="grid grid-cols-[1.7fr_1.1fr_90px_90px] border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase text-slate-400"><div>Meeting</div><div>Date &amp; Time</div><div>Talk Time</div><div>{M.colLabel}</div></div>
+                  {stats.map((s, i) => (
+                    <button key={i} onClick={() => onOpen(s.m.id)} className="grid w-full grid-cols-[1.7fr_1.1fr_90px_90px] items-center border-b border-slate-100 px-3 py-3 text-left text-[13px] hover:bg-slate-50">
+                      <div className="min-w-0"><div className="truncate font-semibold text-slate-800">{s.m.title}</div><div className="text-[12px] text-slate-400">{(s.m.participants || []).length} participant{(s.m.participants || []).length === 1 ? "" : "s"}</div></div>
+                      <div className="text-slate-500">{fmtDateShort(s.m.date)}<br />{s.m.timeStart}</div>
+                      <div className="text-slate-600">{s.talkPct}%</div>
+                      <div className="font-semibold text-slate-700">{M.fmt(s)}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -3071,65 +3153,74 @@ function CoachMetric({ icon: Icon, label, value, ok, active }) {
 }
 
 /* ======================== RECOMMENDATIONS ========================= */
-function RecommendationsView({ onAsk }) {
-  const list = [
-    { name: "Acme - Growth Review", n: 4, date: "Mon 6/15 · 11:00 AM - 12:00 PM" },
-    { name: "Globex & Octo", n: 1, date: "Mon 6/15 · 1:00 PM - 2:00 PM" },
-    { name: "Northwind & Octo", n: 2, date: "Tue 6/16 · 12:00 PM - 1:00 PM" },
-    { name: "Vertex - Sync", n: 6, date: "Thu 6/18 · 3:00 PM - 4:00 PM" },
-    { name: "Initech & Octo", n: 2, date: "Fri 6/19 · 10:00 AM - 10:45 AM" },
-    { name: "Lumio - 1st Intro", n: 1, date: "Mon 6/22 · 9:00 AM - 9:30 AM" },
-  ];
-  const [sel, setSel] = useState(0);
+function RecommendationsView({ meetings, onAsk, onOpen, user }) {
+  const KEY = "octomeet:rec:v1"; // per-item handled state, durable across reloads
+  const [handled, setHandled] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; } });
   const [recTab, setRecTab] = useState("new");
-  const [items, setItems] = useState([
-    { text: "Nicolas Benech will send an email with the company's organizational structure and operational details to start implementation.", quote: "Yeah, the basic thing we need to start is the structure of the company with the organization.", who: "Nicolas Benech" },
-    { text: "Nicolas Benech will arrange a meeting with the customer's IT team to discuss sales and data integration.", quote: "If you want to see all the sales and everything, we can do a meeting with the IT and everything.", who: "Nicolas Benech" },
-    { text: "Tony Cola will send an email to arrange a follow-up meeting.", quote: "Send us an email and we meet up together and everything.", who: "Daniel Lopez" },
-  ]);
-  const resolve = (i, kind) => { setItems((arr) => arr.filter((_, j) => j !== i)); toast(kind); };
+  const [selId, setSelId] = useState(null);
+  const mark = (mid, idx, val) => setHandled((h) => { const n = { ...h }; if (val) n[mid + "#" + idx] = val; else delete n[mid + "#" + idx]; try { localStorage.setItem(KEY, JSON.stringify(n)); } catch {} return n; });
+
+  const rows = useMemo(() => (meetings || [])
+    .filter((m) => m.real && m.status === "done")
+    .map((m) => ({ m, items: (m.actionItems || []).map((a, idx) => ({ ...a, idx, mid: m.id })).filter((a) => a.task) }))
+    .filter((r) => r.items.length)
+    .sort((a, b) => whenMs(b.m) - whenMs(a.m)), [meetings]);
+
+  const forTab = rows.map((r) => ({ ...r, items: r.items.filter((a) => (recTab === "new" ? !handled[a.mid + "#" + a.idx] : !!handled[a.mid + "#" + a.idx])) })).filter((r) => r.items.length);
+  const newCount = rows.reduce((n, r) => n + r.items.filter((a) => !handled[a.mid + "#" + a.idx]).length, 0);
+  const cur = forTab.find((r) => r.m.id === selId) || forTab[0] || null;
+  // Quote = the transcript turn nearest the action's timestamp (Read.ai's "More details").
+  const quoteFor = (m, a) => { if (a.at == null || !m.transcript) return null; let best = null, bd = 1e9; for (const t of m.transcript) { const d = Math.abs((t.at || 0) - a.at); if (d < bd) { bd = d; best = t; } } return best && bd < 90 ? best : null; };
+
   return (
     <>
-      <SectionTop title="Recommendations" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> Apr 26 - Jun 26, 2026</span>} />
+      <SectionTop title="Recommendations" onAsk={onAsk} right={<span className="flex items-center gap-2 rounded-lg bg-slate-100 px-3.5 py-2 text-[13px] font-medium text-slate-600"><Calendar size={14} className="text-slate-400" /> {rangeLabel(rows.map((r) => r.m))}</span>} />
       <div className="flex flex-1 overflow-hidden">
         <div className="w-80 shrink-0 overflow-y-auto border-r border-slate-200">
           <div className="flex items-center gap-4 border-b border-slate-200 px-4 py-3 text-sm font-semibold">
-            <button onClick={() => setRecTab("new")} className={"flex items-center gap-1 " + (recTab === "new" ? "text-violet-700" : "text-slate-400")}>New <span className="rounded-full bg-violet-600 px-1.5 text-[11px] text-white">19</span></button>
-            <button onClick={() => setRecTab("reviewed")} className={recTab === "reviewed" ? "text-violet-700" : "text-slate-400"}>Reviewed</button>
-            <button onClick={() => toast("Filters - coming soon")} className="ml-auto text-[13px] font-medium text-violet-600">Show filters</button>
+            <button onClick={() => { setRecTab("new"); setSelId(null); }} className={"flex items-center gap-1 " + (recTab === "new" ? "text-violet-700" : "text-slate-400")}>New {newCount > 0 && <span className="rounded-full bg-violet-600 px-1.5 text-[11px] text-white">{newCount}</span>}</button>
+            <button onClick={() => { setRecTab("reviewed"); setSelId(null); }} className={recTab === "reviewed" ? "text-violet-700" : "text-slate-400"}>Reviewed</button>
           </div>
-          {recTab === "reviewed" && <div className="px-4 py-16 text-center text-sm text-slate-400">No reviewed recommendations yet.</div>}
-          {recTab === "new" && list.map((r, i) => (
-            <button key={i} onClick={() => setSel(i)} className={"block w-full border-b border-slate-100 px-4 py-3 text-left transition " + (sel === i ? "bg-violet-50/60" : "hover:bg-slate-50")}>
-              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-800">{r.name}</span><span className="flex items-center gap-1 text-[12px] text-slate-500"><Zap size={12} className="text-violet-400" /> {r.n}</span></div>
-              <div className="mt-1 flex items-center gap-1 text-[12px] text-slate-400"><Calendar size={11} /> {r.date}</div>
+          {!forTab.length && <div className="px-4 py-16 text-center text-sm text-slate-400">{recTab === "new" ? "No new action items 🎉" : "Nothing reviewed yet."}</div>}
+          {forTab.map((r) => (
+            <button key={r.m.id} onClick={() => setSelId(r.m.id)} className={"block w-full border-b border-slate-100 px-4 py-3 text-left transition " + ((cur && cur.m.id === r.m.id) ? "bg-violet-50/60" : "hover:bg-slate-50")}>
+              <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-slate-800">{r.m.title}</span><span className="flex shrink-0 items-center gap-1 text-[12px] text-slate-500"><Zap size={12} className="text-violet-400" /> {r.items.length}</span></div>
+              <div className="mt-1 flex items-center gap-1 text-[12px] text-slate-400"><Calendar size={11} /> {fmtDateShort(r.m.date)} · {r.m.timeStart}</div>
             </button>
           ))}
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="mb-4 flex items-center gap-2"><h2 className="text-lg font-bold text-slate-900">{list[sel].name}</h2><span className="flex items-center gap-1 rounded bg-violet-50 px-2 py-0.5 text-[12px] font-semibold text-violet-700"><Zap size={12} /> {list[sel].n}</span></div>
-          <div className="space-y-4">
-            {!items.length && <div className="rounded-2xl border border-dashed border-slate-200 py-16 text-center text-sm text-slate-400">All recommendations handled 🎉</div>}
-            {items.map((it, i) => (
-              <div key={i} className="rounded-2xl border border-slate-200 bg-white p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-sm font-semibold text-slate-800"><CheckCircle2 size={16} className="text-violet-500" /> Action item for you</span>
-                  <div className="flex gap-2">
-                    <button onClick={() => resolve(i, "Acknowledged")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><ThumbsUp size={14} /> Acknowledge</button>
-                    <button onClick={() => resolve(i, "Ignored")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-rose-600 hover:bg-rose-50"><X size={14} /> Ignore</button>
+          {!cur ? (
+            <div className="flex h-full items-center justify-center text-center text-sm text-slate-400">{recTab === "new" ? "All action items handled 🎉" : "Reviewed action items will show here."}</div>
+          ) : (
+            <>
+              <div className="mb-4 flex items-center gap-2"><button onClick={() => onOpen(cur.m.id)} className="text-lg font-bold text-slate-900 hover:text-violet-700">{cur.m.title}</button><span className="flex items-center gap-1 rounded bg-violet-50 px-2 py-0.5 text-[12px] font-semibold text-violet-700"><Zap size={12} /> {cur.items.length}</span></div>
+              <div className="space-y-4">
+                {cur.items.map((a) => { const q = quoteFor(cur.m, a); return (
+                  <div key={a.idx} className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="flex items-center gap-2 text-sm font-semibold text-slate-800"><CheckCircle2 size={16} className="text-violet-500" /> {isMe(a.owner, user) ? "Action item for you" : "Action item"}</span>
+                      {recTab === "new" ? (
+                        <div className="flex gap-2">
+                          <button onClick={() => { mark(a.mid, a.idx, "ack"); toast("Acknowledged"); }} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><ThumbsUp size={14} /> Acknowledge</button>
+                          <button onClick={() => { mark(a.mid, a.idx, "ignore"); toast("Ignored"); }} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-rose-600 hover:bg-rose-50"><X size={14} /> Ignore</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { mark(a.mid, a.idx, null); toast("Moved back to New"); }} className="text-[13px] font-medium text-violet-600 hover:text-violet-700">Undo</button>
+                      )}
+                    </div>
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1">
+                        <p className="text-sm text-slate-700">{a.owner ? <b>{a.owner}: </b> : ""}{a.task}{a.due ? <span className="text-slate-400"> · due {a.due}</span> : ""}</p>
+                        {q && <><p className="mt-2 text-[12px] font-semibold text-slate-500">More details</p><p className="text-[13px] text-slate-500">{q.speaker}: "{q.text}"</p></>}
+                      </div>
+                      {cur.m.video && a.at != null && <VideoThumb src={cur.m.video} source={cur.m.source} poster={cur.m.cover_url} at={a.at} size={120} rounded="rounded-xl" showBadge={false} hoverPlay={false} onClick={() => onOpen(cur.m.id)} />}
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="flex-1">
-                    <p className="text-sm text-slate-700">{it.text}</p>
-                    <p className="mt-2 text-[12px] font-semibold text-slate-500">More Details</p>
-                    <p className="text-[13px] text-slate-500">{it.who}: "{it.quote}"</p>
-                  </div>
-                  <VideoThumb src={VIDEOS[i]} source="Google Meet" size={120} rounded="rounded-xl" showBadge={false} />
-                </div>
+                ); })}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
       </div>
     </>
