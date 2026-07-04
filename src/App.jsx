@@ -7,7 +7,7 @@ import {
   ListChecks, BarChart3, MessageSquareText, FileText, Quote, AlertTriangle,
   Zap, Activity, Rocket, ChevronLeft, Download, Share2, Play, Pause, Maximize2, Volume2, VolumeX, PictureInPicture2,
   Check, Mail, Plus, Trash2, CalendarCheck, PanelRightClose, Bell, Settings, Type, Copy, Pencil,
-  HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, KeyRound,
+  HelpCircle, LogOut, ChevronRight, X, ThumbsUp, SlidersHorizontal, Filter, KeyRound,
   ChevronsDownUp, ChevronsUpDown, Eye, ChevronUp, MinusCircle, MoreVertical,
   Captions, AudioLines, ImagePlus, Paperclip, Languages,
 } from "lucide-react";
@@ -135,7 +135,7 @@ const EXTRA = {
     allFoldersOpt: "All folders", allTypes2: "All types", completed2: "Completed",
     inProgress: "In progress", anytimeOpt: "Anytime", todayOpt: "Today",
     thisWeekOpt: "This week", thisMonthOpt: "This month", allReportsOpt: "All Reports",
-    myReportsOpt: "My reports", recordedByOctomeet: "Recorded by OctoMeet", liveRecordingBanner: "OctoMeet is recording “{title}”{more} - the AI report will appear here automatically.",
+    myReportsOpt: "My reports", ownedOrInvited: "Owned or invited to", recordedByOctomeet: "Recorded by OctoMeet", liveRecordingBanner: "OctoMeet is recording “{title}”{more} - the AI report will appear here automatically.",
     generatingReportsBanner: "Generating {n} AI report{s} from your meeting{s}… this updates automatically.", refreshBtn: "Refresh", newBadge: "NEW!",
     crmBannerMsg: "Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.", addHubspot: "Add Hubspot", addSalesforce: "Add Salesforce",
     dismiss: "Dismiss", clearFilters: "Clear filters", deselectAll: "Deselect all",
@@ -225,7 +225,7 @@ const EXTRA = {
     allFoldersOpt: "Todas las carpetas", allTypes2: "Todos los tipos", completed2: "Completado",
     inProgress: "En progreso", anytimeOpt: "Cualquier momento", todayOpt: "Hoy",
     thisWeekOpt: "Esta semana", thisMonthOpt: "Este mes", allReportsOpt: "Todos los reportes",
-    myReportsOpt: "Mis reportes", recordedByOctomeet: "Grabado por OctoMeet", liveRecordingBanner: "OctoMeet está grabando \"{title}\" +{n} más - el reporte con IA aparecerá acá automáticamente.",
+    myReportsOpt: "Mis reportes", ownedOrInvited: "Propios o invitado", recordedByOctomeet: "Grabado por OctoMeet", liveRecordingBanner: "OctoMeet está grabando \"{title}\" +{n} más - el reporte con IA aparecerá acá automáticamente.",
     generatingReportsBanner: "Generando {n} reportes con IA de tus reuniones… esto se actualiza automáticamente.", refreshBtn: "Actualizar", newBadge: "NUEVO!",
     crmBannerMsg: "Conectá tu CRM para recibir recomendaciones inteligentes sobre cuándo avanzar tus oportunidades a la siguiente etapa.", addHubspot: "Agregar HubSpot", addSalesforce: "Agregar Salesforce",
     dismiss: "Descartar", clearFilters: "Limpiar filtros", deselectAll: "Deseleccionar todo",
@@ -1536,8 +1536,8 @@ function FilterDropdown({ label, icon: Icon, value, onChange, options }) {
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute left-0 z-20 mt-1 max-h-72 min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
             {options.map((o) => (
-              <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} className={"flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-50 " + (o.value === value ? "font-semibold text-violet-700" : "text-slate-600")}>
-                {o.label}{o.value === value && <Check size={14} className="text-violet-600" />}
+              <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} className={"flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 " + (o.value === value ? "text-violet-700" : "text-slate-600")}>
+                <span className="min-w-0"><span className={"block text-[13px] " + (o.value === value ? "font-semibold" : "")}>{o.label}</span>{o.sub && <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{o.sub}</span>}</span>{o.value === value && <Check size={14} className="shrink-0 text-violet-600" />}
               </button>
             ))}
           </div>
@@ -1572,7 +1572,7 @@ function MonthGrid({ year, month, start, end, onPick, hideCaption }) {
     <div className="w-full">
       {!hideCaption && <div className="mb-2 text-[13px] font-semibold text-slate-500">{caption}</div>}
       <div className="grid grid-cols-7">
-        {weekdayLabels().map((w, i) => <div key={"w" + i} className="flex h-7 items-center justify-center text-[11px] font-medium text-slate-400">{w}</div>)}
+        {weekdayLabels().map((w, i) => <div key={"w" + i} className="flex h-6 items-center justify-center text-[10px] font-medium text-slate-400">{w}</div>)}
         {cells.map((c, i) => {
           const isStart = !!c.ymd && c.ymd === start, isEnd = !!c.ymd && c.ymd === end;
           const endpoint = isStart || isEnd;
@@ -1580,11 +1580,11 @@ function MonthGrid({ year, month, start, end, onPick, hideCaption }) {
           const band = hasRange && (between || endpoint);
           const isToday = c.ymd === REF_TODAY;
           return (
-            <div key={i} className={"my-0.5 flex h-9 items-center justify-center " + (band ? "bg-violet-100 " : "") + (band && isStart ? "rounded-l-full " : "") + (band && isEnd ? "rounded-r-full " : "")}>
+            <div key={i} className={"flex h-8 items-center justify-center " + (band ? "bg-violet-100 " : "") + (band && isStart ? "rounded-l-full " : "") + (band && isEnd ? "rounded-r-full " : "")}>
               {c.inMonth ? (
-                <button onClick={() => onPick(c.ymd)} className={"flex h-9 w-9 items-center justify-center rounded-full text-[13px] transition " + (endpoint ? "bg-violet-600 font-semibold text-white" : "text-slate-700 hover:bg-violet-50") + (isToday && !endpoint ? " font-semibold text-violet-600 underline underline-offset-2" : "")}>{c.day}</button>
+                <button onClick={() => onPick(c.ymd)} className={"flex h-8 w-8 items-center justify-center rounded-full text-[12px] transition " + (endpoint ? "bg-violet-600 font-semibold text-white" : "text-slate-700 hover:bg-violet-50") + (isToday && !endpoint ? " font-semibold text-violet-600 underline underline-offset-2" : "")}>{c.day}</button>
               ) : (
-                <span className="flex h-9 w-9 items-center justify-center text-[13px] text-slate-300">{c.day}</span>
+                <span className="flex h-8 w-8 items-center justify-center text-[12px] text-slate-300">{c.day}</span>
               )}
             </div>
           );
@@ -1621,20 +1621,20 @@ function DateFilterDropdown({ label, value, range, onChange, options }) {
         <>
           <div className="fixed inset-0 z-10" onClick={close} />
           {/* Two-pane: quick ranges on the left, a calendar for a custom range on the right. */}
-          <div className="absolute left-0 z-20 mt-1 flex w-[560px] max-w-[94vw] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-            <div className="w-[188px] shrink-0 border-r border-slate-100 py-2">
+          <div className="absolute left-0 z-20 mt-1 flex w-[482px] max-w-[94vw] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="w-[162px] shrink-0 border-r border-slate-100 py-2">
               {options.map((o) => (
                 <button key={o.value} onClick={() => { onChange(o.value, null); close(); }} className={"flex w-full items-center justify-between px-4 py-2 text-left text-[13px] hover:bg-slate-50 " + (o.value === value ? "font-semibold text-violet-700" : "text-slate-600")}>
                   {o.label}{o.value === value && <Check size={15} className="text-violet-600" />}
                 </button>
               ))}
             </div>
-            <div className="flex-1 p-4">
-              <div className="mb-2 text-center text-[13px] font-semibold text-slate-500">{headLabel}</div>
-              <div className="mb-1 flex items-center justify-between">
-                <button onClick={() => shift(-1)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-50 hover:text-violet-600"><ChevronLeft size={18} /></button>
-                <span className="text-[14px] font-semibold text-slate-700">{new Date(view.y, view.m, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" })}</span>
-                <button onClick={() => shift(1)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-50 hover:text-violet-600"><ChevronRight size={18} /></button>
+            <div className="flex-1 p-3">
+              <div className="mb-1.5 text-center text-[12px] font-semibold text-slate-500">{headLabel}</div>
+              <div className="mb-0.5 flex items-center justify-between">
+                <button onClick={() => shift(-1)} className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-50 hover:text-violet-600"><ChevronLeft size={16} /></button>
+                <span className="text-[13px] font-semibold text-slate-700">{new Date(view.y, view.m, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" })}</span>
+                <button onClick={() => shift(1)} className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-50 hover:text-violet-600"><ChevronRight size={16} /></button>
               </div>
               <MonthGrid year={view.y} month={view.m} start={start} end={end} onPick={pick} hideCaption />
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
@@ -2034,7 +2034,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const folderOpts = useMemo(() => [{ value: "all", label: tr("allFoldersOpt") }, ...[...new Set(meetings.flatMap((m) => m.folders || (m.folder ? [m.folder] : [])).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
   const typeOpts = [{ value: "all", label: tr("allTypes2") }, { value: "completed", label: tr("completed2") }, { value: "processing", label: tr("inProgress") }];
   const dateOpts = [{ value: "all", label: tr("anytimeOpt") }, { value: "today", label: tr("todayOpt") }, { value: "last7", label: "Last 7 days" }, { value: "last30", label: "Last 30 days" }, { value: "last90", label: "Last 90 days" }, { value: "last6mo", label: "Last 6 months" }, { value: "last12mo", label: "Last 12 months" }];
-  const ownerOpts = [{ value: "all", label: tr("allReportsOpt") }, { value: "mine", label: tr("myReportsOpt") }, { value: "real", label: tr("recordedByOctomeet") }];
+  const ownerOpts = [{ value: "all", label: tr("allReportsOpt") }, { value: "mine", label: tr("myReportsOpt"), sub: tr("ownedOrInvited") }, { value: "real", label: tr("recordedByOctomeet") }];
 
   // Date & Time column sort direction - newest first by default; the header toggles it.
   const [sortDir, setSortDir] = useState("desc");
@@ -2149,7 +2149,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
               {folderFilter && (
                 <span className="flex items-center gap-1.5 rounded-lg bg-violet-50 px-3 py-2 text-[13px] font-semibold text-violet-700"><Folder size={13} /> {folderFilter}<button onClick={onClearFolder} className="ml-1 text-violet-400 hover:text-violet-700"><X size={13} /></button></span>
               )}
-              <FilterDropdown label={t("allReports")} icon={ClipboardList} value={fOwner} onChange={setFOwner} options={ownerOpts} />
+              <FilterDropdown label={t("allReports")} icon={Filter} value={fOwner} onChange={setFOwner} options={ownerOpts} />
               <DateFilterDropdown label={t("anytime")} value={fDate} range={fRange} onChange={(v, r) => { setFDate(v); setFRange(r); }} options={dateOpts} />
               <FilterDropdown label={t("source")} value={fSource} onChange={setFSource} options={sourceOpts} />
               <FilterDropdown label={t("folder")} value={fFolder} onChange={setFFolder} options={folderOpts} />
