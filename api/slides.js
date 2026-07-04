@@ -150,11 +150,11 @@ HARD RULES
 - Make every slide TITLE a takeaway sentence, not a topic label ("Revenue doubled in Q3", not "Revenue").
 - Choose the layout that fits the content: bigStat for a single KPI; quote for a verbatim quote; twoColumn for comparisons; timeline for sequences/roadmaps; agenda near the start; bullets only for 3-5 parallel points; imageText when an attached image is relevant.
 - NEVER invent statistics, numbers, quotes, names, dates or sources. Use ONLY facts in the meeting/attachments. A bigStat number must appear verbatim in the source; a quote must be verbatim from the transcript.
-- Write ALL text in the SAME language the meeting was held in; set "lang" to its ISO code.
+- Write ALL text in the SAME language the meeting was held in.
 - The deck must be designed for theme "${themeId}" (clean, high-contrast, minimal).${imageManifest}${withImages ? `\n- IMAGES: add an "imagePrompt" field to the COVER, the CLOSING, and 2-3 of the most visual content slides. imagePrompt = a vivid, literal ENGLISH description of a professional, cinematic photo/illustration with NO text, letters, words, logos, charts or UI in the image, relevant to that slide's topic. These become full-bleed backgrounds behind a dark scrim, so favor images with clear negative space and a focal subject off-center. Keep ONE consistent art direction across every image (same medium, palette, and lighting - e.g. "cinematic wide-angle photo, soft natural light, muted palette with a violet accent") so the deck looks designed by one hand. Do NOT add imagePrompt to dense data/bullet slides that need a clean background. At most 5 imagePrompts total.` : ""}
 
 Return ONLY valid JSON (no markdown fences), EXACTLY:
-{"lang":"xx","title":"...","subtitle":"...","themeId":"${themeId}","slides":[
+{"title":"...","slides":[
   {"layout":"cover","title":"...","subtitle":"...","eyebrow":"..."},
   {"layout":"agenda","title":"...","items":["..."]},
   {"layout":"bullets","title":"...","bullets":["..."]},
@@ -165,7 +165,7 @@ Return ONLY valid JSON (no markdown fences), EXACTLY:
   {"layout":"timeline","title":"...","events":[{"when":"...","what":"..."}]},
   {"layout":"closing","title":"...","headline":"...","bullets":["..."],"contact":"..."}
 ]}
-Allowed layouts: ${VALID_LAYOUTS.join(", ")}. You may add an optional "note" (speaker note) per slide; no other fields.`;
+Allowed layouts: ${VALID_LAYOUTS.join(", ")}. Add no other fields.`;
 
     const userContent = [{ type: "text", text: ctxText + fileText }, ...imageBlocks];
 
