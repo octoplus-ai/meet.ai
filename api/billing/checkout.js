@@ -7,9 +7,9 @@ import { currentUser } from "../lib/session.js";
 export const config = { maxDuration: 30 };
 
 const PLANS = {
-  starter:  { name: "OctoMeet Starter",  month: 3600,  year: 34800 },   // $36/mo  ·  $29/mo billed yearly ($348)
-  pro:      { name: "OctoMeet Pro",      month: 6100,  year: 58800 },   // $61/mo  ·  $49/mo billed yearly ($588)
-  business: { name: "OctoMeet Business", month: 12400, year: 118800 },  // $124/mo ·  $99/mo billed yearly ($1,188)
+  starter:  { name: "OctoMeet Starter",  month: 2900, year: 27600 },  // $29/mo  ·  $23/mo billed yearly ($276)
+  pro:      { name: "OctoMeet Pro",      month: 4900, year: 46800 },  // $49/mo  ·  $39/mo billed yearly ($468)
+  business: { name: "OctoMeet Business", month: 9900, year: 94800 },  // $99/mo  ·  $79/mo billed yearly ($948)
 };
 
 export default async function handler(req, res) {
