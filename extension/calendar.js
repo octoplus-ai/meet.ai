@@ -27,7 +27,11 @@
   }, true);
 
   // Receive the session token from the OAuth popup (same postMessage flow as the Meet add-on).
+  // ONLY accept it from an OctoMeet origin - otherwise any script on calendar.google.com could
+  // inject an attacker token (session fixation).
+  const OM_ORIGINS = ["https://meet.octoplusteam.com", "https://meet-ai-three-beige.vercel.app"];
   window.addEventListener("message", (e) => {
+    if (!OM_ORIGINS.includes(e.origin)) return;
     const d = e.data;
     if (d && d.type === "octomeet-token" && d.token) {
       chrome.runtime.sendMessage({ type: "save-token", token: d.token }, () => {

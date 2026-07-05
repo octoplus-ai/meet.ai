@@ -84,12 +84,15 @@ export default async function handler(req, res) {
 
     // Saved-artifact cache + hidden monthly cap (owner session only).
     const akey = artifactKey(mtgs.map((x) => x.id));
-    if (ownerId && !body.regenerate) {
-      const a = await getArtifact(ownerId, "doc", akey);
+    // Charge quota + cache to the meeting OWNER even on the share-token path, and let ONLY the
+    // signed-in owner force a regenerate - otherwise a share link allows unbounded paid AI spend.
+    const acct = ownerId || (m && m.user_id) || null;
+    if (acct && !(ownerId && body.regenerate)) {
+      const a = await getArtifact(acct, "doc", akey);
       if (a) return res.status(200).json({ doc: a.payload, meta: a.meta || {}, cached: true });
     }
-    if (ownerId) {
-      const q = await consumeQuota(ownerId, "doc");
+    if (acct) {
+      const q = await consumeQuota(acct, "doc");
       if (!q.ok) return res.status(429).json({ error: "limit", kind: "doc" });
     }
 
@@ -149,7 +152,7 @@ NEVER use em dashes or en dashes (the "—" or "–" characters) anywhere in any
     const doc = noDashes(extractJson(text));
     if (!doc || typeof doc !== "object") return res.status(502).json({ error: "doc_parse_failed", stop: data.stop_reason || "" });
     const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "", meetingType: doc.meetingType || "", meetingTypeLabel: doc.meetingTypeLabel || "" };
-    if (ownerId) await saveArtifact(ownerId, "doc", akey, doc, meta);
+    if (acct) await saveArtifact(acct, "doc", akey, doc, meta);
     return res.status(200).json({ doc, meta, cached: false });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });

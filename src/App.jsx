@@ -1299,7 +1299,7 @@ export default function App() {
         {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} onRename={renameMeeting} onDelete={(m) => { deleteMeeting(m); setView("reports"); }} user={user} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
-        {view === "plans" && <PlansView onBack={() => setView("plan-billing")} />}
+        {view === "plans" && <PlansView onBack={() => setView("plan-billing")} plan={user?.plan} />}
         {view === "plan-billing" && <PlanBillingView onBack={() => setView("reports")} onComparePlans={() => setView("plans")} user={user} />}
         {view === "account" && <AccountSettings onBack={() => setView("reports")} lang={lang} setLang={setLang} user={user} />}
         {view === "support" && <SupportView onBack={() => setView("reports")} />}
@@ -4002,29 +4002,30 @@ function PlanBillingView({ onBack, onComparePlans, user }) {
   );
 }
 
-function PlansView({ onBack }) {
+function PlansView({ onBack, plan: currentPlan }) {
   const [annual, setAnnual] = useState(true);
+  const [busy, setBusy] = useState("");
+  const cur = String(currentPlan || "free").toLowerCase();
+  const checkout = async (key) => {
+    setBusy(key);
+    try {
+      const r = await fetch("/api/billing/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: key, interval: annual ? "year" : "month" }) });
+      const d = await r.json();
+      if (d.url) { window.location.href = d.url; return; }
+      throw new Error(d.error || "checkout failed");
+    } catch (e) { toast("Couldn't start checkout - try again"); setBusy(""); }
+  };
   const plans = [
-    {
-      name: "Free", monthly: "$0", annual: "$0", note: "Always free, no credit card",
-      current: false, popular: false, cta: "Included", disabled: true,
-      features: ["5 meeting transcripts / month", "30 meetings measured / month", "1-hour max meetings", "Summary, transcription & action items", "Meeting Coach", "Ask Octo (AI search)", "Recommendations & Meeting Policy", "Basic integrations", "16+ languages", "Mobile & desktop apps"],
-    },
-    {
-      name: "Pro", monthly: "$19.75", annual: "$15", note: "per user / month",
-      current: false, popular: false, cta: "Switch to Pro", disabled: false,
-      features: ["Everything in Free", "Unlimited meeting transcripts", "100 upload credits / month", "4-hour max meetings", "LLM access (Claude / GPT)", "Workspaces", "Premium integrations", "For You insights", "Custom assistant branding"],
-    },
-    {
-      name: "Enterprise", monthly: "$29.75", annual: "$22.50", note: "per user / month",
-      current: true, popular: true, cta: "Current plan", disabled: true,
-      features: ["Everything in Pro", "Audio & video playback", "200 upload credits / month", "Dedicated support"],
-    },
-    {
-      name: "Enterprise+", monthly: "$39.75", annual: "$29.75", note: "per user / month · 5+ licenses",
-      current: false, popular: false, cta: "Contact sales", disabled: false,
-      features: ["Everything in Enterprise", "300 upload credits / month", "8-hour max meetings", "Enterprise SSO + SAML", "SCIM provisioning", "Custom data retention", "HIPAA compliance", "Domain capture", "Workspace onboarding"],
-    },
+    { key: "free", name: "Free", monthly: "$0", annual: "$0", note: "Always free, no credit card",
+      features: ["5 recording hrs / month", "60-minute meetings", "Full AI report, scores & coaching", "Ask Octo (AI search)", "Recommendations & Meeting Policy", "16+ languages", "Mobile & desktop apps"] },
+    { key: "starter", name: "Starter", monthly: "$36", annual: "$29", note: "per seat / month",
+      features: ["Everything in Free", "Unlimited recording", "4-hour max meetings", "15 AI docs & 10 decks / month", "20-language AI dubbing (pay-per-use)", "Free viewer seats", "Calendar auto-join"] },
+    { key: "pro", name: "Pro", monthly: "$61", annual: "$49", note: "per seat / month", popular: true,
+      features: ["Everything in Starter", "40 AI docs & 30 decks / month", "Priority processing", "Calendar browser extension"] },
+    { key: "business", name: "Business", monthly: "$124", annual: "$99", note: "per seat / month · 3+ seats",
+      features: ["Everything in Pro", "200 AI docs & 100 decks / month", "Team dashboards & benchmarking", "Admin controls + SSO-lite", "Shared folders / library", "1-year retention"] },
+    { key: "enterprise", name: "Enterprise", monthly: "Custom", annual: "Custom", note: "5+ seats", contact: true,
+      features: ["Everything in Business", "SSO/SAML + SCIM", "HIPAA & signed DPA", "Domain-wide capture", "Data residency", "Hot-standby joins", "Priority support"] },
   ];
   return (
     <div className="flex-1 overflow-y-auto">
@@ -4034,27 +4035,36 @@ function PlansView({ onBack }) {
       </div>
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-7 flex flex-col items-center text-center">
-          <span className="rounded-full bg-violet-50 px-3 py-1 text-[12px] font-semibold text-violet-700">Your current plan: Enterprise</span>
+          <span className="rounded-full bg-violet-50 px-3 py-1 text-[12px] font-semibold capitalize text-violet-700">Your current plan: {cur}</span>
           <h2 className="mt-3 text-2xl font-bold text-slate-900">{tr("choosePlanHeading")}</h2>
           <div className="mt-4 inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 text-sm">
             <button onClick={() => setAnnual(true)} className={"rounded-md px-3 py-1.5 font-medium transition " + (annual ? "bg-violet-600 text-white" : "text-slate-500")}>Annual <span className="text-[11px] opacity-80">-25%</span></button>
             <button onClick={() => setAnnual(false)} className={"rounded-md px-3 py-1.5 font-medium transition " + (!annual ? "bg-violet-600 text-white" : "text-slate-500")}>Monthly</button>
           </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {plans.map((p) => (
-            <div key={p.name} className={"relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm " + (p.popular ? "border-violet-400 ring-2 ring-violet-200" : "border-slate-200")}>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {plans.map((p) => {
+            const isCurrent = p.key === cur;
+            return (
+            <div key={p.key} className={"relative flex flex-col rounded-2xl border bg-white p-5 shadow-sm " + (p.popular ? "border-violet-400 ring-2 ring-violet-200" : "border-slate-200")}>
               {p.popular && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-violet-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">{tr("mostPopular")}</span>}
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-bold text-slate-900">{p.name}</h3>
-                {p.current && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Current</span>}
+                {isCurrent && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Current</span>}
               </div>
               <div className="mt-3 flex items-end gap-1">
                 <span className="text-3xl font-extrabold text-slate-900">{annual ? p.annual : p.monthly}</span>
               </div>
-              <p className="mt-1 text-[11px] text-slate-400">{p.note}{annual && p.name !== "Free" ? " · billed annually" : ""}</p>
-              <button disabled={p.disabled} onClick={() => toast(p.cta + " - coming soon")} className={"mt-4 rounded-lg py-2.5 text-sm font-semibold transition " +
-                (p.disabled ? "cursor-default bg-slate-100 text-slate-400" : "bg-violet-600 text-white hover:bg-violet-500")}>{p.cta}</button>
+              <p className="mt-1 text-[11px] text-slate-400">{p.note}{annual && p.key !== "free" && !p.contact ? " · billed annually" : ""}</p>
+              {isCurrent ? (
+                <button disabled className="mt-4 cursor-default rounded-lg bg-slate-100 py-2.5 text-sm font-semibold text-slate-400">Current plan</button>
+              ) : p.key === "free" ? (
+                <button disabled className="mt-4 cursor-default rounded-lg bg-slate-100 py-2.5 text-sm font-semibold text-slate-400">Included</button>
+              ) : p.contact ? (
+                <button onClick={() => { window.location.href = "mailto:sales@octoplusteam.com?subject=OctoMeet%20Enterprise"; }} className="mt-4 rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500">Contact sales</button>
+              ) : (
+                <button disabled={busy === p.key} onClick={() => checkout(p.key)} className="mt-4 rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:opacity-60">{busy === p.key ? "Redirecting…" : "Choose " + p.name}</button>
+              )}
               <ul className="mt-5 space-y-2">
                 {p.features.map((f, i) => (
                   <li key={i} className="flex items-start gap-2 text-[12.5px] text-slate-600">
@@ -4063,10 +4073,10 @@ function PlansView({ onBack }) {
                 ))}
               </ul>
             </div>
-          ))}
+          );})}
         </div>
         <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4 text-[12px] text-slate-500">
-          <span className="font-semibold text-slate-600">Volume discounts (annual):</span> 100+ licenses −10% · 500+ −15% · 1,000+ −20%. Education pricing available. All workspace licenses must be the same tier.
+          <span className="font-semibold text-slate-600">Recording is unlimited on every paid plan.</span> Teammates who only watch recordings and read docs are free - you only pay for seats that record. Annual saves ~25% vs monthly.
         </div>
       </div>
     </div>

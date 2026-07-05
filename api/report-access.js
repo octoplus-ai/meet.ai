@@ -7,20 +7,23 @@ import { randomToken } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 
 const arr = (x) => (Array.isArray(x) ? x : []);
+// Public projection: NEVER leak a share entry's secret token/magic to a non-owner - otherwise a
+// collaborator could steal every other invitee's private link and impersonate them.
+const pub = (s) => ({ email: s.email, name: s.name || "", role: s.role || "Viewer", picture: s.picture || "" });
 
-// Returns { shares, ownerId } if the caller may manage access for this meeting, else null.
+// Returns { shares, ownerId, isOwner } if the caller may manage access for this meeting, else null.
 async function authorize(req, meetingId, shareToken) {
   const t = parseCookies(req).om_session;
   if (t) {
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (s.length) {
       const m = await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${s[0].user_id}&select=id,shares,user_id`);
-      if (m.length) return { shares: arr(m[0].shares), ownerId: m[0].user_id };
+      if (m.length) return { shares: arr(m[0].shares), ownerId: m[0].user_id, isOwner: true };
     }
   }
   if (shareToken) {
     const r = await resolveShareToken(shareToken);
-    if (r && r.role === "Editor" && r.meeting.id === meetingId) return { shares: arr(r.meeting.shares), ownerId: r.meeting.user_id };
+    if (r && r.role === "Editor" && r.meeting.id === meetingId) return { shares: arr(r.meeting.shares), ownerId: r.meeting.user_id, isOwner: false };
   }
   return null;
 }
@@ -33,7 +36,7 @@ export default async function handler(req, res) {
       const meetingId = url.searchParams.get("meetingId");
       const a = await authorize(req, meetingId, url.searchParams.get("shareToken"));
       if (!a) return res.status(401).json({ error: "not authorized" });
-      return res.status(200).json({ shares: a.shares });
+      return res.status(200).json({ shares: a.isOwner ? a.shares : a.shares.map(pub) });
     }
     if (req.method === "POST") {
       const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
@@ -45,16 +48,26 @@ export default async function handler(req, res) {
       const a = await authorize(req, meetingId, body.shareToken);
       if (!a) return res.status(401).json({ error: "not authorized" });
       let shares = a.shares;
-      for (const e of emails) {
-        const existing = shares.find((s) => (s.email || "").toLowerCase() === e);
-        shares = shares.filter((s) => (s.email || "").toLowerCase() !== e);
-        if (!body.remove) {
-          // body.name only applies when a single address is being upserted.
-          shares.push({ email: e, role: body.role === "Editor" ? "Editor" : "Viewer", name: (emails.length === 1 && body.name) || (existing && existing.name) || "", picture: (existing && existing.picture) || "", token: (existing && existing.token) || randomToken(), magic: (existing && existing.magic) || randomToken() });
+      if (!a.isOwner) {
+        // A non-owner (Editor-token caller) may ONLY add brand-new Viewers - never grant Editor,
+        // remove, or modify an existing entry, which would let them hijack the owner's share ACL.
+        if (body.remove) return res.status(403).json({ error: "owner only" });
+        for (const e of emails) {
+          if (shares.some((s) => (s.email || "").toLowerCase() === e)) continue;
+          shares = shares.concat([{ email: e, role: "Viewer", name: "", picture: "", token: randomToken(), magic: randomToken() }]);
+        }
+      } else {
+        for (const e of emails) {
+          const existing = shares.find((s) => (s.email || "").toLowerCase() === e);
+          shares = shares.filter((s) => (s.email || "").toLowerCase() !== e);
+          if (!body.remove) {
+            // body.name only applies when a single address is being upserted.
+            shares.push({ email: e, role: body.role === "Editor" ? "Editor" : "Viewer", name: (emails.length === 1 && body.name) || (existing && existing.name) || "", picture: (existing && existing.picture) || "", token: (existing && existing.token) || randomToken(), magic: (existing && existing.magic) || randomToken() });
+          }
         }
       }
       await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}`, { method: "PATCH", body: { shares } });
-      return res.status(200).json({ ok: true, shares });
+      return res.status(200).json({ ok: true, shares: a.isOwner ? shares : shares.map(pub) });
     }
     res.status(405).json({ error: "method not allowed" });
   } catch (e) {

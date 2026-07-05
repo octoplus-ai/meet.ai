@@ -126,7 +126,8 @@ export default async function handler(req, res) {
       // Meet add-on popup: hand the session token back to the add-on panel and close.
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end(`<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;background:#14122e;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">Connecting OctoMeet…<script>
-        try { (window.opener||window.parent).postMessage({ type: "octomeet-token", token: ${JSON.stringify(t)} }, "*"); } catch (e) {}
+        var oms = ["https://" + location.host, "https://meet.octoplusteam.com", "https://meet-ai-three-beige.vercel.app", "https://calendar.google.com"];
+        oms.forEach(function(o){ try { (window.opener||window.parent).postMessage({ type: "octomeet-token", token: ${JSON.stringify(t)} }, o); } catch (e) {} });
         setTimeout(function(){ try { window.close(); } catch(e){} }, 300);
       </script></body>`);
       return;

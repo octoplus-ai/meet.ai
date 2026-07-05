@@ -118,17 +118,18 @@ export default async function handler(req, res) {
 
     const N = Math.max(4, Math.min(16, parseInt(body.slideCount, 10) || 8));
     const themeId = body.themeId || "sleek-dark";
-    const withImages = !!body.withImages && !!process.env.OPENAI_API_KEY;
+    const acct = ownerId || (m && m.user_id) || null; // accountable owner (charged even on the share path)
+    const withImages = !!body.withImages && !!process.env.OPENAI_API_KEY && !!ownerId; // image gen: owner only
     const kind = withImages ? "deck_img" : "deck";
 
     // Saved-artifact cache + hidden monthly cap (owner session only).
     const akey = artifactKey(mtgs.map((x) => x.id));
-    if (ownerId && !body.regenerate) {
-      const a = await getArtifact(ownerId, kind, akey);
+    if (acct && !(ownerId && body.regenerate)) {
+      const a = await getArtifact(acct, kind, akey);
       if (a && a.payload && a.payload.deck) return res.status(200).json({ deck: a.payload.deck, genImages: a.payload.genImages || [], themeId: (a.meta && a.meta.themeId) || themeId, meta: a.meta || {}, cached: true });
     }
-    if (ownerId) {
-      const q = await consumeQuota(ownerId, kind);
+    if (acct) {
+      const q = await consumeQuota(acct, kind);
       if (!q.ok) return res.status(429).json({ error: "limit", kind });
     }
 
@@ -200,7 +201,7 @@ NEVER use em dashes or en dashes (the "—" or "–" characters) in any slide te
       picks.forEach((s, i) => { if (results[i]) { genImages.push(results[i]); s.bgImage = userCount + genImages.length - 1; } });
     }
     const meta = { title: multi ? `${mtgs.length} meetings` : (m.title || "Meeting"), date: m.start_time || m.created_at || "", themeId, slideCount: N, withImages, meetingType: deck.meetingType || "", meetingTypeLabel: deck.meetingTypeLabel || "" };
-    if (ownerId) await saveArtifact(ownerId, kind, akey, { deck, genImages }, meta);
+    if (acct) await saveArtifact(acct, kind, akey, { deck, genImages }, meta);
     return res.status(200).json({ deck, genImages, themeId, meta, cached: false });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
