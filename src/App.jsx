@@ -2068,6 +2068,24 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
     filtered.forEach((m) => { const b = bucketOf(m.date); (by[b] = by[b] || []).push(m); });
     return order.filter((o) => by[o]).map((o) => ({ label: o, items: by[o] }));
   }, [filtered]);
+
+  // INSTANT-OPEN PREWARM (bug 4): warm the mp4 head (moov, written +faststart) + first seconds of the
+  // NEWEST few recordings so opening their report plays with no buffer wait. A detached
+  // <video preload="auto"> is self-limiting (Chrome fills a small forward buffer, a few MB, then stops
+  // until playback), so this never downloads whole recordings - and it warms the SAME byte-0 URL the
+  // player uses, so the player reuses the media cache. Owner list only (never the shared single view).
+  const warmRef = useRef(new Map());
+  useEffect(() => {
+    const want = [...filtered].sort((a, b) => (b.at || 0) - (a.at || 0)).filter((m) => m.video && /^https?:/.test(m.video)).slice(0, 3);
+    const wantIds = new Set(want.map((m) => m.id));
+    const cache = warmRef.current;
+    for (const [id, el] of cache) { if (!wantIds.has(id)) { try { el.removeAttribute("src"); el.load(); } catch (e) {} cache.delete(id); } }
+    for (const m of want) {
+      if (cache.has(m.id)) continue;
+      try { const el = document.createElement("video"); el.preload = "auto"; el.muted = true; el.src = m.video; el.load(); cache.set(m.id, el); } catch (e) {}
+    }
+  }, [filtered]);
+  useEffect(() => () => { for (const [, el] of warmRef.current) { try { el.removeAttribute("src"); el.load(); } catch (e) {} } warmRef.current.clear(); }, []);
   // GENUINELY recording only: in_call/recording (the bot is IN and capturing) with a recent
   // heartbeat. "joining" (bot still waiting in the lobby, up to 10 min) is NOT shown - it caused
   // a stuck "joining: X" banner when a rescheduled meeting was never held. The heartbeat gate
@@ -4565,7 +4583,7 @@ function splitPhrases(text) {
   return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, dubs = {} }) {
+function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, dubs = {} }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -4831,7 +4849,11 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
 
   return (
     <div ref={wrapRef} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
-      <video ref={videoRef} src={dubUrl || (src + "#t=" + (coverAt || 8))} preload="auto" playsInline
+      {/* Instant-open (bug 4): when a real cover image exists, show it as the poster (no decode wait)
+          AND load the plain byte-0 URL (no "#t=" fragment) so preload="auto" buffers from the START -
+          play-from-0 is then already warm, with no mid-file-then-0 double range fetch. Legacy rows
+          without a cover keep the "#t=" seek so they still show a mid-video still. */}
+      <video ref={videoRef} src={dubUrl || (coverUrl ? src : (src + "#t=" + (coverAt || 8)))} poster={!dubUrl && coverUrl ? coverUrl : undefined} preload="auto" playsInline
         onClick={() => { if (autoplayClick && !collapsed) toggle(); }}
         onLoadedMetadata={setD} onDurationChange={setD} onTimeUpdate={onTime}
         onSeeking={(e) => setCur(e.currentTarget.currentTime)} onSeeked={(e) => setCur(e.currentTarget.currentTime)}
@@ -5942,7 +5964,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} dubs={meeting.dubs} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} dubs={meeting.dubs} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
