@@ -1,6 +1,7 @@
 // Schedules Recall bots for meetings. Shared by start-bot (manual), arm-all
 // (on app load) and the cron (autonomous) so auto-join behaves like Read.ai.
 import { sb } from "./supa.js";
+import { recordingGate } from "./plan.js";
 import { recallBase, transcriptProvider, CAPTIONS_PROVIDER } from "./recall.js";
 import { listUpcomingEvents, annotateEvent } from "./google.js";
 import { stopOrchestratorJob } from "./orch.js";
@@ -114,6 +115,9 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
         await sb(`meetings?id=eq.${m0.id}`, { method: "PATCH", body: { calendar_event_id: `${calendarEventId}#${Date.now()}` } });
       } else if (!rearm) return { already: true, meeting: m0 };
       if (rearm) {
+        // PLAN GATE: Free tier gets a 60m meeting cap + a monthly recording budget; paid = 4h + unlimited.
+        const gate = await recordingGate(userId);
+        if (!gate.allow) return { error: "recording_limit", limit: true, plan: gate.plan, usedMin: gate.usedMin, capMin: gate.capMin };
         const schedOwn = futureEv;
         // start_time is ALWAYS the event's real start (never now()): overwriting it to now() made
         // timeChanged permanently true on the next sweep -> infinite re-arm loop for past events.
@@ -124,7 +128,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
           await fetch(OWN.replace(/\/$/, "") + "/bots", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-orch-secret": process.env.ORCH_SHARED_SECRET || "" },
-            body: JSON.stringify({ meetingId: m0.id, botId: m0.bot_id, userId, meetingUrl, joinAt: schedOwn ? joinAt : null, botName: botName || "OctoMeet AI", callbackUrl: APP0 + "/api/bot/ingest", statusUrl: APP0 + "/api/bot/status", callbackSecret: process.env.BOT_INGEST_SECRET }),
+            body: JSON.stringify({ meetingId: m0.id, botId: m0.bot_id, userId, meetingUrl, joinAt: schedOwn ? joinAt : null, botName: botName || "OctoMeet AI", maxMeetingMin: gate.maxMeetingMin, callbackUrl: APP0 + "/api/bot/ingest", statusUrl: APP0 + "/api/bot/status", callbackSecret: process.env.BOT_INGEST_SECRET }),
           });
         } catch (e) { /* next sweep retries */ }
         return { ok: true, rearmed: true, scheduled: !!schedOwn, bot_id: m0.bot_id, meeting: m0, mode: "inhouse" };
@@ -140,6 +144,10 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
 
   // ===== In-house bot path (own orchestrator). Falls through to Recall if not configured. =====
   if (OWN) {
+    // PLAN GATE: Free tier gets a 60m meeting cap + a monthly recording budget; paid = 4h + unlimited.
+    // Fails open (recordingGate returns allow:true on any lookup error) so a paid user is never blocked.
+    const gate = await recordingGate(userId);
+    if (!gate.allow) return { error: "recording_limit", limit: true, plan: gate.plan, usedMin: gate.usedMin, capMin: gate.capMin };
     const scheduledOwn = joinDate && joinDate.getTime() > Date.now() + 30 * 1000;
     const botId = "own_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
     const m = await sb("meetings", {
@@ -155,7 +163,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
       await fetch(OWN.replace(/\/$/, "") + "/bots", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-orch-secret": process.env.ORCH_SHARED_SECRET || "" },
-        body: JSON.stringify({ meetingId: m[0].id, botId, userId, meetingUrl, joinAt: scheduledOwn ? joinAt : null, botName: botName || "OctoMeet AI", callbackUrl: APP + "/api/bot/ingest", statusUrl: APP + "/api/bot/status", callbackSecret: process.env.BOT_INGEST_SECRET }),
+        body: JSON.stringify({ meetingId: m[0].id, botId, userId, meetingUrl, joinAt: scheduledOwn ? joinAt : null, botName: botName || "OctoMeet AI", maxMeetingMin: gate.maxMeetingMin, callbackUrl: APP + "/api/bot/ingest", statusUrl: APP + "/api/bot/status", callbackSecret: process.env.BOT_INGEST_SECRET }),
       });
     } catch (e) { /* orchestrator unreachable: the meeting stays 'scheduled' and can be retried */ }
     if (calendarEventId) annotateEvent(userId, calendarEventId, "🐙 OctoMeet AI will join and record this meeting, then add the AI summary & report link here.").catch(() => {});

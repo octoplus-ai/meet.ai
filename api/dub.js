@@ -5,6 +5,7 @@ import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { resolveShareToken } from "./lib/share.js";
 import { getBot, videoUrl } from "./lib/recall.js";
+import { getPlan, hasFeature } from "./lib/plan.js";
 
 export const config = { maxDuration: 60 };
 const enc = encodeURIComponent;
@@ -87,10 +88,14 @@ export default async function handler(req, res) {
     }
 
     // action: start. If this language was already dubbed, just hand it back - never re-dub (that
-    // would spend ElevenLabs credits again). The client switches to it instantly.
+    // would spend ElevenLabs credits again). The client switches to it instantly (free, no gate).
     if (dubs[lang] && dubs[lang].id && dubs[lang].status === "dubbed") {
       return res.status(200).json({ id: dubs[lang].id, status: "dubbed", ready: true, cached: true });
     }
+    // PLAN GATE: starting a NEW dub spends ElevenLabs credits, so it is a paid feature. Fails open
+    // (plan===null on a lookup error -> allow) so a real customer is never blocked by a transient DB issue.
+    const plan = await getPlan(a.ownerId);
+    if (plan && !hasFeature(plan, "dubbing")) return res.status(403).json({ error: "upgrade_required", feature: "dubbing", plan });
     // In-house recordings live at meetings.recording_url (R2) - getBot only resolves real Recall
     // bot ids, so that path stays the fallback.
     let src = null;

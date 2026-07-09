@@ -1986,7 +1986,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
     try {
       const r = await fetch("/api/document", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingIds: [...sel], regenerate: !!regenerate }) });
       const d = await r.json();
-      if (r.status === 429) { toast("You've reached this month's limit for AI documents."); return; }
+      if (r.status === 429) { toast("You've hit your plan's limit for AI documents - upgrade in Plans for more."); return; }
       if (!r.ok || !d.doc) { toast("Couldn't generate the document"); return; }
       setBulkDoc({ doc: d.doc, meta: d.meta });
     } catch (e) { toast("Network error"); } finally { setBulkBusy(""); }
@@ -1996,7 +1996,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
     try {
       const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingIds: [...sel], slideCount: 10, themeId: "sleek-dark", regenerate: !!regenerate }) });
       const d = await r.json();
-      if (r.status === 429) { toast("You've reached this month's limit for presentations."); return; }
+      if (r.status === 429) { toast("You've hit your plan's limit for presentations - upgrade in Plans for more."); return; }
       if (!r.ok || !d.deck) { toast("Couldn't generate the deck"); return; }
       const deck = coerceDeck(d.deck, { wantN: 10, imageCount: (d.genImages || []).length });
       setBulkDeck({ deck, theme: getTheme(d.themeId || "sleek-dark"), imgUrls: d.genImages || [], meta: d.meta });
@@ -4750,7 +4750,8 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       const d = await r.json().catch(() => ({}));
       if (!r.ok) {
         setDubStatus("error");
-        toast(d.error === "no_elevenlabs_key" ? "Dubbing is not configured yet"
+        toast(d.error === "upgrade_required" ? "AI dubbing is a paid feature - upgrade your plan to dub meetings"
+          : d.error === "no_elevenlabs_key" ? "Dubbing is not configured yet"
           : d.error === "no_recording" ? "This meeting has no recording to dub (older recordings expire after 7 days)"
           : ("Dubbing could not start: " + (d.detail || d.error || "unknown error")));
         return;
@@ -5107,7 +5108,7 @@ function AskPanel({ meeting, shared, shareTok, savedDeck }) {
     try {
       const r = await fetch("/api/slides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined, slideCount, themeId, withImages, images, files, regenerate: !!regenerate }) });
       const d = await r.json();
-      if (r.status === 429) { toast(withImages ? "You've reached this month's limit for presentations with images." : "You've reached this month's limit for presentations."); return; }
+      if (r.status === 429) { toast(withImages ? "You've hit your plan's limit for presentations with images - upgrade for more." : "You've hit your plan's limit for presentations - upgrade in Plans for more."); return; }
       if (!r.ok || !d.deck) { toast("Couldn't generate the deck - try again"); return; }
       const genImages = Array.isArray(d.genImages) ? d.genImages : [];
       const imgUrls = images.map((im) => `data:${im.mediaType};base64,${im.data}`).concat(genImages);
@@ -5668,7 +5669,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     try {
       const r = await fetch("/api/document", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: meeting.id, shareToken: shared ? shareTok : undefined, regenerate: !!regenerate }) });
       const d = await r.json();
-      if (r.status === 429) { toast("You've reached this month's limit for AI documents."); return; }
+      if (r.status === 429) { toast("You've hit your plan's limit for AI documents - upgrade in Plans for more."); return; }
       if (!r.ok || !d.doc) { toast("Couldn't generate the document - try again"); return; }
       setSaved((s) => ({ ...s, doc: true })); // a saved version now exists -> button becomes "Open doc"
       setDocData({ doc: d.doc, meta: d.meta || { title: meeting.title, date: meeting.date } }); // opens the modal (saved or fresh)

@@ -4,8 +4,7 @@
 // (no cache, or explicit regenerate) counts against the cap.
 import crypto from "node:crypto";
 import { sb } from "./supa.js";
-
-export const LIMITS = { doc: 40, deck: 20, deck_img: 10 }; // per user, per calendar month
+import { PLANS, planKey } from "./plan.js";
 
 const enc = encodeURIComponent;
 const monthKey = () => new Date().toISOString().slice(0, 7); // "YYYY-MM"
@@ -32,12 +31,15 @@ export async function saveArtifact(userId, kind, akey, payload, meta) {
   } catch (e) { /* best-effort */ }
 }
 
-// Returns { ok:true } if under the cap (and increments), or { ok:false } if the cap is hit.
+// Returns { ok:true } if under the PLAN's monthly cap for this kind (and increments), or { ok:false }
+// if the cap is hit. The cap now comes from the user's plan (plan.js), so Free (doc/deck = 0) is
+// blocked and each paid tier gets its own allowance. Reads plan + usage in ONE query.
 export async function consumeQuota(userId, kind) {
-  const cap = LIMITS[kind];
-  if (!cap) return { ok: true };
   try {
-    const u = (await sb(`app_users?id=eq.${enc(userId)}&select=usage`))[0] || {};
+    const u = (await sb(`app_users?id=eq.${enc(userId)}&select=plan,usage`))[0] || {};
+    const cap = (PLANS[planKey(u.plan)] || PLANS.free)[kind];
+    if (cap == null) return { ok: true };        // unknown kind -> not a metered generation
+    if (cap === Infinity) return { ok: true, cap }; // unlimited tier -> never track/block
     const usage = (u.usage && typeof u.usage === "object") ? u.usage : {};
     const mk = monthKey();
     const month = (usage[mk] && typeof usage[mk] === "object") ? { ...usage[mk] } : {};
