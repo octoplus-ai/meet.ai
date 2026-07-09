@@ -98,7 +98,7 @@ const EXTRA = {
     noSummary: "No summary available for this meeting.", noActionItems: "No action items detected.", noNextSteps: "No next steps detected.", noKeyQuestions: "No key questions detected.",
     // deep dive / scores
     participationTalk: "Participation (talk time)", scores: "Scores", sentimentOverTime: "Sentiment over time", notEnoughSentiment: "Not enough data for a sentiment timeline.",
-    readScore: "Read Score", engagement: "Engagement", sentiment: "Sentiment", balance: "Balance", clarity: "Clarity", charisma: "Charisma",
+    readScore: "Octo Score", engagement: "Engagement", sentiment: "Sentiment", balance: "Balance", clarity: "Clarity", charisma: "Charisma",
     // coaching
     strengths: "Strengths", areasToImprove: "Areas to improve", tips: "Tips", talkingPace: "Talking Pace", impact: "Impact", perSpeaker: "Per-speaker breakdown",
     // pitch analysis
@@ -115,7 +115,7 @@ const EXTRA = {
     pickColors: "Custom palette", bgColor: "Background color", accentColor: "Accent color",
     // hardcoded-string sweep
     statusScheduled: "🗓️ OctoMeet is scheduled to join this meeting and will start recording automatically at the start time.", statusJoining: "🔄 OctoMeet is joining the meeting now. Admit it from the waiting room to start recording.", statusInCall: "🟡 OctoMeet is in the meeting. Recording will begin once allowed.",
-    statusRecording: "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.", statusProcessing: "⏳ Meeting ended - generating your AI report from the transcript. This page updates automatically.", octoMeetScore: "OctoMeet Score",
+    statusRecording: "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.", statusProcessing: "⏳ Meeting ended - generating your AI report from the transcript. This page updates automatically.", octoMeetScore: "Octo Score",
     octoMeetScoreTip: "how effective the meeting was, combining real-time sentiment and engagement.", badgeScheduled: "Scheduled", badgeJoining: "Joining…",
     badgeInCall: "In call", badgeRecording: "Recording", badgeProcessing: "Processing report…",
     badgeFailed: "Failed", signInToViewReport: "Sign in to view this report", reportRestrictedContinue: "This report is restricted. Continue with the account it was shared with",
@@ -192,7 +192,7 @@ const EXTRA = {
     summary: "Resumen", actionItems: "Tareas", nextSteps: "Próximos pasos", keyQuestions: "Preguntas clave", standard: "estándar", short: "corto",
     noSummary: "No hay resumen disponible para esta reunión.", noActionItems: "No se detectaron tareas.", noNextSteps: "No se detectaron próximos pasos.", noKeyQuestions: "No se detectaron preguntas clave.",
     participationTalk: "Participación (tiempo de habla)", scores: "Puntajes", sentimentOverTime: "Sentimiento en el tiempo", notEnoughSentiment: "No hay datos suficientes para la línea de sentimiento.",
-    readScore: "Read Score", engagement: "Participación", sentiment: "Sentimiento", balance: "Balance", clarity: "Claridad", charisma: "Carisma",
+    readScore: "Octo Score", engagement: "Participación", sentiment: "Sentimiento", balance: "Balance", clarity: "Claridad", charisma: "Carisma",
     strengths: "Fortalezas", areasToImprove: "A mejorar", tips: "Consejos", talkingPace: "Ritmo al hablar", impact: "Impacto", perSpeaker: "Desglose por orador",
     pitchOverall: "Pitch general", pitchWhatWorked: "Qué funcionó", pitchImprove: "Cómo mejorarlo", pitchNextTime: "Decí esto la próxima", pitchNoData: "No hay suficiente contenido hablado para analizar el pitch.", pitchIntro: "Coaching de pitch con IA por orador, basado en mejores prácticas de presentación y persuasión.",
     searchMCP: "Buscar reunión, empresa o persona…", analytics: "Analytics", aiDoc: "AI Doc", presentation: "Presentación", refresh: "Actualizar",
@@ -205,7 +205,7 @@ const EXTRA = {
     pickColors: "Paleta personalizada", bgColor: "Color de fondo", accentColor: "Color de acento",
     // hardcoded-string sweep
     statusScheduled: "🗓️ OctoMeet está programado para unirse a esta reunión y empezará a grabar automáticamente en el horario de inicio.", statusJoining: "🔄 OctoMeet se está uniendo a la reunión ahora. Admitilo desde la sala de espera para empezar a grabar.", statusInCall: "🟡 OctoMeet está en la reunión. La grabación va a empezar una vez que se permita.",
-    statusRecording: "🔴 OctoMeet está grabando en vivo. Tu reporte con IA va a aparecer acá automáticamente cuando termine la reunión.", statusProcessing: "⏳ La reunión terminó - generando tu reporte con IA a partir de la transcripción. Esta página se actualiza automáticamente.", octoMeetScore: "OctoMeet Score",
+    statusRecording: "🔴 OctoMeet está grabando en vivo. Tu reporte con IA va a aparecer acá automáticamente cuando termine la reunión.", statusProcessing: "⏳ La reunión terminó - generando tu reporte con IA a partir de la transcripción. Esta página se actualiza automáticamente.", octoMeetScore: "Octo Score",
     octoMeetScoreTip: "qué tan efectiva fue la reunión, combinando el sentimiento y el engagement en tiempo real.", badgeScheduled: "Programada", badgeJoining: "Uniéndose…",
     badgeInCall: "En llamada", badgeRecording: "Grabando", badgeProcessing: "Procesando reporte…",
     badgeFailed: "Falló", signInToViewReport: "Iniciá sesión para ver este reporte", reportRestrictedContinue: "Este reporte es restringido. Continuá con la cuenta con la que se compartió",
@@ -667,7 +667,10 @@ function adaptReal(m) {
   const sc = r.scores || {};
   const done = m.status === "done";
   const engagement = sc.engagement || 0, sentiment = sc.sentiment || 0, clarity = sc.clarity || 0;
-  let overall = r.read_score || sc.overall || 0;
+  // OCTO SCORE = the average of sentiment and engagement, rounded half-up (Math.round rounds x.5 up).
+  // When both signals exist this IS the score; otherwise fall back to whichever exists, then the
+  // model's score, so a real meeting never shows a stark 0.
+  let overall = (engagement && sentiment) ? Math.round((engagement + sentiment) / 2) : (engagement || sentiment || r.read_score || sc.overall || 0);
   const start = m.start_time || m.created_at;
   const richParts = (Array.isArray(r.participants) && r.participants.length)
     ? r.participants
@@ -2013,7 +2016,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
 
   // Quick download of a single report as Markdown (from "⋯ → Download").
   const downloadMeeting = (m) => {
-    const L = [`# ${m.title}`, "", `${fmtDateFull(m.date)} · ${m.timeStart} - ${m.timeEnd}`, `OctoMeet Score: ${m.scores?.overall ?? "-"}`, ""];
+    const L = [`# ${m.title}`, "", `${fmtDateFull(m.date)} · ${m.timeStart} - ${m.timeEnd}`, `Octo Score: ${m.scores?.overall ?? "-"}`, ""];
     if (m.summary) L.push("## Summary", m.summary, "");
     if (m.keyQA?.length) { L.push("## Key Questions"); m.keyQA.forEach((k) => L.push(`- **${k.q}**${k.a ? `\n  ${k.a}` : ""}`)); L.push(""); }
     if (m.actionItems?.length) { L.push("## Action Items"); m.actionItems.forEach((a) => L.push(`- [ ] ${a.task}${a.owner ? ` (${a.owner})` : ""}${a.due ? ` - due ${a.due}` : ""}`)); L.push(""); }
@@ -2829,7 +2832,7 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
             <div className="mb-4 flex items-center gap-1.5 text-[13px] text-slate-500"><Users size={14} className="text-slate-400" /> {(pick.startIso && pick.endIso && totalTime(pick.startIso, pick.endIso, pick.ppl)) || `${pick.ppl || 0} guest${pick.ppl === 1 ? "" : "s"}`}</div>
             {pickMtg && pickMtg.status === "done" ? (
               <button onClick={() => { onOpen(pickMtg.id); setPick(null); }} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100">
-                <span className="flex items-center gap-2"><span className="flex h-7 items-center rounded-md px-2 text-[12px] font-bold text-white" style={{ background: scoreColor(pickMtg.scores.engagement || pickMtg.scores.overall) }}>{pickMtg.scores.engagement || pickMtg.scores.overall}</span><span className="text-[13px] font-semibold text-slate-700">OctoMeet Score</span></span>
+                <span className="flex items-center gap-2"><span className="flex h-7 items-center rounded-md px-2 text-[12px] font-bold text-white" style={{ background: scoreColor(pickMtg.scores.overall || pickMtg.scores.engagement) }}>{pickMtg.scores.overall || pickMtg.scores.engagement}</span><span className="text-[13px] font-semibold text-slate-700">Octo Score</span></span>
                 <span className="text-[13px] font-semibold text-violet-600">View report ↗</span>
               </button>
             ) : pickMtg && ["recording", "in_call", "processing", "joining"].includes(pickMtg.status) ? (
@@ -3035,7 +3038,7 @@ function AnalyticsPanel({ meetings, onOpen, onClose }) {
               <Kpi label="Avg duration" value={avgMin + "m"} />
               <Kpi label="Avg participants" value={avgPart} />
               <Kpi label="Est. cost" value={"$" + cost.toLocaleString()} sub={"~$" + RATE + "/h/person"} />
-              <Kpi label="Avg Read Score" value={avgScore} color={scoreColor(avgScore)} />
+              <Kpi label="Avg Octo Score" value={avgScore} color={scoreColor(avgScore)} />
             </div>
 
             <H>Scores</H>
@@ -3329,7 +3332,7 @@ function ForYouView({ meetings, onOpen, onAsk, user }) {
               <p className="mt-0.5 text-[11.5px] text-violet-200/80">{rangeLabel(real)}</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{real.length}</div><div className="text-[10.5px] text-violet-200/70">meetings</div></div>
-                <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{avgScore != null ? avgScore : "-"}</div><div className="text-[10.5px] text-violet-200/70">avg OctoMeet Score</div></div>
+                <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{avgScore != null ? avgScore : "-"}</div><div className="text-[10.5px] text-violet-200/70">avg Octo Score</div></div>
                 <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{allActions.length}</div><div className="text-[10.5px] text-violet-200/70">action items</div></div>
                 <div className="rounded-lg bg-white/5 px-3 py-2"><div className="text-lg font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{qas.length}</div><div className="text-[10.5px] text-violet-200/70">key questions</div></div>
               </div>
