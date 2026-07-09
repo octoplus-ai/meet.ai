@@ -4586,7 +4586,7 @@ function splitPhrases(text) {
   return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, dubs = {} }) {
+function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {} }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -4828,10 +4828,14 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   // So a freshly opened report shows "Recording" and plays from 0; only after real playback
   // does it offer "Play (Xm left)" to resume.
   const started = startedRef.current && dur > 0 && cur > 2;
+  // effDur = the video's own duration once loaded, else the KNOWN meeting length (durationMin). Old
+  // recordings (no faststart) report duration only after buffering, so without this the "Recording"
+  // label and the timeline total sit at 0:00 / blank until the whole file downloads.
+  const effDur = dur > 0 ? dur : (durationMin ? durationMin * 60 : 0);
   const MENU = [
     started
-      ? { k: "full", label: tr("play"), sub: mins(Math.max(0, dur - cur)) + " left", primary: true, resume: true }
-      : { k: "full", label: tr("recording"), sub: dur ? mins(dur) : "", primary: true },
+      ? { k: "full", label: tr("play"), sub: mins(Math.max(0, effDur - cur)) + " left", primary: true, resume: true }
+      : { k: "full", label: tr("recording"), sub: effDur ? mins(effDur) : "", primary: true },
     { k: "trailer", label: tr("trailer"), sub: dur ? mins(segTotal(buildSegments("trailer", dur))) : "<1m" },
     { k: "highlights", label: tr("highlights"), sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "-" },
   ];
@@ -4848,7 +4852,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     const done = segs.slice(0, i).reduce((a, s) => a + (s.end - s.start), 0);
     const within = Math.min(Math.max(cur - segs[i].start, 0), segs[i].end - segs[i].start);
     barPct = ((done + within) / tot) * 100; tLeft = fmtClock(done + within); tRight = fmtClock(tot);
-  } else { barPct = dur ? (shownCur / dur) * 100 : 0; tLeft = fmtClock(shownCur); tRight = fmtClock(dur); }
+  } else { barPct = effDur ? (shownCur / effDur) * 100 : 0; tLeft = fmtClock(shownCur); tRight = fmtClock(effDur); }
 
   return (
     <div ref={wrapRef} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-black shadow-sm">
@@ -5967,7 +5971,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} dubs={meeting.dubs} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
