@@ -5646,7 +5646,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
   const reportLines = () => [
     `# ${meeting.title}`,
     `${fmtDateShort(meeting.date)} · ${meeting.timeStart} - ${meeting.timeEnd} · ${meeting.source}`,
-    `Read Score ${meeting.scores.overall} · Engagement ${meeting.scores.engagement} · Sentiment ${meeting.scores.sentiment}`,
+    `Octo Score ${meeting.scores.overall} · Engagement ${meeting.scores.engagement} · Sentiment ${meeting.scores.sentiment}`,
     "", "## Summary", meeting.summary,
     "", "## Action Items", ...meeting.actionItems.map((a) => `- ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`),
     "", "## Key Questions", ...meeting.keyQuestions.map((q) => `- ${q}`),
@@ -5982,7 +5982,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
 
         <div className="mb-5 grid grid-cols-3 gap-3">
           {[
-            { l: "Read Score", v: meeting.scores.overall, series: metricSeries("readScore", meeting), info: KPI_INFO.readScore },
+            { l: "Octo Score", v: meeting.scores.overall, series: metricSeries("readScore", meeting), info: KPI_INFO.readScore },
             { l: "Engagement", v: meeting.scores.engagement, series: metricSeries("engagement", meeting), info: KPI_INFO.engagement },
             { l: "Sentiment", v: meeting.scores.sentiment, series: metricSeries("sentiment", meeting), info: KPI_INFO.sentiment },
           ].map((s) => {
