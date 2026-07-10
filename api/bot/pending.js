@@ -26,6 +26,17 @@ export default async function handler(req, res) {
       (r.status === "joining" && (r.start_time ? new Date(r.start_time).getTime() > giveUp : true)
         && (!r.status_synced_at || new Date(r.status_synced_at).getTime() < staleJoin)));
 
+    // SAFETY SWEEP: a meeting stuck "in_call"/"recording" whose worker stopped heartbeating (>15 min;
+    // the worker re-posts "recording" every 5 min while healthy) either died mid-recording or missed
+    // its one-shot "processing" post. Flip it to "processing" so the UI never shows "recording live"
+    // forever. A still-uploading worker then posts "done"; a false flip self-corrects on the next
+    // heartbeat (bot/status allows processing->recording). Best-effort; never blocks the pending feed.
+    try {
+      const staleTs = new Date(Date.now() - 15 * 60000).toISOString();
+      await sb(`meetings?capture_mode=eq.inhouse_bot&status=in.(in_call,recording)&status_synced_at=lt.${encodeURIComponent(staleTs)}`,
+        { method: "PATCH", body: { status: "processing", status_synced_at: new Date().toISOString() } });
+    } catch (e) { /* best-effort */ }
+
     // Resolve each owner's notetaker display name (best-effort).
     const uids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
     const names = {};
