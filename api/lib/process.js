@@ -79,7 +79,7 @@ export async function notifyParticipants(meeting, ai, rep) {
 // Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
 // with a lower report_version are re-analyzed automatically (from their STORED transcript,
 // no Recall needed) so every past meeting reflects the latest improvements without re-recording.
-export const ANALYSIS_VERSION = 9;
+export const ANALYSIS_VERSION = 10; // v10: richer executive-narrative summary (2-4 paras) - re-analyzes past meetings from stored transcript
 
 // Parse a stored transcript string ("[mm:ss] Name: text" - also tolerates early in-house-bot
 // bare-second stamps "[125] Name: text") into {t,text} turns.
@@ -175,7 +175,7 @@ export async function analyzeTranscript(text, title, participantNames) {
   const sys =
     "You are a meeting-intelligence analyst (like Read.ai). Read the transcript and return ONLY a JSON object (no markdown, no prose) with EXACTLY this shape:\n" +
     `{
-  "summary": string (3-5 sentences, neutral, specific),
+  "summary": string - the single flowing prose overview that someone who missed the meeting reads to understand the whole session, written in the meeting's own auto-detected language as connected prose (2 to 4 short paragraphs, roughly 120 to 250 words), never bullets, arrays, numbering, or headings, since those belong to the other fields. Lead with the bottom line up front: the meeting's purpose and the one headline outcome. Then walk the 2 to 4 most substantive threads, giving the reasoning behind each (the WHY, not just what was said) and where it landed. Close with the concrete decisions and commitments (with who now owns them) and what stays open, contested, or deferred and why. Complement, never duplicate, the topics, chapters, keyQuestions, actionItems, nextSteps, and highlights fields: weave their causal through-line into one coherent narrative instead of re-listing their contents. Stay strictly specific and neutral, naming the real people, numbers, dates, and decisions actually discussed, with no hype, praise, spin, vague filler, speculation, or invented facts. Separate paragraphs with a blank line. Degrade gracefully: if the transcript is very short, empty, unclear, or off-topic, still return a brief honest best-effort summary of whatever is present rather than leaving it blank or padding it,
   "topics": string[] (3-8 short topic phrases),
   "keyQuestions": [{"q": string, "a": string, "t": string}] (max 6 important questions raised + a suggested answer; t = "mm:ss" or "h:mm:ss" when the question was asked; [] if none),
   "actionItems": [{"owner": string, "task": string, "due": string, "t": string}] (max 10; due "" if unknown; t = timestamp "mm:ss" or "h:mm:ss" in the meeting when this was discussed/agreed, "" if unclear),

@@ -6023,7 +6023,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]">
                   {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-violet-700 shadow-sm" : "text-slate-500")}>{m}</button>)}
                 </div>) : null}>
-              {meeting.summary ? <p className="text-sm leading-relaxed text-slate-600">{summaryMode === "short" ? shortSummary : meeting.summary}</p> : <p className="text-sm text-slate-400">{tr("noSummary")}</p>}
+              {meeting.summary ? <p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{summaryMode === "short" ? shortSummary : meeting.summary}</p> : <p className="text-sm text-slate-400">{tr("noSummary")}</p>}
             </Card>
             <Card title={tr("actionItems")} icon={ListChecks} iconColor={MARKER_STYLE.action.color}
               copyText={meeting.actionItems.map((a) => `- ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`).join("\n")}
@@ -6581,7 +6581,7 @@ function UploadModal({ onClose, onSave, onUploaded }) {
     setBusy(true); setErr("");
     try {
       const sys = "You are a meeting-intelligence analyst. Read the transcript and return ONLY a JSON object (no markdown) with this shape:\n" +
-        `{"summary": string (2-3 sentences), "topics": string[] (max 5), "keyQuestions": string[] (max 4), "actionItems": [{"owner": string, "task": string, "due": string}] (max 6), "nextSteps": string[] (max 3), "participants": [{"name": string, "role": string, "talkPct": integer, "sentiment": "Positive"|"Neutral"|"Negative"}], "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int} (0-100), "sentimentLabel": "Positive"|"Neutral"|"Negative", "sentimentTimeline": number[] (8 values -1..1)}.\n` +
+        `{"summary": string - a flowing prose overview (2-4 short paragraphs, ~120-250 words, blank line between paragraphs) in the meeting's language for someone who missed it: lead with the purpose and the headline outcome, then the main threads with the WHY behind each, then the decisions and commitments (with owners) and what stays open; complement, never repeat, the topics/actionItems/nextSteps; stay specific and neutral with real names, numbers and decisions, no invented facts, "topics": string[] (max 5), "keyQuestions": string[] (max 4), "actionItems": [{"owner": string, "task": string, "due": string}] (max 6), "nextSteps": string[] (max 3), "participants": [{"name": string, "role": string, "talkPct": integer, "sentiment": "Positive"|"Neutral"|"Negative"}], "scores": {"overall": int, "engagement": int, "sentiment": int, "balance": int, "clarity": int} (0-100), "sentimentLabel": "Positive"|"Neutral"|"Negative", "sentimentTimeline": number[] (8 values -1..1)}.\n` +
         "Infer speaker names from the transcript. Keep strings short. Never use em dashes or en dashes (the — or – characters) in any value, only a normal hyphen (-).";
       const baseTitle = (fileName || "Uploaded meeting").replace(/\.[^.]+$/, "");
       const out = await callClaude([{ role: "user", content: "Title: " + baseTitle + "\n\nTranscript:\n" + transcript }], sys);
