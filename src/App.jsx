@@ -105,6 +105,7 @@ const EXTRA = {
     pitchOverall: "Overall pitch", pitchWhatWorked: "What worked", pitchImprove: "How to improve", pitchNextTime: "Say this next time", pitchNoData: "Not enough spoken content to analyze the pitch.", pitchIntro: "AI pitch coaching per speaker, based on proven presentation & persuasion best practices.",
     // reports list
     searchMCP: "Search meeting, company or person…", analytics: "Analytics", aiDoc: "AI Doc", presentation: "Presentation", refresh: "Refresh",
+    autoShareParticipants: "Auto-share with participants", autoShareOnMsg: "Reports will now be shared with their participants automatically", autoShareOffMsg: "Auto-share with participants turned off",
     selMeetingsAnalytics: "Select one or more meetings to see analytics.", selMeetingsDoc: "Select one or more meetings to generate a document.", selMeetingsPres: "Select one or more meetings to generate a presentation.",
     participants: "Participants", copyEmails: "Copy emails", copyGuestEmails: "Copy guest emails", emailGuests: "Email guests", noParticipantData: "No participant data.", noEmailOnFile: "no email on file", invitedDidntJoin: "Invited - didn't join",
     dateCustom: "Custom", dateApply: "Apply", dateClear: "Clear", dateStart: "Start date", dateEnd: "End date",
@@ -196,6 +197,7 @@ const EXTRA = {
     strengths: "Fortalezas", areasToImprove: "A mejorar", tips: "Consejos", talkingPace: "Ritmo al hablar", impact: "Impacto", perSpeaker: "Desglose por orador",
     pitchOverall: "Pitch general", pitchWhatWorked: "Qué funcionó", pitchImprove: "Cómo mejorarlo", pitchNextTime: "Decí esto la próxima", pitchNoData: "No hay suficiente contenido hablado para analizar el pitch.", pitchIntro: "Coaching de pitch con IA por orador, basado en mejores prácticas de presentación y persuasión.",
     searchMCP: "Buscar reunión, empresa o persona…", analytics: "Analytics", aiDoc: "AI Doc", presentation: "Presentación", refresh: "Actualizar",
+    autoShareParticipants: "Compartir automáticamente con participantes", autoShareOnMsg: "Los reportes se compartirán automáticamente con sus participantes", autoShareOffMsg: "Se desactivó el compartir automático con participantes",
     selMeetingsAnalytics: "Seleccioná una o más reuniones para ver analytics.", selMeetingsDoc: "Seleccioná una o más reuniones para generar un documento.", selMeetingsPres: "Seleccioná una o más reuniones para generar una presentación.",
     participants: "Participantes", copyEmails: "Copiar emails", copyGuestEmails: "Copiar emails de invitados", emailGuests: "Enviar email a invitados", noParticipantData: "Sin datos de participantes.", noEmailOnFile: "sin email registrado", invitedDidntJoin: "Invitado - no se unió",
     dateCustom: "Personalizado", dateApply: "Aplicar", dateClear: "Limpiar", dateStart: "Fecha inicial", dateEnd: "Fecha final",
@@ -1769,20 +1771,24 @@ function RowMenu({ onShare, onDownload, onRename, onDelete }) {
 // Participant-count chip -> popover: THIS meeting's participants + their resolved emails + copy.
 function PeoplePopover({ meeting, emailBook = {} }) {
   const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false); // HOVER opens it (transient); a CLICK pins it open (backdrop to close)
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
+  const closeT = useRef(null);
   const { people, withEmail, invited } = meetingPeople(meeting, emailBook);
   const emails = withEmail.map((p) => p.email);
   const count = people.length;
-  const openMenu = (e) => { e.stopPropagation(); const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } setOpen(true); };
+  const place = () => { const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } };
+  const openNow = () => { clearTimeout(closeT.current); place(); setOpen(true); };
+  const closeSoon = () => { if (pinned) return; clearTimeout(closeT.current); closeT.current = setTimeout(() => setOpen(false), 160); }; // small grace to move onto the popover
   const copyEmails = async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(emails.join(", ")); toast(emails.length ? `Copied ${emails.length} email${emails.length > 1 ? "s" : ""}` : "No emails on file for this meeting"); } catch (err) {} };
   return (
-    <span className="relative" onClick={(e) => e.stopPropagation()}>
-      <button ref={btnRef} onClick={(e) => (open ? setOpen(false) : openMenu(e))} className="flex items-center gap-1 text-[12px] text-slate-400 transition hover:text-violet-600"><Users size={12} /> {count}</button>
+    <span className="relative" onClick={(e) => e.stopPropagation()} onMouseEnter={openNow} onMouseLeave={closeSoon}>
+      <button ref={btnRef} onClick={(e) => { e.stopPropagation(); if (pinned) { setPinned(false); setOpen(false); } else { setPinned(true); openNow(); } }} className="flex items-center gap-1 text-[12px] text-slate-400 transition hover:text-violet-600"><Users size={12} /> {count}</button>
       {open && pos && (
         <>
-          <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
-          <div className="fixed z-[56] w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
+          {pinned && <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); setPinned(false); setOpen(false); }} />}
+          <div className="fixed z-[56] w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }} onMouseEnter={() => clearTimeout(closeT.current)} onMouseLeave={closeSoon}>
             <div className="flex items-center justify-between px-2 py-1">
               <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{tr("participants2")}</span>
               {emails.length > 0 && <button onClick={copyEmails} className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"><Copy size={11} /> {tr("copyEmails2")}</button>}
@@ -1981,6 +1987,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const [bulkDoc, setBulkDoc] = useState(null);     // { doc, meta }
   const [bulkDeck, setBulkDeck] = useState(null);   // { deck, theme, imgUrls, meta }
   const toggleSel = (id) => setSel((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Auto-share reports with their meeting participants (backed by the same `autoRecap` sharing pref
+  // as Settings > Report Sharing, so this toggle and that switch stay in sync). Default ON.
+  const [autoShare, setAutoShare] = useState(true);
+  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setAutoShare(p.autoRecap !== false); }).catch(() => {}); }, []);
+  const toggleAutoShare = () => { const v = !autoShare; setAutoShare(v); fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sharing_prefs: { autoRecap: v } }) }).then(() => toast(v ? t("autoShareOnMsg") : t("autoShareOffMsg"))).catch(() => {}); };
   const genBulkDoc = async (regenerate) => {
     if (bulkBusy) return; setBulkBusy("doc");
     try {
@@ -2112,7 +2123,15 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
     <>
       <div className="border-b border-slate-200 bg-white px-6 pt-3">
         <div className="mb-3 flex items-center gap-2">
-          <h1 className="text-lg font-bold text-slate-900">{t("reports")}</h1>
+          <button onClick={toggleAutoShare} role="switch" aria-checked={autoShare}
+            title={t("autoShareParticipants")}
+            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition ${autoShare ? "bg-violet-600 text-white shadow-sm hover:bg-violet-500" : "border border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:text-violet-700"}`}>
+            <Share2 size={15} />
+            {t("autoShareParticipants")}
+            <span className={`ml-0.5 flex h-4 w-7 items-center rounded-full p-0.5 transition ${autoShare ? "justify-end bg-white/30" : "justify-start bg-slate-200"}`}>
+              <span className="h-3 w-3 rounded-full bg-white shadow" />
+            </span>
+          </button>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
           className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-white shadow-sm px-3 py-2 focus-within:border-violet-400">
