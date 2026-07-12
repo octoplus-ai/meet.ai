@@ -1870,9 +1870,17 @@ const matchScore = (speakerName, att) => {
   if (!sTok.length) return 0;
   const aTok = att.name ? nameTokens(att.name) : [];
   const eTok = emailLocalTokens(att.email).filter((t) => !GENERIC_LOCALS.has(t));
-  if (aTok[0] && nameMatch(sTok[0], aTok[0])) return 3;              // strongest: first name vs first name
-  if (sTok.some((s) => aTok.some((a) => nameMatch(s, a)))) return 2; // any name token (surname-first, middle name)
-  if (sTok.some((s) => eTok.some((t) => nameMatch(s, t)))) return 1; // any token vs an email local-part token
+  // Count matching NAME tokens (order-independent) so a FULLER match always outscores a first-name-only
+  // one: this is what lets the real "Ana Gomez" joiner outrank a same-first-name "Ana Perez" for the
+  // detected "Ana Gomez" speaker, regardless of calendar order (the earlier version tied at 3 and let
+  // attendee order decide, which could still flag the real joiner as didn't-join).
+  let nameHits = 0;
+  for (const s of sTok) if (aTok.some((a) => nameMatch(s, a))) nameHits++;
+  if (nameHits > 0) {
+    const firstBoth = aTok[0] && nameMatch(sTok[0], aTok[0]);
+    return (firstBoth ? 10 : 4) + nameHits * 2; // first-name anchor + reward per extra matching token
+  }
+  if (sTok.some((s) => eTok.some((t) => nameMatch(s, t)))) return 1; // any token vs an email local-part token (weakest)
   return 0;
 };
 const samePerson = (speakerName, att) => matchScore(speakerName, att) > 0;
@@ -1941,19 +1949,17 @@ function meetingPeople(meeting, emailBook = {}) {
     if (!conflict && !speakerIsElsewhere) { used.add(si); r.joined = true; r.name = preferName(r.a, s); }
   }
 
-  // 3) Split invited attendees into joined vs invited-but-didn't-join. We only ASSERT "didn't join"
-  //    when detection looks COMPLETE: at least one participant was detected AND every detected body
-  //    was tied to an invitee (no leftover). If a detected participant is still unmatched, it may BE
-  //    this attendee under a display name the matcher couldn't tie (a nickname / surname-first / a
-  //    name the worker captured differently), so we do NOT accuse anyone - we show them as joined
-  //    (benefit of the doubt). This kills the false "didn't join" without ever inventing a no-show:
-  //    a genuine no-show in a cleanly-detected meeting (no leftover) is still flagged correctly.
-  const leftoverDetected = speakers.some((s, i) => !used.has(i));
-  const canAssertNoShow = speakers.length > 0 && !leftoverDetected;
+  // 3) Split invited attendees into joined vs invited-but-didn't-join. We only claim someone did NOT
+  //    join when the report actually detected participants; with none detected the join status is
+  //    unknown, so everyone is shown as a normal participant. The false "didn't join" is prevented by
+  //    the improved matching above (multi-token, best-score) + the residual 1-1 rescue below - NOT by
+  //    suppressing the flag whenever a body is unmatched (that would show a genuine no-show sitting
+  //    next to a walk-in guest as "joined").
+  const detected = speakers.length > 0;
   const joined = [], invited = [];
   rows.forEach((r) => {
     const person = { name: r.name || nameFromEmail(r.a.email), email: r.a.email };
-    (r.joined || !canAssertNoShow ? joined : invited).push(person);
+    (r.joined || !detected ? joined : invited).push(person);
   });
   // 4) Detected participants with no matching invite = real extra guests (resolve email if known).
   speakers.forEach((s, idx) => {
