@@ -112,12 +112,21 @@ export default async function handler(req, res) {
       return { name: s.name, role: x.role || "Participant", talkPct: Math.round((s.words / totalW) * 100), wpm, sentiment: x.sentiment || "Neutral", isHost: !!x.isHost };
     });
     // Roster members with no diarized voice of their own (never spoke, or shared a mic) still
-    // COUNT as participants - like Read.ai, guests = who was in the call. Fuzzy match so
-    // "Santiago" (roster) doesn't duplicate "Santiago Llorach" (mapped speaker).
-    const overlap = (a, b) => a.includes(b) || b.includes(a);
+    // COUNT as participants - like Read.ai, guests = who was in the call. De-dup against the mapped
+    // speakers so "Santiago" (roster) doesn't duplicate "Santiago Llorach" (speaker) - but ONLY when
+    // it is CLEARLY the same person. The old `a.includes(b)` substring test dropped a real second
+    // person whose name was a substring of another ("Ana" swallowed by "Anabel", "Sam" by "Samantha"),
+    // which then surfaced as a false "Invited - didn't join". Token-aware + conservative: same FIRST
+    // token AND the shorter full name is a leading subset of the longer -> same person; otherwise keep.
+    const rtok = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[\s,]+/).filter(Boolean);
+    const sameRosterPerson = (a, b) => {
+      const A = rtok(a), B = rtok(b);
+      if (!A.length || !B.length || A[0] !== B[0]) return false; // different first name -> different person
+      const short = A.length <= B.length ? A : B, long = A.length <= B.length ? B : A;
+      return short.every((t, i) => t === long[i]); // "santiago" vs "santiago llorach" = same; "ana perez" vs "ana gomez" = not
+    };
     for (const n of roster) {
-      const ln = n.toLowerCase();
-      if (participants.some((p) => overlap(p.name.toLowerCase(), ln))) continue;
+      if (participants.some((p) => sameRosterPerson(p.name, n))) continue;
       participants.push({ name: n, role: "Participant", talkPct: 0, wpm: 0, sentiment: "Neutral", isHost: false });
     }
     const sc = ai.scores || {};

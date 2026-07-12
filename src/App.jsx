@@ -1840,6 +1840,10 @@ const isPlaceholderName = (n) => {
 // Strip accents so "Nicolás" and "nicolas" compare equal.
 const deaccent = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
 const firstToken = (n) => deaccent(n).trim().toLowerCase().split(/[\s(]+/)[0] || "";
+// ALL name-ish tokens (first, middle, last), so matching still works when a meeting display name is
+// in a different order than the calendar invite (surname-first "Benech Nicolas", a middle name, or
+// "Nico B."). Drops 1-char tokens (initials) so "N" can't match everything.
+const nameTokens = (n) => deaccent(n).trim().toLowerCase().split(/[\s(,.]+/).filter((t) => t.length >= 2);
 const emailLocalTokens = (e) => deaccent(e).toLowerCase().split("@")[0].replace(/[._\-0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
 const emailUserFlat = (e) => deaccent(e).toLowerCase().split("@")[0].replace(/[^a-z]/g, "");
 const nameFromEmail = (e) => { const t = emailLocalTokens(e)[0] || String(e || "").split("@")[0]; return t ? t[0].toUpperCase() + t.slice(1) : String(e || ""); };
@@ -1852,14 +1856,26 @@ const nameMatch = (ft, tok) => {
   if (ft === tok || tok.startsWith(ft) || ft.startsWith(tok)) return true;
   return Math.min(ft.length, tok.length) >= 4 && sharedPrefix(ft, tok) >= 4;
 };
-// A diarized speaker name is the SAME person as an invited attendee when their first name
-// matches the attendee's name or a token of the email local-part.
-const samePerson = (speakerName, att) => {
-  const ft = firstToken(speakerName);
-  if (!ft || ft.length < 2) return false;
-  if (att.name && nameMatch(ft, firstToken(att.name))) return true;
-  return emailLocalTokens(att.email).some((tok) => nameMatch(ft, tok));
+// Generic mailbox local-parts that are NOT a person's name - they must never drive a match
+// (info@, team@, sales@... would otherwise "match" anyone).
+const GENERIC_LOCALS = new Set(["info", "team", "admin", "hello", "contact", "sales", "support", "office", "noreply", "no-reply", "hi", "me", "mail", "email", "help", "hola", "ventas", "soporte"]);
+// How strongly a DETECTED participant name matches an INVITED attendee (0 = not the same person).
+// We compare ALL tokens of both (not just the first), so a Meet display name in any order still
+// matches the invite; scored so a first-name / whole-name hit outranks a surname-only or an
+// email-token hit (used to resolve who claims a shared detected name). This is the fix for the false
+// "didn't join": roster/display names are often surname-first, a middle name, or "Nico B.", which
+// first-token-only matching missed.
+const matchScore = (speakerName, att) => {
+  const sTok = nameTokens(speakerName);
+  if (!sTok.length) return 0;
+  const aTok = att.name ? nameTokens(att.name) : [];
+  const eTok = emailLocalTokens(att.email).filter((t) => !GENERIC_LOCALS.has(t));
+  if (aTok[0] && nameMatch(sTok[0], aTok[0])) return 3;              // strongest: first name vs first name
+  if (sTok.some((s) => aTok.some((a) => nameMatch(s, a)))) return 2; // any name token (surname-first, middle name)
+  if (sTok.some((s) => eTok.some((t) => nameMatch(s, t)))) return 1; // any token vs an email local-part token
+  return 0;
 };
+const samePerson = (speakerName, att) => matchScore(speakerName, att) > 0;
 const fullerName = (a, b) => {
   const A = String(a || "").trim(), B = String(b || "").trim();
   if (!A) return B; if (!B) return A;
@@ -1893,14 +1909,22 @@ function meetingPeople(meeting, emailBook = {}) {
   // (stored as talkPct 0). Placeholder labels ("Speaker C", "Guest 2") are not real people.
   const speakers = (meeting.participants || []).map((p) => p && p.name).filter((n) => n && !isPlaceholderName(n));
 
-  // 1) Match each invited attendee to a detected participant (same person -> they joined).
+  // 1) Match each invited attendee to the BEST-scoring unused detected participant. Attendees are
+  //    resolved strongest-match-first (a solid first-name match claims its speaker before a weak
+  //    surname/email match), and no speaker is matched to two attendees (the `used` set). This
+  //    replaces the old greedy first-token findIndex that both MISSED reordered/nickname names and
+  //    let the first same-first-name attendee steal a speaker from the real joiner.
   const used = new Set();
-  const rows = atts.map((a) => {
-    const si = speakers.findIndex((s, idx) => !used.has(idx) && samePerson(s, a));
+  const order = atts.map((a) => ({ a, best: Math.max(0, ...speakers.map((s) => matchScore(s, a))) })).sort((x, y) => y.best - x.best);
+  const rowByEmail = new Map();
+  for (const { a } of order) {
+    let bi = -1, bs = 0;
+    speakers.forEach((s, idx) => { if (used.has(idx)) return; const sc = matchScore(s, a); if (sc > bs) { bs = sc; bi = idx; } });
     let joined = false, name = a.name;
-    if (si >= 0) { used.add(si); joined = true; name = preferName(a, speakers[si]); }
-    return { a, name, joined };
-  });
+    if (bi >= 0) { used.add(bi); joined = true; name = preferName(a, speakers[bi]); }
+    rowByEmail.set(a.email, { a, name, joined });
+  }
+  const rows = atts.map((a) => rowByEmail.get(a.email));
   // 2) Residual pairing: if EXACTLY one attendee and one participant are still unmatched, and
   //    their names don't clearly conflict, they are the same person (a username that just didn't
   //    parse to the real first name, e.g. nicoobenech@gmail.com == "Nicolas"). This is what stops
@@ -1917,14 +1941,19 @@ function meetingPeople(meeting, emailBook = {}) {
     if (!conflict && !speakerIsElsewhere) { used.add(si); r.joined = true; r.name = preferName(r.a, s); }
   }
 
-  // 3) Split invited attendees into joined vs invited-but-didn't-join. We only claim someone
-  //    did NOT join when the report actually detected participants; with none detected the join
-  //    status is unknown, so everyone is shown as a normal participant.
-  const detected = speakers.length > 0;
+  // 3) Split invited attendees into joined vs invited-but-didn't-join. We only ASSERT "didn't join"
+  //    when detection looks COMPLETE: at least one participant was detected AND every detected body
+  //    was tied to an invitee (no leftover). If a detected participant is still unmatched, it may BE
+  //    this attendee under a display name the matcher couldn't tie (a nickname / surname-first / a
+  //    name the worker captured differently), so we do NOT accuse anyone - we show them as joined
+  //    (benefit of the doubt). This kills the false "didn't join" without ever inventing a no-show:
+  //    a genuine no-show in a cleanly-detected meeting (no leftover) is still flagged correctly.
+  const leftoverDetected = speakers.some((s, i) => !used.has(i));
+  const canAssertNoShow = speakers.length > 0 && !leftoverDetected;
   const joined = [], invited = [];
   rows.forEach((r) => {
     const person = { name: r.name || nameFromEmail(r.a.email), email: r.a.email };
-    (r.joined || !detected ? joined : invited).push(person);
+    (r.joined || !canAssertNoShow ? joined : invited).push(person);
   });
   // 4) Detected participants with no matching invite = real extra guests (resolve email if known).
   speakers.forEach((s, idx) => {
