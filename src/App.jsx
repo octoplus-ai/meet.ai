@@ -1771,24 +1771,21 @@ function RowMenu({ onShare, onDownload, onRename, onDelete }) {
 // Participant-count chip -> popover: THIS meeting's participants + their resolved emails + copy.
 function PeoplePopover({ meeting, emailBook = {} }) {
   const [open, setOpen] = useState(false);
-  const [pinned, setPinned] = useState(false); // HOVER opens it (transient); a CLICK pins it open (backdrop to close)
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
-  const closeT = useRef(null);
   const { people, withEmail, invited } = meetingPeople(meeting, emailBook);
   const emails = withEmail.map((p) => p.email);
   const count = people.length;
   const place = () => { const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) { const below = window.innerHeight - r.bottom; setPos({ left: Math.max(8, r.left), top: below > 300 ? r.bottom + 4 : null, bottom: below > 300 ? null : window.innerHeight - r.top + 4 }); } };
-  const openNow = () => { clearTimeout(closeT.current); place(); setOpen(true); };
-  const closeSoon = () => { if (pinned) return; clearTimeout(closeT.current); closeT.current = setTimeout(() => setOpen(false), 160); }; // small grace to move onto the popover
+  const toggle = (e) => { e.stopPropagation(); if (open) { setOpen(false); } else { place(); setOpen(true); } }; // click to open, click again / outside to close
   const copyEmails = async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(emails.join(", ")); toast(emails.length ? `Copied ${emails.length} email${emails.length > 1 ? "s" : ""}` : "No emails on file for this meeting"); } catch (err) {} };
   return (
-    <span className="relative" onClick={(e) => e.stopPropagation()} onMouseEnter={openNow} onMouseLeave={closeSoon}>
-      <button ref={btnRef} onClick={(e) => { e.stopPropagation(); if (pinned) { setPinned(false); setOpen(false); } else { setPinned(true); openNow(); } }} className="flex items-center gap-1 text-[12px] text-slate-400 transition hover:text-violet-600"><Users size={12} /> {count}</button>
+    <span className="relative" onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} onClick={toggle} className="flex items-center gap-1 text-[12px] text-slate-400 transition hover:text-violet-600"><Users size={12} /> {count}</button>
       {open && pos && (
         <>
-          {pinned && <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); setPinned(false); setOpen(false); }} />}
-          <div className="fixed z-[56] w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }} onMouseEnter={() => clearTimeout(closeT.current)} onMouseLeave={closeSoon}>
+          <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+          <div className="fixed z-[56] w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-2xl" style={{ left: pos.left, top: pos.top != null ? pos.top : undefined, bottom: pos.bottom != null ? pos.bottom : undefined }}>
             <div className="flex items-center justify-between px-2 py-1">
               <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{tr("participants2")}</span>
               {emails.length > 0 && <button onClick={copyEmails} className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"><Copy size={11} /> {tr("copyEmails2")}</button>}
