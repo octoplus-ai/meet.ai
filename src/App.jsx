@@ -2122,16 +2122,27 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   return (
     <>
       <div className="border-b border-slate-200 bg-white px-6 pt-3">
-        <div className="mb-3 flex items-center gap-2">
-          <button onClick={toggleAutoShare} role="switch" aria-checked={autoShare}
-            title={t("autoShareParticipants")}
-            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition ${autoShare ? "bg-violet-600 text-white shadow-sm hover:bg-violet-500" : "border border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:text-violet-700"}`}>
-            <Share2 size={15} />
-            {t("autoShareParticipants")}
-            <span className={`ml-0.5 flex h-4 w-7 items-center rounded-full p-0.5 transition ${autoShare ? "justify-end bg-white/30" : "justify-start bg-slate-200"}`}>
-              <span className="h-3 w-3 rounded-full bg-white shadow" />
-            </span>
-          </button>
+        {/* Single top row: auto-share toggle + active "Reports" tab on the LEFT, refresh + Upload on the
+            RIGHT. Merged the old separate tab row up here so the header is one row shorter (no dead space). */}
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={toggleAutoShare} role="switch" aria-checked={autoShare}
+              title={t("autoShareParticipants")}
+              className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition ${autoShare ? "bg-violet-600 text-white shadow-sm hover:bg-violet-500" : "border border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:text-violet-700"}`}>
+              <Share2 size={15} />
+              {t("autoShareParticipants")}
+              <span className={`ml-0.5 flex h-4 w-7 items-center rounded-full p-0.5 transition ${autoShare ? "justify-end bg-white/30" : "justify-start bg-slate-200"}`}>
+                <span className="h-3 w-3 rounded-full bg-white shadow" />
+              </span>
+            </button>
+            <span className="border-b-2 border-violet-600 pb-1 text-sm font-semibold text-violet-700">{t("reportsTab")}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => { if (onRefresh) onRefresh(); toast("Refreshed"); }} className="flex items-center gap-1.5 text-[13px] text-slate-400 transition hover:text-slate-600"><RefreshCw size={13} /> {t("lastRefreshed")}</button>
+            <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-violet-500">
+              <Upload size={15} /> {t("upload")}
+            </button>
+          </div>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); if (ask.trim()) onAsk(ask.trim()); }}
           className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-white shadow-sm px-3 py-2 focus-within:border-violet-400">
@@ -2142,17 +2153,6 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
             <Send size={15} />
           </button>
         </form>
-        <div className="flex items-center justify-between">
-          <div className="flex gap-5">
-            <span className="border-b-2 border-violet-600 pb-2.5 text-sm font-semibold text-violet-700">{t("reportsTab")}</span>
-          </div>
-          <div className="flex items-center gap-3 pb-1.5">
-            <button onClick={() => { if (onRefresh) onRefresh(); toast("Refreshed"); }} className="flex items-center gap-1.5 text-[13px] text-slate-400 transition hover:text-slate-600"><RefreshCw size={13} /> {t("lastRefreshed")}</button>
-            <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-violet-500">
-              <Upload size={15} /> {t("upload")}
-            </button>
-          </div>
-        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
