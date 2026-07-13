@@ -89,7 +89,7 @@ const EXTRA = {
     // video player
     audioTranslation: "Audio translation", translatingAudio: "Translating audio to", dubKeepsVoices: "AI voices, keeps each speaker", original: "Original",
     subtitles: "Subtitles", off: "Off", translatingSubs: "Translating subtitles…", play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
-    settings: "Settings", playbackSpeed: "Playback speed", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
+    settings: "Settings", playbackSpeed: "Playback speed", showSpeakerNames: "Show speaker name on screen", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
     recordingWillAppear: "Recording will appear here once processed.",
     // report tabs
     notes: "Notes", transcript: "Transcript", deepDive: "Deep Dive", coachingTab: "Coaching", highlightsTab: "Highlights", chaptersTopics: "Chapters & Topics", pitchAnalysis: "Pitch Analysis",
@@ -187,7 +187,7 @@ const EXTRA = {
   es: {
     audioTranslation: "Traducción de audio", translatingAudio: "Traduciendo el audio a", dubKeepsVoices: "Voces con IA, mantiene cada orador", original: "Original",
     subtitles: "Subtítulos", off: "Desactivado", translatingSubs: "Traduciendo subtítulos…", play: "Reproducir", trailer: "Trailer", highlights: "Destacados", recording: "Grabación",
-    settings: "Ajustes", playbackSpeed: "Velocidad de reproducción", showMetricsOverlay: "Mostrar métricas en pantalla", showHighlightsOverlay: "Mostrar destacados en pantalla", autoplayClick: "Reproducir al hacer clic",
+    settings: "Ajustes", playbackSpeed: "Velocidad de reproducción", showSpeakerNames: "Mostrar nombre del hablante", showMetricsOverlay: "Mostrar métricas en pantalla", showHighlightsOverlay: "Mostrar destacados en pantalla", autoplayClick: "Reproducir al hacer clic",
     recordingWillAppear: "La grabación aparecerá acá cuando se procese.",
     notes: "Notas", transcript: "Transcripción", deepDive: "Análisis profundo", coachingTab: "Coaching", highlightsTab: "Destacados", chaptersTopics: "Capítulos y temas", pitchAnalysis: "Análisis de pitch",
     summary: "Resumen", actionItems: "Tareas", nextSteps: "Próximos pasos", keyQuestions: "Preguntas clave", standard: "estándar", short: "corto",
@@ -4650,6 +4650,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [showSettings, setShowSettings] = useState(false);
   const [showMetrics, setShowMetrics] = useState(true);
   const [showHighlights, setShowHighlights] = useState(true);
+  const [showNames, setShowNames] = useState(true); // Read.ai-style active-speaker name label on the video
   const [autoplayClick, setAutoplayClick] = useState(true);
   const [volume, setVolume] = useState(1);
   const [volOpen, setVolOpen] = useState(false);
@@ -4869,6 +4870,17 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const bounds = [0, ...chapAts, dur];
   const segs2 = []; for (let i = 0; i < bounds.length - 1; i++) if (bounds[i + 1] > bounds[i]) segs2.push({ start: bounds[i], end: bounds[i + 1] });
   let curChapter = ""; if (everPlayed) { const cm = (markers || []).filter((m) => m.type === "chapter" && m.at != null).sort((a, b) => a.at - b.at); for (const c of cm) { if (c.at <= cur) curChapter = c.label; else break; } }
+  // Active speaker at the current time (Read.ai-style name label): the latest transcript turn whose
+  // timestamp has passed. Placeholder labels ("Speaker 1") are not shown. turns are time-ordered.
+  let curSpeaker = "";
+  if (everPlayed && turns && turns.length) {
+    for (let i = 0; i < turns.length; i++) {
+      const tn = turns[i];
+      if (!tn || tn.at == null) continue;
+      if (tn.at <= cur + 0.25) { if (tn.speaker && !isPlaceholderName(tn.speaker)) curSpeaker = tn.speaker; }
+      else break;
+    }
+  }
   // Current subtitle line (the latest transcript turn whose timestamp has passed), in the
   // chosen language (translated cache when available, else the original text).
   // Netflix-style subtitle: the active phrase for the chosen language (same logic the dub uses).
@@ -4968,6 +4980,13 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           )}
         </div>
       )}
+      {/* Active-speaker name label (Read.ai-style lower-third), bottom-left, above the control bar. */}
+      {!collapsed && showNames && curSpeaker && everPlayed && (
+        <div className="pointer-events-none absolute bottom-16 left-4 z-30 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-1.5 shadow-lg backdrop-blur-sm" style={{ transform: "translateZ(0)" }}>
+          <span className="h-2 w-2 rounded-full bg-violet-400" />
+          <span className="text-[14px] font-semibold leading-none text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}>{curSpeaker}</span>
+        </div>
+      )}
       {/* Subtitles overlay (off by default; language chosen via the CC menu). */}
       {!collapsed && cc && (capText || subBusy) && (
         <div className="pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-6" style={{ transform: "translateZ(0)" }}>
@@ -4993,6 +5012,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
             <div className="absolute bottom-12 right-2 z-50 w-72 rounded-2xl border border-white/10 bg-neutral-900/95 p-2 text-white shadow-2xl backdrop-blur-md">
               <div className="px-2 py-2 text-center text-[14px] font-bold tracking-wide">{tr("settings")}</div>
               {[
+                { label: tr("showSpeakerNames"), v: showNames, set: setShowNames },
                 { label: tr("showMetricsOverlay"), v: showMetrics, set: setShowMetrics },
                 { label: tr("showHighlightsOverlay"), v: showHighlights, set: setShowHighlights },
                 { label: tr("autoplayClick"), v: autoplayClick, set: setAutoplayClick },
