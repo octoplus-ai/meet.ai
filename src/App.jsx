@@ -4635,7 +4635,7 @@ function splitPhrases(text) {
   return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {} }) {
+function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {} }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -4980,13 +4980,17 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           )}
         </div>
       )}
-      {/* Active-speaker name label (Read.ai-style lower-third), bottom-left, above the control bar. */}
-      {!collapsed && showNames && curSpeaker && everPlayed && (
-        <div className="pointer-events-none absolute bottom-16 left-4 z-30 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-1.5 shadow-lg backdrop-blur-sm" style={{ transform: "translateZ(0)" }}>
-          <span className="h-2 w-2 rounded-full bg-violet-400" />
-          <span className="text-[14px] font-semibold leading-none text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}>{curSpeaker}</span>
-        </div>
-      )}
+      {/* Active-speaker name label (Read.ai-style lower-third), bottom-left, above the control bar.
+          Full name (name + last name) when resolvable, and a per-person color dot (matches their avatar). */}
+      {!collapsed && showNames && curSpeaker && everPlayed && (() => {
+        const speakerFull = nameMap[curSpeaker] || curSpeaker;
+        return (
+          <div className="pointer-events-none absolute bottom-16 left-4 z-30 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-1.5 shadow-lg backdrop-blur-sm" style={{ transform: "translateZ(0)" }}>
+            <span className="h-2 w-2 rounded-full" style={{ background: avatarColor(speakerFull) }} />
+            <span className="text-[14px] font-semibold leading-none text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}>{speakerFull}</span>
+          </div>
+        );
+      })()}
       {/* Subtitles overlay (off by default; language chosen via the CC menu). */}
       {!collapsed && cc && (capText || subBusy) && (
         <div className="pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-6" style={{ transform: "translateZ(0)" }}>
@@ -5682,6 +5686,18 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     return parts.map((p) => ({ ...p, talkPct: byP.get(p) }));
   };
   const displayParts = normalizeTalk(realParts.length ? realParts : (meeting.participants || []));
+  // Full name (name + last name) for each speaker/participant: match the (often first-name-only)
+  // detected label to a calendar attendee and take the fuller of the two. New recordings already carry
+  // full names from the roster; this also upgrades older ones whenever the calendar has the full name.
+  const fullNameMap = useMemo(() => {
+    const atts = (meeting.attendees || []).map((a) => (typeof a === "string" ? { email: String(a).toLowerCase(), name: "" } : { email: String((a && a.email) || "").toLowerCase(), name: (a && a.name) || "" }));
+    const map = {};
+    const add = (nm) => { if (!nm || map[nm]) return; let best = null, bs = 0; for (const a of atts) { const sc = matchScore(nm, a); if (sc > bs) { bs = sc; best = a; } } map[nm] = (best && best.name) ? preferName(best, nm) : nm; };
+    (meeting.participants || []).forEach((p) => add(p && p.name));
+    (meeting.transcript || []).forEach((t) => add(t && t.speaker));
+    return map;
+  }, [meeting]);
+  const fullNameOf = (nm) => (nm && fullNameMap[nm]) || nm;
   const filteredTurns = meeting.transcript.filter((t) => !q || (t.text + " " + t.speaker).toLowerCase().includes(q.toLowerCase()));
   const speakerIdx = {};
   meeting.participants.forEach((p, i) => (speakerIdx[p.name] = i));
@@ -5853,7 +5869,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           <span className="flex items-center gap-1"><Calendar size={12} /> {fmtDateShort(meeting.date)}</span>
           <span className="flex items-center gap-1"><Clock size={12} /> {meeting.timeStart} - {meeting.timeEnd}</span>
           <span className="flex items-center gap-1"><Video size={12} /> {meeting.source}</span>
-          <span className="flex items-center gap-1"><Users size={12} /> {displayParts.map((p) => p.name).join(", ")}</span>
+          <span className="flex items-center gap-1"><Users size={12} /> {displayParts.map((p) => fullNameOf(p.name)).join(", ")}</span>
         </div>
       </div>
 
@@ -6041,7 +6057,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
