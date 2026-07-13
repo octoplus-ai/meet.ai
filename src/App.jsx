@@ -2154,10 +2154,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   return (
     <>
       <div className="border-b border-slate-200 bg-white px-6 pt-3">
-        {/* Single top row: auto-share toggle + active "Reports" tab on the LEFT, refresh + Upload on the
-            RIGHT. Merged the old separate tab row up here so the header is one row shorter (no dead space). */}
+        {/* Single top row: the active "Reports" tab on the LEFT (a bit larger), auto-share toggle +
+            refresh + Upload on the RIGHT. One row shorter than the old layout (no dead space). */}
         <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <span className="border-b-2 border-violet-600 pb-1.5 text-lg font-bold text-violet-700">{t("reportsTab")}</span>
+          <div className="flex items-center gap-3">
             <button onClick={toggleAutoShare} role="switch" aria-checked={autoShare}
               title={t("autoShareParticipants")}
               className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition ${autoShare ? "bg-violet-600 text-white shadow-sm hover:bg-violet-500" : "border border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:text-violet-700"}`}>
@@ -2167,9 +2168,6 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 <span className="h-3 w-3 rounded-full bg-white shadow" />
               </span>
             </button>
-            <span className="border-b-2 border-violet-600 pb-1 text-sm font-semibold text-violet-700">{t("reportsTab")}</span>
-          </div>
-          <div className="flex items-center gap-3">
             <button onClick={() => { if (onRefresh) onRefresh(); toast("Refreshed"); }} className="flex items-center gap-1.5 text-[13px] text-slate-400 transition hover:text-slate-600"><RefreshCw size={13} /> {t("lastRefreshed")}</button>
             <button onClick={onUpload} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-violet-500">
               <Upload size={15} /> {t("upload")}
