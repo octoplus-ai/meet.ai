@@ -3003,13 +3003,11 @@ function CalToggle({ on, onChange }) {
 /* ============================ ANALYTICS ============================= */
 // Inline analytics over a chosen set of meetings (the selection in Reports).
 function AnalyticsPanel({ meetings, onOpen, onClose }) {
-  const RATE = 50; // assumed $/hour/participant for cost estimates
   const M = meetings || [];
   const n = M.length;
   const partCount = (m) => (m.participantsCount != null ? m.participantsCount : (m.participants ? m.participants.length : 0));
   const totalMin = M.reduce((a, m) => a + (m.durationMin || 0), 0);
   const avgMin = n ? Math.round(totalMin / n) : 0;
-  const cost = Math.round(M.reduce((a, m) => a + ((m.durationMin || 0) / 60) * Math.max(1, partCount(m)) * RATE, 0));
   const avg = (f) => (n ? Math.round(M.reduce((a, m) => a + (f(m) || 0), 0) / n) : 0);
   const avgScore = avg((m) => m.scores && m.scores.overall);
   const avgEng = avg((m) => m.scores && m.scores.engagement);
@@ -3081,12 +3079,11 @@ function AnalyticsPanel({ meetings, onOpen, onClose }) {
       ) : (
           <div className="space-y-6">
             <H>Overview</H>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
               <Kpi label="Meetings" value={n} />
               <Kpi label="Total hours" value={(totalMin / 60).toFixed(1)} />
               <Kpi label="Avg duration" value={avgMin + "m"} />
               <Kpi label="Avg participants" value={avgPart} />
-              <Kpi label="Est. cost" value={"$" + cost.toLocaleString()} sub={"~$" + RATE + "/h/person"} />
               <Kpi label="Avg Octo Score" value={avgScore} color={scoreColor(avgScore)} />
             </div>
 
