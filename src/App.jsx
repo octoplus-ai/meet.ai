@@ -1835,7 +1835,8 @@ const isEmail = (e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e);
 // they must never appear in any participant list (popover, share dialog, cards, count).
 const isPlaceholderName = (n) => {
   const s = String(n || "").trim();
-  return !s || /^(speaker|guest|participant|unknown|user|persona|invitado|orador)\s*[a-z0-9]{0,3}$/i.test(s);
+  // Also drop a screen-share TILE captured as a "person" ("Santiago Llorach's presentation" / "Presentación de X").
+  return !s || /(?:'s|’s|s') presentation$|presentaci[oó]n de\b|\bpresentation$/i.test(s) || /^(speaker|guest|participant|unknown|user|persona|invitado|orador)\s*[a-z0-9]{0,3}$/i.test(s);
 };
 // Strip accents so "Nicolás" and "nicolas" compare equal.
 const deaccent = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
