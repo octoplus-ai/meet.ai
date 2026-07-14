@@ -4635,7 +4635,7 @@ function splitPhrases(text) {
   return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {} }) {
+function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {}, speakerTimeline = [] }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -4870,10 +4870,21 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const bounds = [0, ...chapAts, dur];
   const segs2 = []; for (let i = 0; i < bounds.length - 1; i++) if (bounds[i + 1] > bounds[i]) segs2.push({ start: bounds[i], end: bounds[i + 1] });
   let curChapter = ""; if (everPlayed) { const cm = (markers || []).filter((m) => m.type === "chapter" && m.at != null).sort((a, b) => a.at - b.at); for (const c of cm) { if (c.at <= cur) curChapter = c.label; else break; } }
-  // Active speaker at the current time (Read.ai-style name label): the latest transcript turn whose
-  // timestamp has passed. Placeholder labels ("Speaker 1") are not shown. turns are time-ordered.
+  // Active-speaker name label at the current time. PRIMARY source = the worker's speakerTimeline: the
+  // EXACT person whose tile is on screen at each moment (from the video, not the diarization guess), so
+  // the name is always the right person - no A/B swap - and it is "" during a SCREEN SHARE (no person ->
+  // the label hides). Older recordings without a timeline fall back to the diarization turns (+ nameMap
+  // for the fuller name). Both sources are time-ordered.
+  const usingTimeline = Array.isArray(speakerTimeline) && speakerTimeline.length > 0;
   let curSpeaker = "";
-  if (everPlayed && turns && turns.length) {
+  if (everPlayed && usingTimeline) {
+    for (let i = 0; i < speakerTimeline.length; i++) {
+      const e = speakerTimeline[i];
+      if (!e || e.t == null) continue;
+      if (e.t <= cur + 0.25) curSpeaker = e.name || ""; // "" = screen share -> overlay hides
+      else break;
+    }
+  } else if (everPlayed && turns && turns.length) {
     for (let i = 0; i < turns.length; i++) {
       const tn = turns[i];
       if (!tn || tn.at == null) continue;
@@ -4983,7 +4994,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       {/* Active-speaker name label (Read.ai-style lower-third), bottom-left, above the control bar.
           Full name (name + last name) when resolvable, and a per-person color dot (matches their avatar). */}
       {!collapsed && showNames && curSpeaker && everPlayed && (() => {
-        const speakerFull = nameMap[curSpeaker] || curSpeaker;
+        const speakerFull = usingTimeline ? curSpeaker : (nameMap[curSpeaker] || curSpeaker);
         return (
           <div className="pointer-events-none absolute bottom-16 left-4 z-30 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-1.5 shadow-lg backdrop-blur-sm" style={{ transform: "translateZ(0)" }}>
             <span className="h-2 w-2 rounded-full" style={{ background: avatarColor(speakerFull) }} />
@@ -6057,7 +6068,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} speakerTimeline={(meeting.coaching && meeting.coaching.speakerTimeline) || []} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">

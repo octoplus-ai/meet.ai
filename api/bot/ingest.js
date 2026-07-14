@@ -135,7 +135,7 @@ export default async function handler(req, res) {
       meeting_id: meeting.id, user_id: uid,
       summary: ai.summary || "", action_items: ai.actionItems || [], next_steps: ai.nextSteps || [],
       key_questions: ai.keyQuestions || [], topics: ai.topics || [], chapters: ai.chapters || [],
-      highlights: ai.highlights || [], coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null }, participants,
+      highlights: ai.highlights || [], coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, speakerTimeline: Array.isArray(body.speakerTimeline) ? body.speakerTimeline.slice(0, 4000) : [] }, participants,
       sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
       transcript: finalText, scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
       read_score: sc.overall || 0, category: ai.category || null, report_version: ANALYSIS_VERSION,
