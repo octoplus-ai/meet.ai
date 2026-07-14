@@ -4265,20 +4265,20 @@ function AccountSettings({ onBack, lang, setLang, user }) {
   const [sec, setSec] = useState(0);
   const [tg, setTg] = useState({
     autoJoinCal: true, autoJoinUnsched: true, autoNotes: true, transcription: true, playback: true, affective: true,
-    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false,
+    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false, pipDuringShare: false,
     daily: false, topicReadouts: true, weeklyRecaps: true, recs: true, productUpdates: true, accountInfo: true,
     chatHistory: true, smartLinks: true, availHours: true, minNotice: true, domainDiscovery: true, cxp: false,
   });
   const [whichEvents, setWhichEvents] = useState("all");
   const [whoInvited, setWhoInvited] = useState("any");
   // Report Sharing toggles that persist server-side (Report Distribution + access).
-  const PREF_MAP = { mtgReports: "autoRecap", internalAccess: "internalAccess", externalAccess: "externalAccess", oneClick: "oneClick", updateCal: "updateCalendar" };
+  const PREF_MAP = { mtgReports: "autoRecap", internalAccess: "internalAccess", externalAccess: "externalAccess", oneClick: "oneClick", updateCal: "updateCalendar", pipDuringShare: "pipDuringShare" };
   const set1 = (k, v) => {
     setTg((p) => ({ ...p, [k]: v }));
     if (PREF_MAP[k]) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sharing_prefs: { [PREF_MAP[k]]: v } }) }).then(() => toast("Saved")).catch(() => {}); }
   };
   // Load persisted sharing preferences on mount.
-  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar })); }).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar, pipDuringShare: !!p.pipDuringShare })); }).catch(() => {}); }, []);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -4407,6 +4407,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
               </div>
               <ToggleRow title="Audio & Video Playback" desc="Enable playback for meeting reports you own. Only available with an Enterprise or Enterprise+ plan." on={tg.playback} onChange={(v) => set1("playback", v)} />
               <ToggleRow title="Affective metrics" desc="Include metrics that calculate engagement, sentiment, charisma, and bias in reports." on={tg.affective} onChange={(v) => set1("affective", v)} />
+              <ToggleRow title="Show speaker during screen share" desc="When someone shares their screen, also record the person speaking as a picture-in-picture in the corner (great for trainings). Off by default; applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
             </>)}
 
             {sec === 4 && (<>
