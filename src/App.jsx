@@ -90,6 +90,7 @@ const EXTRA = {
     audioTranslation: "Audio translation", translatingAudio: "Translating audio to", dubKeepsVoices: "AI voices, keeps each speaker", original: "Original",
     subtitles: "Subtitles", off: "Off", translatingSubs: "Translating subtitles…", play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
     settings: "Settings", playbackSpeed: "Playback speed", showSpeakerNames: "Show speaker name on screen", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
+    showSpeakerPip: "Show speaker over screen share", hideSpeakerPip: "Hide speaker",
     recordingWillAppear: "Recording will appear here once processed.",
     // report tabs
     notes: "Notes", transcript: "Transcript", deepDive: "Deep Dive", coachingTab: "Coaching", highlightsTab: "Highlights", chaptersTopics: "Chapters & Topics", pitchAnalysis: "Pitch Analysis",
@@ -188,6 +189,7 @@ const EXTRA = {
     audioTranslation: "Traducción de audio", translatingAudio: "Traduciendo el audio a", dubKeepsVoices: "Voces con IA, mantiene cada orador", original: "Original",
     subtitles: "Subtítulos", off: "Desactivado", translatingSubs: "Traduciendo subtítulos…", play: "Reproducir", trailer: "Trailer", highlights: "Destacados", recording: "Grabación",
     settings: "Ajustes", playbackSpeed: "Velocidad de reproducción", showSpeakerNames: "Mostrar nombre del hablante", showMetricsOverlay: "Mostrar métricas en pantalla", showHighlightsOverlay: "Mostrar destacados en pantalla", autoplayClick: "Reproducir al hacer clic",
+    showSpeakerPip: "Mostrar hablante sobre el share", hideSpeakerPip: "Ocultar hablante",
     recordingWillAppear: "La grabación aparecerá acá cuando se procese.",
     notes: "Notas", transcript: "Transcripción", deepDive: "Análisis profundo", coachingTab: "Coaching", highlightsTab: "Destacados", chaptersTopics: "Capítulos y temas", pitchAnalysis: "Análisis de pitch",
     summary: "Resumen", actionItems: "Tareas", nextSteps: "Próximos pasos", keyQuestions: "Preguntas clave", standard: "estándar", short: "corto",
@@ -4407,7 +4409,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
               </div>
               <ToggleRow title="Audio & Video Playback" desc="Enable playback for meeting reports you own. Only available with an Enterprise or Enterprise+ plan." on={tg.playback} onChange={(v) => set1("playback", v)} />
               <ToggleRow title="Affective metrics" desc="Include metrics that calculate engagement, sentiment, charisma, and bias in reports." on={tg.affective} onChange={(v) => set1("affective", v)} />
-              <ToggleRow title="Show speaker during screen share" desc="When someone shares their screen, also record the person speaking as a picture-in-picture in the corner (great for trainings). Off by default; applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
+              <ToggleRow title="Capture speaker during screen share" desc="Also records the speaker's camera as a separate stream during screen shares, so in the player you get a button to show/hide the person over the shared screen (great for trainings). Off by default; applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
             </>)}
 
             {sec === 4 && (<>
@@ -4634,7 +4636,7 @@ function splitPhrases(text) {
   return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {}, speakerTimeline = [] }) {
+function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {}, speakerTimeline = [], pipUrl = null, shareIntervals = [] }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -4650,6 +4652,8 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [showMetrics, setShowMetrics] = useState(true);
   const [showHighlights, setShowHighlights] = useState(true);
   const [showNames, setShowNames] = useState(true); // Read.ai-style active-speaker name label on the video
+  const [showPip, setShowPip] = useState(false); // training PiP: overlay the speaker's camera during a screen share
+  const pipRef = useRef(null);
   const [autoplayClick, setAutoplayClick] = useState(true);
   const [volume, setVolume] = useState(1);
   const [volOpen, setVolOpen] = useState(false);
@@ -4895,6 +4899,17 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   // chosen language (translated cache when available, else the original text).
   // Netflix-style subtitle: the active phrase for the chosen language (same logic the dub uses).
   const capText = cc ? phraseAt(subLang, cur).text : "";
+  // Training PiP: whether the current playback time is inside a screen-share span (only then do we overlay
+  // the speaker's camera). shareIntervals come from the worker (in the main video's time base).
+  const inShare = !!(showPip && pipUrl && (shareIntervals || []).some((iv) => Array.isArray(iv) && cur >= iv[0] && cur < iv[1]));
+  // Keep the PiP overlay <video> locked to the main video (time + play/pause). Runs only while overlaying.
+  useEffect(() => {
+    const pv = pipRef.current, mv = videoRef.current;
+    if (!pv || !mv || !pipUrl || !showPip) return;
+    const sync = () => { try { if (Math.abs((pv.currentTime || 0) - (mv.currentTime || 0)) > 0.35) pv.currentTime = mv.currentTime; if (mv.paused && !pv.paused) pv.pause(); else if (!mv.paused && pv.paused) { const p = pv.play(); if (p && p.catch) p.catch(() => {}); } } catch (e) {} };
+    sync(); const id = setInterval(sync, 400);
+    return () => clearInterval(id);
+  }, [showPip, pipUrl, playing, videoRef]);
 
   // "started" = the user actually pressed play (NOT just the poster frame seeked to coverAt).
   // So a freshly opened report shows "Recording" and plays from 0; only after real playback
@@ -4945,6 +4960,20 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           className="absolute right-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg bg-white/90 text-violet-700 shadow transition hover:bg-white">
           <ChevronsDownUp size={18} />
         </button>
+      )}
+      {/* Training PiP toggle (only when this recording captured a speaker-cam stream): show/hide the person
+          talking over a screen share, like the CC button but on top. */}
+      {!collapsed && pipUrl && (
+        <button onClick={() => setShowPip((s) => !s)} title={showPip ? tr("hideSpeakerPip") : tr("showSpeakerPip")}
+          className={"absolute right-24 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg shadow transition " + (showPip ? "bg-violet-600 text-white hover:bg-violet-500" : "bg-white/90 text-violet-700 hover:bg-white")}>
+          <Users size={17} />
+        </button>
+      )}
+      {/* Training PiP overlay: the speaker's camera, synced to the main video, shown only during a share. */}
+      {!collapsed && pipUrl && showPip && (
+        <video ref={pipRef} src={pipUrl} muted playsInline preload="auto"
+          className={"pointer-events-none absolute right-3 top-14 z-30 w-[26%] max-w-[320px] rounded-xl border-2 border-white/80 bg-black shadow-2xl transition-opacity duration-200 " + (inShare ? "opacity-100" : "opacity-0")}
+          style={{ aspectRatio: "16 / 9" }} />
       )}
       {/* Dubbing in progress indicator */}
       {!collapsed && dubStatus === "dubbing" && (
@@ -6067,7 +6096,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} speakerTimeline={(meeting.coaching && meeting.coaching.speakerTimeline) || []} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} speakerTimeline={(meeting.coaching && meeting.coaching.speakerTimeline) || []} pipUrl={(meeting.coaching && meeting.coaching.pipUrl) || null} shareIntervals={(meeting.coaching && meeting.coaching.shareIntervals) || []} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">

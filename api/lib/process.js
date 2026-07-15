@@ -375,7 +375,7 @@ export async function reanalyzeStored(meeting) {
     summary: ai.summary || rep.summary || "",
     topics: ai.topics || [], key_questions: ai.keyQuestions || [], action_items: ai.actionItems || [],
     next_steps: ai.nextSteps || [], chapters: ai.chapters || [], highlights: ai.highlights || [],
-    coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, speakerTimeline: (rep.coaching && Array.isArray(rep.coaching.speakerTimeline)) ? rep.coaching.speakerTimeline : [] }, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
+    coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, speakerTimeline: (rep.coaching && Array.isArray(rep.coaching.speakerTimeline)) ? rep.coaching.speakerTimeline : [], pipUrl: (rep.coaching && rep.coaching.pipUrl) || null, shareIntervals: (rep.coaching && Array.isArray(rep.coaching.shareIntervals)) ? rep.coaching.shareIntervals : [] }, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
     scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
     read_score: sc.overall || rep.read_score || 0,
     category: ai.category || rep.category || null,
