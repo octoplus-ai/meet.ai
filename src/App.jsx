@@ -90,7 +90,7 @@ const EXTRA = {
     audioTranslation: "Audio translation", translatingAudio: "Translating audio to", dubKeepsVoices: "AI voices, keeps each speaker", original: "Original",
     subtitles: "Subtitles", off: "Off", translatingSubs: "Translating subtitles…", play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
     settings: "Settings", playbackSpeed: "Playback speed", showSpeakerNames: "Show speaker name on screen", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
-    showSpeakerPip: "Show speaker over screen share", hideSpeakerPip: "Hide speaker",
+    presenterScreen: "Presenter screen",
     recordingWillAppear: "Recording will appear here once processed.",
     // report tabs
     notes: "Notes", transcript: "Transcript", deepDive: "Deep Dive", coachingTab: "Coaching", highlightsTab: "Highlights", chaptersTopics: "Chapters & Topics", pitchAnalysis: "Pitch Analysis",
@@ -189,7 +189,7 @@ const EXTRA = {
     audioTranslation: "Traducción de audio", translatingAudio: "Traduciendo el audio a", dubKeepsVoices: "Voces con IA, mantiene cada orador", original: "Original",
     subtitles: "Subtítulos", off: "Desactivado", translatingSubs: "Traduciendo subtítulos…", play: "Reproducir", trailer: "Trailer", highlights: "Destacados", recording: "Grabación",
     settings: "Ajustes", playbackSpeed: "Velocidad de reproducción", showSpeakerNames: "Mostrar nombre del hablante", showMetricsOverlay: "Mostrar métricas en pantalla", showHighlightsOverlay: "Mostrar destacados en pantalla", autoplayClick: "Reproducir al hacer clic",
-    showSpeakerPip: "Mostrar hablante sobre el share", hideSpeakerPip: "Ocultar hablante",
+    presenterScreen: "Pantalla del presentador",
     recordingWillAppear: "La grabación aparecerá acá cuando se procese.",
     notes: "Notas", transcript: "Transcripción", deepDive: "Análisis profundo", coachingTab: "Coaching", highlightsTab: "Destacados", chaptersTopics: "Capítulos y temas", pitchAnalysis: "Análisis de pitch",
     summary: "Resumen", actionItems: "Tareas", nextSteps: "Próximos pasos", keyQuestions: "Preguntas clave", standard: "estándar", short: "corto",
@@ -4985,9 +4985,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       {/* Training PiP toggle (only when this recording captured a speaker-cam stream): show/hide the person
           talking over a screen share, like the CC button but on top. */}
       {!collapsed && pipUrl && (
-        <button onClick={() => setShowPip((s) => !s)} title={showPip ? tr("hideSpeakerPip") : tr("showSpeakerPip")}
-          className={"absolute right-24 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg shadow transition " + (showPip ? "bg-violet-600 text-white hover:bg-violet-500" : "bg-white/90 text-violet-700 hover:bg-white")}>
+        <button onClick={() => setShowPip((s) => !s)} title={tr("presenterScreen")}
+          className={"group absolute right-24 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg shadow transition " + (showPip ? "bg-violet-600 text-white hover:bg-violet-500" : "bg-white/90 text-violet-700 hover:bg-white")}>
           <Users size={17} />
+          <span className="pointer-events-none absolute right-0 top-11 z-50 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">{tr("presenterScreen")}</span>
         </button>
       )}
       {/* Training PiP overlay: the speaker's camera, synced to the main video, shown only during a share.
