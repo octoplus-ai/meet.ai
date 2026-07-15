@@ -17,14 +17,14 @@ export default async function handler(req, res) {
 
     const rows = await sb(`meetings?id=eq.${enc(meetingId)}&select=user_id`);
     const uid = rows[0] && rows[0].user_id;
-    let pipDuringShare = false;
+    let pipDuringShare = true; // ON for all meetings by default
     if (uid) {
       const u = await sb(`app_users?id=eq.${enc(uid)}&select=sharing_prefs`);
       const prefs = (u[0] && u[0].sharing_prefs && typeof u[0].sharing_prefs === "object") ? u[0].sharing_prefs : {};
-      pipDuringShare = prefs.pipDuringShare === true;
+      pipDuringShare = prefs.pipDuringShare !== false; // only OFF if the owner explicitly disabled capture
     }
     return res.status(200).json({ pipDuringShare });
   } catch (e) {
-    return res.status(200).json({ pipDuringShare: false }); // never block the bot on a config read
+    return res.status(200).json({ pipDuringShare: true }); // default ON; a config read must never block the bot
   }
 }

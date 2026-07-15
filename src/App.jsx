@@ -4267,7 +4267,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
   const [sec, setSec] = useState(0);
   const [tg, setTg] = useState({
     autoJoinCal: true, autoJoinUnsched: true, autoNotes: true, transcription: true, playback: true, affective: true,
-    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false, pipDuringShare: false,
+    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false, pipDuringShare: true,
     daily: false, topicReadouts: true, weeklyRecaps: true, recs: true, productUpdates: true, accountInfo: true,
     chatHistory: true, smartLinks: true, availHours: true, minNotice: true, domainDiscovery: true, cxp: false,
   });
@@ -4280,7 +4280,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
     if (PREF_MAP[k]) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sharing_prefs: { [PREF_MAP[k]]: v } }) }).then(() => toast("Saved")).catch(() => {}); }
   };
   // Load persisted sharing preferences on mount.
-  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar, pipDuringShare: !!p.pipDuringShare })); }).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar, pipDuringShare: p.pipDuringShare !== false })); }).catch(() => {}); }, []);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -4409,7 +4409,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
               </div>
               <ToggleRow title="Audio & Video Playback" desc="Enable playback for meeting reports you own. Only available with an Enterprise or Enterprise+ plan." on={tg.playback} onChange={(v) => set1("playback", v)} />
               <ToggleRow title="Affective metrics" desc="Include metrics that calculate engagement, sentiment, charisma, and bias in reports." on={tg.affective} onChange={(v) => set1("affective", v)} />
-              <ToggleRow title="Capture speaker during screen share" desc="Also records the speaker's camera as a separate stream during screen shares, so in the player you get a button to show/hide the person over the shared screen (great for trainings). Off by default; applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
+              <ToggleRow title="Capture speaker during screen share" desc="On for every meeting: records the speaker's camera as a small separate stream during screen shares, so the player gets a button to show/hide the person over the shared screen (great for trainings). Turn this off to skip that extra capture entirely. Applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
             </>)}
 
             {sec === 4 && (<>
