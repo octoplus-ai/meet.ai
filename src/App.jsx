@@ -4986,9 +4986,9 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           talking over a screen share, like the CC button but on top. */}
       {!collapsed && pipUrl && (
         <button onClick={() => setShowPip((s) => !s)} title={tr("presenterScreen")}
-          className={"group absolute right-24 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg shadow transition " + (showPip ? "bg-violet-600 text-white hover:bg-violet-500" : "bg-white/90 text-violet-700 hover:bg-white")}>
+          className={"group/pipbtn absolute right-24 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg shadow transition " + (showPip ? "bg-violet-600 text-white hover:bg-violet-500" : "bg-white/90 text-violet-700 hover:bg-white")}>
           <Users size={17} />
-          <span className="pointer-events-none absolute right-0 top-11 z-50 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">{tr("presenterScreen")}</span>
+          <span className="pointer-events-none absolute right-0 top-11 z-50 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition group-hover/pipbtn:opacity-100">{tr("presenterScreen")}</span>
         </button>
       )}
       {/* Training PiP overlay: the speaker's camera, synced to the main video, shown only during a share.
@@ -5015,11 +5015,11 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       {!collapsed && !shareTok && meetingId && (
         <div className="absolute right-14 top-3 z-40">
           <button onClick={() => setDubMenu((s) => !s)} title={tr("audioTranslation")}
-            className={"group relative flex h-9 w-9 items-center justify-center rounded-lg bg-white/90 shadow transition hover:bg-white " + (dubUrl ? "text-violet-700" : "text-slate-700")}>
+            className={"group/dubbtn relative flex h-9 w-9 items-center justify-center rounded-lg bg-white/90 shadow transition hover:bg-white " + (dubUrl ? "text-violet-700" : "text-slate-700")}>
             <Languages size={18} />
             {dubStatus === "dubbing" && <Loader2 size={12} className="absolute -right-1 -top-1 animate-spin text-violet-600" />}
             {dubUrl && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-500 ring-2 ring-white" />}
-            <span className="pointer-events-none absolute right-0 top-11 z-50 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition group-hover:opacity-100">{tr("audioTranslation")}</span>
+            <span className="pointer-events-none absolute right-0 top-11 z-50 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition group-hover/dubbtn:opacity-100">{tr("audioTranslation")}</span>
           </button>
           {dubMenu && (
             <>
