@@ -4653,7 +4653,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [showHighlights, setShowHighlights] = useState(true);
   const [showNames, setShowNames] = useState(true); // Read.ai-style active-speaker name label on the video
   const [showPip, setShowPip] = useState(false); // training PiP: overlay the speaker's camera during a screen share
+  const [pipCorner, setPipCorner] = useState("tr"); // which of the 4 corners the pip sits in (drag to move)
+  const [pipDragPos, setPipDragPos] = useState(null); // live {left,top} while dragging
   const pipRef = useRef(null);
+  const pipDragRef = useRef(null);
   const [autoplayClick, setAutoplayClick] = useState(true);
   const [volume, setVolume] = useState(1);
   const [volOpen, setVolOpen] = useState(false);
@@ -4884,7 +4887,10 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     for (let i = 0; i < speakerTimeline.length; i++) {
       const e = speakerTimeline[i];
       if (!e || e.t == null) continue;
-      if (e.t <= cur + 0.25) curSpeaker = e.name || ""; // "" = screen share -> overlay hides
+      // EXACT transition timing: the name flips the instant playback reaches the switch time the worker
+      // recorded (no look-ahead), so the label always matches whoever the video just cut to - never the
+      // previous person during the cross-fade. "" = screen share -> overlay hides.
+      if (e.t <= cur) curSpeaker = e.name || "";
       else break;
     }
   } else if (everPlayed && turns && turns.length) {
@@ -4902,13 +4908,28 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   // Training PiP: whether the current playback time is inside a screen-share span (only then do we overlay
   // the speaker's camera). shareIntervals come from the worker (in the main video's time base).
   const inShare = !!(showPip && pipUrl && (shareIntervals || []).some((iv) => Array.isArray(iv) && cur >= iv[0] && cur < iv[1]));
-  // Keep the PiP overlay <video> locked to the main video (time + play/pause). Runs only while overlaying.
+  // Keep the PiP overlay <video> tightly locked to the main video. Big drift (after a seek) -> hard snap;
+  // small continuous drift -> nudge playbackRate so it eases back into lock WITHOUT a visible jump; also
+  // mirrors play/pause and the main video's speed. Driven by the main video's own events + a 250ms poll.
   useEffect(() => {
     const pv = pipRef.current, mv = videoRef.current;
     if (!pv || !mv || !pipUrl || !showPip) return;
-    const sync = () => { try { if (Math.abs((pv.currentTime || 0) - (mv.currentTime || 0)) > 0.35) pv.currentTime = mv.currentTime; if (mv.paused && !pv.paused) pv.pause(); else if (!mv.paused && pv.paused) { const p = pv.play(); if (p && p.catch) p.catch(() => {}); } } catch (e) {} };
-    sync(); const id = setInterval(sync, 400);
-    return () => clearInterval(id);
+    const sync = () => {
+      try {
+        const rate = mv.playbackRate || 1;
+        const drift = (pv.currentTime || 0) - (mv.currentTime || 0);
+        if (Math.abs(drift) > 0.25) { pv.currentTime = mv.currentTime; pv.playbackRate = rate; } // hard snap (e.g. after a seek)
+        else if (Math.abs(drift) > 0.04) { pv.playbackRate = rate * (drift > 0 ? 0.95 : 1.05); } // ease back into lock
+        else if (pv.playbackRate !== rate) { pv.playbackRate = rate; }
+        if (mv.paused && !pv.paused) pv.pause();
+        else if (!mv.paused && pv.paused) { const p = pv.play(); if (p && p.catch) p.catch(() => {}); }
+      } catch (e) {}
+    };
+    sync();
+    const ev = ["timeupdate", "seeked", "play", "pause", "ratechange"];
+    ev.forEach((n) => mv.addEventListener(n, sync));
+    const id = setInterval(sync, 250);
+    return () => { clearInterval(id); ev.forEach((n) => mv.removeEventListener(n, sync)); };
   }, [showPip, pipUrl, playing, videoRef]);
 
   // "started" = the user actually pressed play (NOT just the poster frame seeked to coverAt).
@@ -4969,12 +4990,22 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           <Users size={17} />
         </button>
       )}
-      {/* Training PiP overlay: the speaker's camera, synced to the main video, shown only during a share. */}
-      {!collapsed && pipUrl && showPip && (
-        <video ref={pipRef} src={pipUrl} muted playsInline preload="auto"
-          className={"pointer-events-none absolute right-3 top-14 z-30 w-[26%] max-w-[320px] rounded-xl border-2 border-white/80 bg-black shadow-2xl transition-opacity duration-200 " + (inShare ? "opacity-100" : "opacity-0")}
-          style={{ aspectRatio: "16 / 9" }} />
-      )}
+      {/* Training PiP overlay: the speaker's camera, synced to the main video, shown only during a share.
+          Draggable to any of the 4 corners (like a Meet self-tile) - snaps to the nearest corner on release. */}
+      {!collapsed && pipUrl && showPip && (() => {
+        const cls = { tr: "right-3 top-14", tl: "left-3 top-14", br: "right-3 bottom-20", bl: "left-3 bottom-20" };
+        return (
+          <div
+            className={"group/pip absolute z-30 w-[26%] max-w-[320px] rounded-xl border-2 border-white/80 bg-black shadow-2xl transition-opacity duration-200 " + (pipDragPos ? "cursor-grabbing" : cls[pipCorner] + " cursor-grab") + " " + (inShare ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none")}
+            style={{ aspectRatio: "16 / 9", ...(pipDragPos ? { left: pipDragPos.left, top: pipDragPos.top, right: "auto", bottom: "auto" } : {}) }}
+            onPointerDown={(e) => { if (!inShare) return; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (er) {} pipDragRef.current = { moved: false }; }}
+            onPointerMove={(e) => { const d = pipDragRef.current; if (!d) return; d.moved = true; const wrap = wrapRef.current && wrapRef.current.getBoundingClientRect(); const box = e.currentTarget.getBoundingClientRect(); if (!wrap) return; setPipDragPos({ left: Math.max(4, Math.min(wrap.width - box.width - 4, e.clientX - wrap.left - box.width / 2)), top: Math.max(4, Math.min(wrap.height - box.height - 4, e.clientY - wrap.top - box.height / 2)) }); }}
+            onPointerUp={(e) => { const d = pipDragRef.current; pipDragRef.current = null; const wrap = wrapRef.current && wrapRef.current.getBoundingClientRect(); if (d && d.moved && wrap) { const x = e.clientX - wrap.left, y = e.clientY - wrap.top; setPipCorner((y < wrap.height / 2 ? "t" : "b") + (x < wrap.width / 2 ? "l" : "r")); } setPipDragPos(null); }}>
+            <video ref={pipRef} src={pipUrl} muted playsInline preload="auto" className="pointer-events-none h-full w-full rounded-[10px] object-cover" />
+            <span className="pointer-events-none absolute left-1/2 top-1 -translate-x-1/2 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white opacity-0 transition group-hover/pip:opacity-100">drag to move</span>
+          </div>
+        );
+      })()}
       {/* Dubbing in progress indicator */}
       {!collapsed && dubStatus === "dubbing" && (
         <div className="absolute left-3 top-3 z-40 flex items-center gap-2 rounded-lg bg-black/75 px-3 py-1.5 text-[12px] font-medium text-white"><Loader2 size={13} className="animate-spin" /> {tr("translatingAudio")} {dubLang}…</div>
