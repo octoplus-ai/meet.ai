@@ -91,6 +91,7 @@ const EXTRA = {
     subtitles: "Subtitles", off: "Off", translatingSubs: "Translating subtitles…", play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
     settings: "Settings", playbackSpeed: "Playback speed", showSpeakerNames: "Show speaker name on screen", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
     presenterScreen: "Presenter screen",
+    presenterArmed: "Shows during screen share",
     recordingWillAppear: "Recording will appear here once processed.",
     // report tabs
     notes: "Notes", transcript: "Transcript", deepDive: "Deep Dive", coachingTab: "Coaching", highlightsTab: "Highlights", chaptersTopics: "Chapters & Topics", pitchAnalysis: "Pitch Analysis",
@@ -190,6 +191,7 @@ const EXTRA = {
     subtitles: "Subtítulos", off: "Desactivado", translatingSubs: "Traduciendo subtítulos…", play: "Reproducir", trailer: "Trailer", highlights: "Destacados", recording: "Grabación",
     settings: "Ajustes", playbackSpeed: "Velocidad de reproducción", showSpeakerNames: "Mostrar nombre del hablante", showMetricsOverlay: "Mostrar métricas en pantalla", showHighlightsOverlay: "Mostrar destacados en pantalla", autoplayClick: "Reproducir al hacer clic",
     presenterScreen: "Pantalla del presentador",
+    presenterArmed: "Aparece en pantalla compartida",
     recordingWillAppear: "La grabación aparecerá acá cuando se procese.",
     notes: "Notas", transcript: "Transcripción", deepDive: "Análisis profundo", coachingTab: "Coaching", highlightsTab: "Destacados", chaptersTopics: "Capítulos y temas", pitchAnalysis: "Análisis de pitch",
     summary: "Resumen", actionItems: "Tareas", nextSteps: "Próximos pasos", keyQuestions: "Preguntas clave", standard: "estándar", short: "corto",
@@ -4651,7 +4653,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [showSettings, setShowSettings] = useState(false);
   const [showMetrics, setShowMetrics] = useState(true);
   const [showHighlights, setShowHighlights] = useState(true);
-  const [showNames, setShowNames] = useState(true); // Read.ai-style active-speaker name label on the video
+  const [showNames, setShowNames] = useState(false); // Read.ai-style active-speaker name label - OFF by default: Meet already paints each person's name onto their tile in the composited video, so our overlay is redundant (toggle kept in Settings for anyone who wants the lower-third)
   const [showPip, setShowPip] = useState(false); // training PiP: overlay the speaker's camera during a screen share
   const [pipCorner, setPipCorner] = useState("tr"); // which of the 4 corners the pip sits in (drag to move)
   const [pipDragPos, setPipDragPos] = useState(null); // live {left,top} while dragging
@@ -4675,6 +4677,8 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [subBusy, setSubBusy] = useState(false);
   const cc = subLang !== "off";
   const barRef = useRef(null), wrapRef = useRef(null), volRef = useRef(null), volDragRef = useRef(false), startedRef = useRef(false);
+  const scrubRef = useRef(null); // hidden <video> used to render the seek-bar hover thumbnail (YouTube-style)
+  const [scrub, setScrub] = useState(null); // { frac, t } while the cursor is over the seek bar
   const segsRef = useRef([]), segIdxRef = useRef(0), modeRef = useRef(null), transRef = useRef(false);
 
   // Capture a real video frame (owner only, once) and store it as the report cover, so
@@ -4779,6 +4783,18 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
 
   const toggle = () => { const v = videoRef.current; if (!v) return; if (v.paused) { if (!startedRef.current && (!mode || mode === "full")) { v.currentTime = 0; } startedRef.current = true; v.play().catch(() => {}); } else v.pause(); };
   const onBar = (e) => { const b = barRef.current, v = videoRef.current; if (!b || !v || !dur) return; const r = b.getBoundingClientRect(); clearMode(); v.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
+  // Seek-bar hover preview (YouTube-style): as the cursor moves over the bar, seek a hidden <video> to that
+  // moment and show it in a small thumbnail that follows the cursor. Guarded so we never pile up seeks.
+  const onBarHover = (e) => {
+    const b = barRef.current; if (!b || !dur) return;
+    const r = b.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const t = frac * dur;
+    setScrub({ frac, t });
+    const pv = scrubRef.current;
+    if (pv && Number.isFinite(t) && !pv.seeking && Math.abs((pv.currentTime || 0) - t) > 0.15) { try { pv.currentTime = t; } catch (err) {} }
+  };
+  const onBarLeave = () => setScrub(null);
   const fs = () => { const w = wrapRef.current; if (!w) return; try { document.fullscreenElement ? document.exitFullscreen() : w.requestFullscreen(); } catch (e) {} };
   const setD = (e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDur(d); };
   const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); };
@@ -5007,6 +5023,14 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           </div>
         );
       })()}
+      {/* Presenter-screen FEEDBACK: the pip only overlays DURING a screen share (that is its purpose). When the
+          user turns it on but is not currently scrubbed to a share, show a small "armed" pill so it never looks
+          broken - it tells them it is on and appears during a screen share. */}
+      {!collapsed && pipUrl && showPip && !inShare && (shareIntervals || []).length > 0 && (
+        <div className="pointer-events-none absolute right-3 top-14 z-30 flex items-center gap-1.5 rounded-lg bg-violet-600/90 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-lg">
+          <Users size={13} /> {tr("presenterArmed")}
+        </div>
+      )}
       {/* Dubbing in progress indicator */}
       {!collapsed && dubStatus === "dubbing" && (
         <div className="absolute left-3 top-3 z-40 flex items-center gap-2 rounded-lg bg-black/75 px-3 py-1.5 text-[12px] font-medium text-white"><Loader2 size={13} className="animate-spin" /> {tr("translatingAudio")} {dubLang}…</div>
@@ -5125,15 +5149,24 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
             <span className="text-white/85"> · {hover.label}</span>
           </div>
         )}
+        {/* Seek-bar hover preview: a mini video of the exact moment under the cursor. Always mounted (kept
+            warm) but invisible until hovering; positioned to follow the cursor, clamped away from the edges. */}
+        {!collapsed && src && dur > 0 && (
+          <div className={"pointer-events-none absolute bottom-12 z-50 -translate-x-1/2 overflow-hidden rounded-lg border border-white/20 bg-black shadow-2xl transition-opacity duration-100 " + (scrub ? "opacity-100" : "opacity-0")}
+            style={{ left: `clamp(90px, ${(scrub ? scrub.frac : 0) * 100}%, calc(100% - 90px))` }}>
+            <video ref={scrubRef} src={src} muted playsInline preload="metadata" className="block h-[96px] w-[168px] bg-black object-cover" />
+            <div className="absolute inset-x-0 bottom-0 bg-black/75 py-0.5 text-center font-mono text-[10px] font-medium text-white">{fmtClock(scrub ? scrub.t : 0)}</div>
+          </div>
+        )}
         {isTrailer ? (
           /* Trailer: one continuous clean line, no dots. */
-          <div ref={barRef} onClick={onBar} className="relative h-3 cursor-pointer">
+          <div ref={barRef} onClick={onBar} onMouseMove={onBarHover} onMouseLeave={onBarLeave} className="relative h-3 cursor-pointer">
             <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/30" />
             <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-violet-500" style={{ width: barPct + "%" }} />
           </div>
         ) : (
           /* Recording / Highlights: chapter-segmented track with colored dots ABOVE it. */
-          <div ref={barRef} onClick={onBar} className="relative h-4 cursor-pointer">
+          <div ref={barRef} onClick={onBar} onMouseMove={onBarHover} onMouseLeave={onBarLeave} className="relative h-4 cursor-pointer">
             {showHighlights && dur > 0 && markers.map((mk, i) => (
               <button key={i} onMouseEnter={() => setHover(mk)} onMouseLeave={() => setHover(null)}
                 onClick={(e) => { e.stopPropagation(); clearMode(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
