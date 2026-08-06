@@ -39,7 +39,7 @@ export async function syncRecallCalendar(userId, calendarId, { botName, sinceTs 
         method: "POST",
         body: {
           user_id: userId, title: e.title || (e.raw && e.raw.summary) || "Meeting", source: "Recall", meeting_url: e.meeting_url,
-          bot_id: botId, status: "scheduled", start_time: e.start_time || null, calendar_event_id: gid,
+          bot_id: botId, status: "scheduled", start_time: e.start_time || null, end_time: e.end_time || null, calendar_event_id: gid,
         },
       });
     } catch (err) { if (/23505|duplicate/i.test(String(err.message || ""))) continue; throw err; } // race lost → another path already inserted it

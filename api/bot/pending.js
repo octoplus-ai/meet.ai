@@ -10,21 +10,40 @@ export default async function handler(req, res) {
     const given = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || req.headers["x-bot-ingest-secret"] || "";
     if (!SECRET || given !== SECRET) return res.status(401).json({ error: "unauthorized" });
 
-    const from = new Date(Date.now() - 60 * 60000).toISOString(); // cover meetings that started up to 1h ago (still ongoing)
-    const to = new Date(Date.now() + 7 * 86400000).toISOString();
-    const staleJoin = Date.now() - 11 * 60000; // a "joining" row older than this = the worker died (join-wait is 10 min)
-    const giveUp = Date.now() - 20 * 60000;    // a meeting >20 min past its start never got held - stop re-arming it
+    // ATTENTIVE FOR THE WHOLE MEETING WINDOW. A bot that arrives before the humans (empty room) is never
+    // admitted, times out after the 10-min lobby wait, and marks the meeting "error" - and this feed used to
+    // exclude "error" AND stop re-arming 20 min past the start. So if you joined even slightly late, the bot
+    // had already given up FOR GOOD and no bot ever came. Now we keep arming a bot across the meeting's real
+    // window [start, end] (end_time when known, else a 2h default), so whenever a human shows up - however
+    // late - a bot is (or is about to be) waiting in the lobby to be admitted.
+    const now = Date.now();
+    const DEFAULT_WINDOW_MS = 120 * 60000; // no end_time on the row -> assume a meeting up to 2h long
+    const GRACE_MS = 5 * 60000;            // keep attending a few minutes past the scheduled end (meetings run long)
+    const from = new Date(now - 4 * 60 * 60000).toISOString(); // 4h back: still catch a long meeting inside its window
+    const to = new Date(now + 7 * 86400000).toISOString();
+    const staleJoin = now - 11 * 60000;    // a "joining" row not synced in 11 min = the lobby worker died (10-min wait, no heartbeat in the lobby)
+    const errCooldown = now - 90 * 1000;   // re-arm a timed-out meeting ~90s after it failed -> near-continuous lobby coverage
+    // Retry ONLY admission/inactivity timeouts (empty room, host just late). NOT a denial or a redirect -
+    // if the host actively rejected the bot, or the link is wrong, re-knocking every 90s would be spam.
+    const RETRYABLE_ERR = /NOT_ADMITTED_TIMEOUT|REQUEST_TIMEOUT|HARD_TIMEOUT/i;
     const raw = await sb(
-      `meetings?capture_mode=eq.inhouse_bot&status=in.(scheduled,joining)&start_time=gte.${encodeURIComponent(from)}&start_time=lte.${encodeURIComponent(to)}` +
-      `&select=id,user_id,meeting_url,start_time,title,bot_id,status,status_synced_at&order=start_time.asc&limit=100`
+      `meetings?capture_mode=eq.inhouse_bot&status=in.(scheduled,joining,error)&start_time=gte.${encodeURIComponent(from)}&start_time=lte.${encodeURIComponent(to)}` +
+      `&select=id,user_id,meeting_url,start_time,end_time,title,bot_id,status,status_synced_at,error&order=start_time.asc&limit=100`
     );
-    // Re-arm scheduled meetings, plus "joining" meetings whose worker DIED (stale) so a failed initial
-    // arm POST is self-healed. A fresh/ongoing "joining" (worker still in the lobby) is skipped to avoid
-    // booting a duplicate bot. NEVER re-arm a joining row whose start is >20 min past - that meeting was
-    // never held (or was rescheduled and abandoned); re-arming it looped a bot into an empty room forever.
-    const rows = (raw || []).filter((r) => r.status === "scheduled" ||
-      (r.status === "joining" && (r.start_time ? new Date(r.start_time).getTime() > giveUp : true)
-        && (!r.status_synced_at || new Date(r.status_synced_at).getTime() < staleJoin)));
+    const inWindow = (r) => {
+      const startMs = r.start_time ? new Date(r.start_time).getTime() : now;
+      let endMs = r.end_time ? new Date(r.end_time).getTime() : 0;
+      if (!(endMs > startMs)) endMs = startMs + DEFAULT_WINDOW_MS; // missing OR stale end (e.g. a reschedule left the old end behind) -> default window
+      return now < endMs + GRACE_MS; // future meetings pass (end is ahead); long-past ones are dropped
+    };
+    const rows = (raw || []).filter((r) => {
+      if (!inWindow(r)) return false; // the whole meeting window has passed -> stop attending (never loop a bot into a dead room)
+      const syncMs = r.status_synced_at ? new Date(r.status_synced_at).getTime() : 0;
+      if (r.status === "scheduled") return true; // future + ongoing scheduled meetings (arms/keeps the boot timer)
+      if (r.status === "joining") return !r.status_synced_at || syncMs < staleJoin; // worker died in the lobby -> re-arm (a live, waiting worker stays fresh and is skipped)
+      if (r.status === "error") return RETRYABLE_ERR.test(r.error || "") && syncMs < errCooldown; // never admitted (arrived to an empty room) -> keep trying within the window
+      return false;
+    });
 
     // SAFETY SWEEP: a meeting stuck "in_call"/"recording" whose worker stopped heartbeating (>15 min;
     // the worker re-posts "recording" every 5 min while healthy) either died mid-recording or missed
