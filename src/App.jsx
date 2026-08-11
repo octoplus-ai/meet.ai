@@ -4934,8 +4934,11 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       try {
         const rate = mv.playbackRate || 1;
         const drift = (pv.currentTime || 0) - (mv.currentTime || 0);
-        if (Math.abs(drift) > 0.25) { pv.currentTime = mv.currentTime; pv.playbackRate = rate; } // hard snap (e.g. after a seek)
-        else if (Math.abs(drift) > 0.04) { pv.playbackRate = rate * (drift > 0 ? 0.95 : 1.05); } // ease back into lock
+        // The PiP is MUTED, so we can correct hard without any audio artifact. Snap sooner (0.12s) and, for a
+        // residual drift, nudge the rate by ±25% (was a weak ±5% that took ~4s to close a 0.2s gap = the "lots
+        // of delay" the user saw). This keeps the presenter cam within ~0.1s of the main video.
+        if (Math.abs(drift) > 0.12) { pv.currentTime = mv.currentTime; pv.playbackRate = rate; } // hard snap (after a seek / big drift)
+        else if (Math.abs(drift) > 0.02) { pv.playbackRate = rate * (drift > 0 ? 0.75 : 1.25); } // strong ease back into lock
         else if (pv.playbackRate !== rate) { pv.playbackRate = rate; }
         if (mv.paused && !pv.paused) pv.pause();
         else if (!mv.paused && pv.paused) { const p = pv.play(); if (p && p.catch) p.catch(() => {}); }
@@ -4944,8 +4947,12 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
     sync();
     const ev = ["timeupdate", "seeked", "play", "pause", "ratechange"];
     ev.forEach((n) => mv.addEventListener(n, sync));
-    const id = setInterval(sync, 250);
-    return () => { clearInterval(id); ev.forEach((n) => mv.removeEventListener(n, sync)); };
+    // Prefer per-rendered-frame sync (requestVideoFrameCallback) for frame-tight lock; fall back to a fast poll.
+    let rafId = 0, useRvfc = typeof mv.requestVideoFrameCallback === "function";
+    const rvfc = () => { sync(); rafId = mv.requestVideoFrameCallback(rvfc); };
+    if (useRvfc) rafId = mv.requestVideoFrameCallback(rvfc);
+    const id = setInterval(sync, useRvfc ? 250 : 100);
+    return () => { clearInterval(id); if (useRvfc && rafId) { try { mv.cancelVideoFrameCallback(rafId); } catch (e) {} } ev.forEach((n) => mv.removeEventListener(n, sync)); };
   }, [showPip, pipUrl, playing, videoRef]);
 
   // "started" = the user actually pressed play (NOT just the poster frame seeked to coverAt).
