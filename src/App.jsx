@@ -4269,7 +4269,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
   const [sec, setSec] = useState(0);
   const [tg, setTg] = useState({
     autoJoinCal: true, autoJoinUnsched: true, autoNotes: true, transcription: true, playback: true, affective: true,
-    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false, pipDuringShare: true,
+    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false, pipDuringShare: true, pipCorner: "br",
     daily: false, topicReadouts: true, weeklyRecaps: true, recs: true, productUpdates: true, accountInfo: true,
     chatHistory: true, smartLinks: true, availHours: true, minNotice: true, domainDiscovery: true, cxp: false,
   });
@@ -4281,8 +4281,10 @@ function AccountSettings({ onBack, lang, setLang, user }) {
     setTg((p) => ({ ...p, [k]: v }));
     if (PREF_MAP[k]) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sharing_prefs: { [PREF_MAP[k]]: v } }) }).then(() => toast("Saved")).catch(() => {}); }
   };
+  // Which corner the burned-in presenter cam sits in during a screen share (persisted; read by the bot at record time).
+  const setPipCorner = (c) => { setTg((p) => ({ ...p, pipCorner: c })); fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sharing_prefs: { pipCorner: c } }) }).then(() => toast("Saved")).catch(() => {}); };
   // Load persisted sharing preferences on mount.
-  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar, pipDuringShare: p.pipDuringShare !== false })); }).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar, pipDuringShare: p.pipDuringShare !== false, pipCorner: /^(tl|tr|bl|br)$/.test(p.pipCorner || "") ? p.pipCorner : "br" })); }).catch(() => {}); }, []);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -4411,7 +4413,19 @@ function AccountSettings({ onBack, lang, setLang, user }) {
               </div>
               <ToggleRow title="Audio & Video Playback" desc="Enable playback for meeting reports you own. Only available with an Enterprise or Enterprise+ plan." on={tg.playback} onChange={(v) => set1("playback", v)} />
               <ToggleRow title="Affective metrics" desc="Include metrics that calculate engagement, sentiment, charisma, and bias in reports." on={tg.affective} onChange={(v) => set1("affective", v)} />
-              <ToggleRow title="Capture speaker during screen share" desc="On for every meeting: records the speaker's camera as a small separate stream during screen shares, so the player gets a button to show/hide the person over the shared screen (great for trainings). Turn this off to skip that extra capture entirely. Applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
+              <ToggleRow title="Show presenter during screen share" desc="On for every meeting: the active speaker's camera is composited straight into the recording (a small corner tile) whenever someone shares their screen - perfectly in sync, great for trainings. Turn it off for a clean full-screen share. Applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
+              {tg.pipDuringShare && (
+                <div className="ml-1 mt-1 flex items-center gap-3 pl-1">
+                  <span className="text-[13px] text-slate-500">Presenter corner</span>
+                  <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" style={{ width: 52, height: 36 }} title="Where the presenter camera sits during a screen share">
+                    {["tl", "tr", "bl", "br"].map((c) => (
+                      <button key={c} onClick={() => setPipCorner(c)} aria-label={c}
+                        className={"rounded-sm transition " + (tg.pipCorner === c ? "bg-violet-600" : "bg-slate-300 hover:bg-slate-400")} />
+                    ))}
+                  </div>
+                  <span className="text-[12px] font-medium text-slate-400">{{ tl: "Top left", tr: "Top right", bl: "Bottom left", br: "Bottom right" }[tg.pipCorner] || "Bottom right"}</span>
+                </div>
+              )}
             </>)}
 
             {sec === 4 && (<>
