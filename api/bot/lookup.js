@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     const q = (req.query && req.query.q) || "";
     const filter = q ? `&title=ilike.*${enc(q)}*` : "";
     const rows = await sb(
-      `meetings?capture_mode=eq.inhouse_bot${filter}&select=id,title,status,start_time,end_time,error,recording_url,status_synced_at&order=start_time.desc&limit=15`
+      `meetings?capture_mode=eq.inhouse_bot${filter}&select=id,user_id,title,status,start_time,end_time,error,recording_url,status_synced_at&order=start_time.desc&limit=15`
     );
     const ids = (rows || []).map((r) => r.id);
     let reportIds = new Set();
@@ -25,9 +25,9 @@ export default async function handler(req, res) {
     }
     res.status(200).json({
       meetings: (rows || []).map((r) => ({
-        id: r.id, title: r.title, status: r.status, start_time: r.start_time, end_time: r.end_time,
+        id: r.id, user_id: r.user_id, title: r.title, status: r.status, start_time: r.start_time, end_time: r.end_time,
         error: r.error || null, hasReport: reportIds.has(r.id), hasRecordingUrl: !!r.recording_url,
-        status_synced_at: r.status_synced_at,
+        recording_url: r.recording_url || null, status_synced_at: r.status_synced_at,
       })),
     });
   } catch (e) {
