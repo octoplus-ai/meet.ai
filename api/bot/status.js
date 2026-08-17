@@ -25,6 +25,9 @@ export default async function handler(req, res) {
 
     const patch = { status, status_synced_at: new Date().toISOString() };
     if (status === "error") patch.error = String(body.error || "bot error").slice(0, 300);
+    // Link the recording AS SOON AS the worker uploads it (mid-delivery), not only at the final ingest. If the
+    // worker then dies during transcription/analysis, the video is still recoverable instead of silently lost.
+    if (typeof body.recordingUrl === "string" && /^https?:\/\//.test(body.recordingUrl)) patch.recording_url = body.recordingUrl;
     await sb(`meetings?id=eq.${enc(m.id)}`, { method: "PATCH", body: patch });
     res.status(200).json({ ok: true, status });
   } catch (e) {
