@@ -4413,19 +4413,7 @@ function AccountSettings({ onBack, lang, setLang, user }) {
               </div>
               <ToggleRow title="Audio & Video Playback" desc="Enable playback for meeting reports you own. Only available with an Enterprise or Enterprise+ plan." on={tg.playback} onChange={(v) => set1("playback", v)} />
               <ToggleRow title="Affective metrics" desc="Include metrics that calculate engagement, sentiment, charisma, and bias in reports." on={tg.affective} onChange={(v) => set1("affective", v)} />
-              <ToggleRow title="Show presenter during screen share" desc="On for every meeting: the active speaker's camera is composited straight into the recording (a small corner tile) whenever someone shares their screen - perfectly in sync, great for trainings. Turn it off for a clean full-screen share. Applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
-              {tg.pipDuringShare && (
-                <div className="ml-1 mt-1 flex items-center gap-3 pl-1">
-                  <span className="text-[13px] text-slate-500">Presenter corner</span>
-                  <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" style={{ width: 52, height: 36 }} title="Where the presenter camera sits during a screen share">
-                    {["tl", "tr", "bl", "br"].map((c) => (
-                      <button key={c} onClick={() => setPipCorner(c)} aria-label={c}
-                        className={"rounded-sm transition " + (tg.pipCorner === c ? "bg-violet-600" : "bg-slate-300 hover:bg-slate-400")} />
-                    ))}
-                  </div>
-                  <span className="text-[12px] font-medium text-slate-400">{{ tl: "Top left", tr: "Top right", bl: "Bottom left", br: "Bottom right" }[tg.pipCorner] || "Bottom right"}</span>
-                </div>
-              )}
+              <ToggleRow title="Show presenter during screen share" desc="On for every meeting: records the active speaker's camera as a separate track whenever someone shares their screen. In the player you get a button to show or hide the presenter and can drag it to any corner - it stays in sync with the recording, great for trainings. Turn it off for a clean full-screen share. Applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
             </>)}
 
             {sec === 4 && (<>
