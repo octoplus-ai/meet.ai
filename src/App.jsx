@@ -4668,7 +4668,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [showMetrics, setShowMetrics] = useState(true);
   const [showHighlights, setShowHighlights] = useState(true);
   const [showNames, setShowNames] = useState(false); // Read.ai-style active-speaker name label - OFF by default: Meet already paints each person's name onto their tile in the composited video, so our overlay is redundant (toggle kept in Settings for anyone who wants the lower-third)
-  const [showPip, setShowPip] = useState(false); // training PiP: overlay the speaker's camera during a screen share
+  const [showPip, setShowPip] = useState(true); // training PiP: overlay the speaker's camera during a screen share - ON by default (user wants the presenter to show automatically); button hides it, drag moves it
   const [pipCorner, setPipCorner] = useState("tr"); // which of the 4 corners the pip sits in (drag to move)
   const [pipDragPos, setPipDragPos] = useState(null); // live {left,top} while dragging
   const pipRef = useRef(null);
