@@ -5044,14 +5044,9 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           </div>
         );
       })()}
-      {/* Presenter-screen FEEDBACK: the pip only overlays DURING a screen share (that is its purpose). When the
-          user turns it on but is not currently scrubbed to a share, show a small "armed" pill so it never looks
-          broken - it tells them it is on and appears during a screen share. */}
-      {!collapsed && pipUrl && showPip && !inShare && (shareIntervals || []).length > 0 && (
-        <div className="pointer-events-none absolute right-3 top-14 z-30 flex items-center gap-1.5 rounded-lg bg-violet-600/90 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-lg">
-          <Users size={13} /> {tr("presenterArmed")}
-        </div>
-      )}
+      {/* The presenter pip shows ONLY in 2 cases: (1) it is activated (the button, ON by default), AND (2) the
+          playback is inside a screen share. No "armed" indicator outside a share - nothing presenter-related shows
+          when there is no share, so the overlay never appears in a third, unexpected condition. */}
       {/* Dubbing in progress indicator */}
       {!collapsed && dubStatus === "dubbing" && (
         <div className="absolute left-3 top-3 z-40 flex items-center gap-2 rounded-lg bg-black/75 px-3 py-1.5 text-[12px] font-medium text-white"><Loader2 size={13} className="animate-spin" /> {tr("translatingAudio")} {dubLang}…</div>
