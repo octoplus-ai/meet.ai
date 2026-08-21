@@ -138,7 +138,7 @@ const EXTRA = {
     allFoldersOpt: "All folders", allTypes2: "All types", completed2: "Completed",
     inProgress: "In progress", anytimeOpt: "Anytime", todayOpt: "Today",
     thisWeekOpt: "This week", thisMonthOpt: "This month", allReportsOpt: "All Reports",
-    myReportsOpt: "My reports", ownedOrInvited: "Owned or invited to", recordedByOctomeet: "Recorded by OctoMeet", liveRecordingBanner: "OctoMeet is recording “{title}”{more} - the AI report will appear here automatically.",
+    myReportsOpt: "My reports", ownedOrInvited: "Owned or invited to", recordedByOctomeet: "Recorded by OctoMeet", liveRecordingBanner: "OctoMeet is recording “{title}”{more} - the AI report will appear here automatically.", liveRecMore: " +{n} more",
     generatingReportsBanner: "Generating {n} AI report{s} from your meeting{s}… this updates automatically.", refreshBtn: "Refresh", newBadge: "NEW!",
     crmBannerMsg: "Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.", addHubspot: "Add Hubspot", addSalesforce: "Add Salesforce",
     dismiss: "Dismiss", clearFilters: "Clear filters", deselectAll: "Deselect all",
@@ -231,7 +231,7 @@ const EXTRA = {
     allFoldersOpt: "Todas las carpetas", allTypes2: "Todos los tipos", completed2: "Completado",
     inProgress: "En progreso", anytimeOpt: "Cualquier momento", todayOpt: "Hoy",
     thisWeekOpt: "Esta semana", thisMonthOpt: "Este mes", allReportsOpt: "Todos los reportes",
-    myReportsOpt: "Mis reportes", ownedOrInvited: "Propios o invitado", recordedByOctomeet: "Grabado por OctoMeet", liveRecordingBanner: "OctoMeet está grabando \"{title}\" +{n} más - el reporte con IA aparecerá acá automáticamente.",
+    myReportsOpt: "Mis reportes", ownedOrInvited: "Propios o invitado", recordedByOctomeet: "Grabado por OctoMeet", liveRecordingBanner: "OctoMeet está grabando \"{title}\"{more} - el reporte con IA aparecerá acá automáticamente.", liveRecMore: " +{n} más",
     generatingReportsBanner: "Generando {n} reportes con IA de tus reuniones… esto se actualiza automáticamente.", refreshBtn: "Actualizar", newBadge: "NUEVO!",
     crmBannerMsg: "Conectá tu CRM para recibir recomendaciones inteligentes sobre cuándo avanzar tus oportunidades a la siguiente etapa.", addHubspot: "Agregar HubSpot", addSalesforce: "Agregar Salesforce",
     dismiss: "Descartar", clearFilters: "Limpiar filtros", deselectAll: "Deseleccionar todo",
@@ -2199,7 +2199,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 ) : <Loader2 size={15} className="animate-spin text-violet-600" />}
                 <span className="flex-1 text-sm font-medium text-slate-700">
                   {live.length
-                    ? tf("liveRecordingBanner", { title: live[0].title, more: live.length > 1 ? ` +${live.length - 1} more` : "" })
+                    ? tf("liveRecordingBanner", { title: live[0].title, more: live.length > 1 ? tf("liveRecMore", { n: live.length - 1 }) : "" })
                     : tf("generatingReportsBanner", { n: proc.length, s: proc.length > 1 ? "s" : "" })}
                 </span>
                 <button onClick={() => window.location.reload()} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> {tr("refreshBtn")}</button>
