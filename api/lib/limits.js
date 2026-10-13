@@ -5,6 +5,7 @@
 import crypto from "node:crypto";
 import { sb } from "./supa.js";
 import { PLANS, planKey } from "./plan.js";
+import { effectivePlanForUser } from "./internal-plan.js";
 
 const enc = encodeURIComponent;
 const monthKey = () => new Date().toISOString().slice(0, 7); // "YYYY-MM"
@@ -36,8 +37,8 @@ export async function saveArtifact(userId, kind, akey, payload, meta) {
 // blocked and each paid tier gets its own allowance. Reads plan + usage in ONE query.
 export async function consumeQuota(userId, kind) {
   try {
-    const u = (await sb(`app_users?id=eq.${enc(userId)}&select=plan,usage`))[0] || {};
-    const cap = (PLANS[planKey(u.plan)] || PLANS.free)[kind];
+    const u = (await sb(`app_users?id=eq.${enc(userId)}&select=id,email,plan,usage`))[0] || {};
+    const cap = (PLANS[planKey(effectivePlanForUser(u))] || PLANS.free)[kind];
     if (cap == null) return { ok: true };        // unknown kind -> not a metered generation
     if (cap === Infinity) return { ok: true, cap }; // unlimited tier -> never track/block
     const usage = (u.usage && typeof u.usage === "object") ? u.usage : {};

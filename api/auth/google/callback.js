@@ -84,19 +84,27 @@ export default async function handler(req, res) {
       headers: { Authorization: `Bearer ${tok.access_token}` },
     }).then((r) => r.json());
 
+    if (ui.email_verified !== true) throw new Error("Google email is not verified");
     console.log("OAuth login attempt for:", ui.email);
     if (!ALLOWLIST.includes((ui.email || "").toLowerCase())) {
       res.writeHead(302, { Location: "/?auth_error=" + encodeURIComponent(`Acceso limitado al usuario de prueba. Entraste con ${ui.email || "?"}; usá santiago@octoplusteam.com.`) });
       return res.end();
     }
 
-    // Upsert the user (free plan).
-    const users = await sb("app_users?on_conflict=email", {
+    // Only new accounts start free. Signing in must not reset an existing plan.
+    await sb("app_users?on_conflict=email", {
       method: "POST",
-      prefer: "resolution=merge-duplicates,return=representation",
+      prefer: "resolution=ignore-duplicates",
       body: { email: ui.email.toLowerCase(), name: ui.name, picture: ui.picture, plan: "free" },
     });
+    // Refresh the Google profile without touching billing or quota fields.
+    const users = await sb(`app_users?email=eq.${encodeURIComponent(ui.email.toLowerCase())}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: { name: ui.name, picture: ui.picture },
+    });
     const user = users[0];
+    if (!user?.id) throw new Error("Could not load the signed-in user");
 
     // Store/refresh the OAuth tokens. Only write refresh_token when Google actually returns
     // one - a re-consent that omits it must NOT null out the previously stored refresh_token.

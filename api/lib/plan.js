@@ -4,6 +4,7 @@
 // place. Design rule: gates FAIL OPEN (never block on a lookup error) - a rare over-limit is far
 // cheaper than blocking a paying customer mid-meeting.
 import { sb } from "./supa.js";
+import { effectivePlanForUser } from "./internal-plan.js";
 
 const enc = encodeURIComponent;
 const INF = Infinity;
@@ -35,8 +36,8 @@ export function hasFeature(plan, feat) { return !!limitsForPlan(plan).features[f
 // (treat null as "don't gate"). A successful lookup with no plan yields "free".
 export async function getPlan(userId) {
   try {
-    const u = await sb(`app_users?id=eq.${enc(userId)}&select=plan`);
-    return planKey(u && u[0] ? u[0].plan : "free");
+    const u = await sb(`app_users?id=eq.${enc(userId)}&select=id,email,plan`);
+    return planKey(u && u[0] ? effectivePlanForUser(u[0]) : "free");
   } catch (e) { return null; }
 }
 

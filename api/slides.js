@@ -128,6 +128,10 @@ export default async function handler(req, res) {
       const a = await getArtifact(acct, kind, akey);
       if (a && a.payload && a.payload.deck) return res.status(200).json({ deck: a.payload.deck, genImages: a.payload.genImages || [], themeId: (a.meta && a.meta.themeId) || themeId, meta: a.meta || {}, cached: true });
     }
+    // Reading a saved deck via a share link does not grant paid generation access.
+    const ownsAll = ownerId && mtgs.every((meeting) => meeting.user_id === ownerId)
+      && (!Array.isArray(body.meetingIds) || body.meetingIds.every((id) => mtgs.some((meeting) => meeting.id === id)));
+    if (!ownsAll) return res.status(403).json({ error: "owner_required" });
     if (acct) {
       const q = await consumeQuota(acct, kind);
       if (!q.ok) return res.status(429).json({ error: "limit", kind });

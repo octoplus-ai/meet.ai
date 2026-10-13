@@ -1,5 +1,6 @@
 // Cookie + session helpers (no deps).
 import { sb } from "./supa.js";
+import { effectivePlanForUser } from "./internal-plan.js";
 
 export function parseCookies(req) {
   const h = req.headers.cookie || "";
@@ -22,5 +23,5 @@ export async function currentUser(req) {
   const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
   if (!s.length) return null;
   const u = await sb(`app_users?id=eq.${s[0].user_id}&select=*`);
-  return u[0] || null;
+  return u[0] ? { ...u[0], plan: effectivePlanForUser(u[0]) } : null;
 }

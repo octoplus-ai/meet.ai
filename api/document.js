@@ -91,6 +91,11 @@ export default async function handler(req, res) {
       const a = await getArtifact(acct, "doc", akey);
       if (a) return res.status(200).json({ doc: a.payload, meta: a.meta || {}, cached: true });
     }
+    // Shared links may read an existing artifact, never spend the owner's allowance.
+    // A signed-in collaborator is not necessarily the owner of the shared meeting.
+    const ownsAll = ownerId && mtgs.every((meeting) => meeting.user_id === ownerId)
+      && (!Array.isArray(body.meetingIds) || body.meetingIds.every((id) => mtgs.some((meeting) => meeting.id === id)));
+    if (!ownsAll) return res.status(403).json({ error: "owner_required" });
     if (acct) {
       const q = await consumeQuota(acct, "doc");
       if (!q.ok) return res.status(429).json({ error: "limit", kind: "doc" });
