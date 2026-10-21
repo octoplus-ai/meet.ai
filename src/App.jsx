@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, useId } from "react";
 import {
   Users, Sparkles, ClipboardList, FolderPlus, Folder, Calendar, Star,
   Presentation, Lightbulb, ShieldCheck, LayoutGrid, PlusCircle, Link2, Globe,
@@ -14,7 +14,6 @@ import {
 import { THEME_LIST, getTheme, customTheme, coerceDeck, deckHTML } from "./slides/deck.js";
 import { exportPptx } from "./slides/pptx.js";
 import { EXTRA_LANGS } from "./i18n-extra.js";
-import SpeakerOverlay from "./media/SpeakerOverlay.jsx";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
@@ -91,8 +90,6 @@ const EXTRA = {
     audioTranslation: "Audio translation", translatingAudio: "Translating audio to", dubKeepsVoices: "AI voices, keeps each speaker", original: "Original",
     subtitles: "Subtitles", off: "Off", translatingSubs: "Translating subtitles…", play: "Play", trailer: "Trailer", highlights: "Highlights", recording: "Recording",
     settings: "Settings", playbackSpeed: "Playback speed", showSpeakerNames: "Show speaker name on screen", showMetricsOverlay: "Show metrics on screen", showHighlightsOverlay: "Show highlights on screen", autoplayClick: "Auto-play video on click",
-    presenterScreen: "Presenter screen",
-    presenterArmed: "Shows during screen share",
     recordingWillAppear: "Recording will appear here once processed.",
     // report tabs
     notes: "Notes", transcript: "Transcript", deepDive: "Deep Dive", coachingTab: "Coaching", highlightsTab: "Highlights", chaptersTopics: "Chapters & Topics", pitchAnalysis: "Pitch Analysis",
@@ -191,8 +188,6 @@ const EXTRA = {
     audioTranslation: "Traducción de audio", translatingAudio: "Traduciendo el audio a", dubKeepsVoices: "Voces con IA, mantiene cada orador", original: "Original",
     subtitles: "Subtítulos", off: "Desactivado", translatingSubs: "Traduciendo subtítulos…", play: "Reproducir", trailer: "Trailer", highlights: "Destacados", recording: "Grabación",
     settings: "Ajustes", playbackSpeed: "Velocidad de reproducción", showSpeakerNames: "Mostrar nombre del hablante", showMetricsOverlay: "Mostrar métricas en pantalla", showHighlightsOverlay: "Mostrar destacados en pantalla", autoplayClick: "Reproducir al hacer clic",
-    presenterScreen: "Pantalla del presentador",
-    presenterArmed: "Aparece en pantalla compartida",
     recordingWillAppear: "La grabación aparecerá acá cuando se procese.",
     notes: "Notas", transcript: "Transcripción", deepDive: "Análisis profundo", coachingTab: "Coaching", highlightsTab: "Destacados", chaptersTopics: "Capítulos y temas", pitchAnalysis: "Análisis de pitch",
     summary: "Resumen", actionItems: "Tareas", nextSteps: "Próximos pasos", keyQuestions: "Preguntas clave", standard: "estándar", short: "corto",
@@ -733,7 +728,6 @@ function adaptReal(m) {
     highlights: hl,
     coverAt,
     coaching: r.coaching || null,
-    presenterMedia: { ...(r.coaching || {}), ...(m.stage_info?.presenterMedia || {}) },
     pitchAnalysis: (r.coaching && r.coaching.pitch) || null,
     nextSteps: r.next_steps || [],
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
@@ -4271,22 +4265,20 @@ function AccountSettings({ onBack, lang, setLang, user }) {
   const [sec, setSec] = useState(0);
   const [tg, setTg] = useState({
     autoJoinCal: true, autoJoinUnsched: true, autoNotes: true, transcription: true, playback: true, affective: true,
-    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false, pipDuringShare: true, pipCorner: "br",
+    internalAccess: true, externalAccess: false, oneClick: true, mtgReports: true, preReads: false, updateCal: false, thumb: true, liveDash: false,
     daily: false, topicReadouts: true, weeklyRecaps: true, recs: true, productUpdates: true, accountInfo: true,
     chatHistory: true, smartLinks: true, availHours: true, minNotice: true, domainDiscovery: true, cxp: false,
   });
   const [whichEvents, setWhichEvents] = useState("all");
   const [whoInvited, setWhoInvited] = useState("any");
   // Report Sharing toggles that persist server-side (Report Distribution + access).
-  const PREF_MAP = { mtgReports: "autoRecap", internalAccess: "internalAccess", externalAccess: "externalAccess", oneClick: "oneClick", updateCal: "updateCalendar", pipDuringShare: "pipDuringShare" };
+  const PREF_MAP = { mtgReports: "autoRecap", internalAccess: "internalAccess", externalAccess: "externalAccess", oneClick: "oneClick", updateCal: "updateCalendar" };
   const set1 = (k, v) => {
     setTg((p) => ({ ...p, [k]: v }));
     if (PREF_MAP[k]) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sharing_prefs: { [PREF_MAP[k]]: v } }) }).then(() => toast("Saved")).catch(() => {}); }
   };
-  // Which corner the burned-in presenter cam sits in during a screen share (persisted; read by the bot at record time).
-  const setPipCorner = (c) => { setTg((p) => ({ ...p, pipCorner: c })); fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sharing_prefs: { pipCorner: c } }) }).then(() => toast("Saved")).catch(() => {}); };
   // Load persisted sharing preferences on mount.
-  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar, pipDuringShare: p.pipDuringShare !== false, pipCorner: /^(tl|tr|bl|br)$/.test(p.pipCorner || "") ? p.pipCorner : "br" })); }).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/settings").then((r) => (r.ok ? r.json() : null)).then((d) => { const p = d && d.sharing_prefs; if (p) setTg((t) => ({ ...t, mtgReports: p.autoRecap !== false, internalAccess: p.internalAccess !== false, externalAccess: !!p.externalAccess, oneClick: p.oneClick !== false, updateCal: !!p.updateCalendar })); }).catch(() => {}); }, []);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -4415,19 +4407,6 @@ function AccountSettings({ onBack, lang, setLang, user }) {
               </div>
               <ToggleRow title="Audio & Video Playback" desc="Enable playback for meeting reports you own. Only available with an Enterprise or Enterprise+ plan." on={tg.playback} onChange={(v) => set1("playback", v)} />
               <ToggleRow title="Affective metrics" desc="Include metrics that calculate engagement, sentiment, charisma, and bias in reports." on={tg.affective} onChange={(v) => set1("affective", v)} />
-              <ToggleRow title="Show presenter during screen share" desc="On for every meeting: the active speaker's camera is composited straight into the recording (a small corner tile) whenever someone shares their screen - perfectly in sync, and it transitions as the speaker changes. Great for trainings. Turn it off for a clean full-screen share. Applies to new recordings." on={tg.pipDuringShare} onChange={(v) => set1("pipDuringShare", v)} />
-              {tg.pipDuringShare && (
-                <div className="ml-1 mt-1 flex items-center gap-3 pl-1">
-                  <span className="text-[13px] text-slate-500">Presenter corner</span>
-                  <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" style={{ width: 52, height: 36 }} title="Where the presenter camera sits during a screen share">
-                    {["tl", "tr", "bl", "br"].map((c) => (
-                      <button key={c} onClick={() => setPipCorner(c)} aria-label={c}
-                        className={"rounded-sm transition " + (tg.pipCorner === c ? "bg-violet-600" : "bg-slate-300 hover:bg-slate-400")} />
-                    ))}
-                  </div>
-                  <span className="text-[12px] font-medium text-slate-400">{{ tl: "Top left", tr: "Top right", bl: "Bottom left", br: "Bottom right" }[tg.pipCorner] || "Bottom right"}</span>
-                </div>
-              )}
             </>)}
 
             {sec === 4 && (<>
@@ -4654,12 +4633,13 @@ function splitPhrases(text) {
   return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {}, speakerTimeline = [], presenterMedia = {} }) {
+export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {}, speakerTimeline = [] }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [everPlayed, setEverPlayed] = useState(false); // until the user hits play, show 0:00 (poster sits at the cover frame)
   const [hover, setHover] = useState(null);
+  const markerTooltipId = useId();
   const [hovering, setHovering] = useState(false);
   const [mode, setMode] = useState(null);
   const [fading, setFading] = useState(false);
@@ -4797,7 +4777,10 @@ export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles
   // Seek-bar hover preview (YouTube-style): as the cursor moves over the bar, seek a hidden <video> to that
   // moment and show it in a small thumbnail that follows the cursor. Guarded so we never pile up seeks.
   const onBarHover = (e) => {
+    // Movement on a marker bubbles here too: show its text, never a video preview.
+    if (e.target.closest("[data-timeline-marker]")) { setScrub(null); return; }
     const b = barRef.current; if (!b || !dur) return;
+    setHover(null);
     const r = b.getBoundingClientRect();
     const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
     const t = frac * dur;
@@ -4806,6 +4789,7 @@ export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles
     if (pv && Number.isFinite(t) && !pv.seeking && Math.abs((pv.currentTime || 0) - t) > 0.15) { try { pv.currentTime = t; } catch (err) {} }
   };
   const onBarLeave = () => setScrub(null);
+  const showMarker = (mk) => { setScrub(null); setHover(mk); };
   const fs = () => { const w = wrapRef.current; if (!w) return; try { document.fullscreenElement ? document.exitFullscreen() : w.requestFullscreen(); } catch (e) {} };
   const setD = (e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDur(d); };
   const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); };
@@ -4983,8 +4967,6 @@ export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles
           <ChevronsDownUp size={18} />
         </button>
       )}
-      <SpeakerOverlay mainRef={videoRef} containerRef={wrapRef} collapsed={collapsed} time={cur}
-        meetingId={meetingId} media={presenterMedia} language={CUR_LANG} />
       {/* Dubbing in progress indicator */}
       {!collapsed && dubStatus === "dubbing" && (
         <div className="absolute left-3 top-3 z-40 flex items-center gap-2 rounded-lg bg-black/75 px-3 py-1.5 text-[12px] font-medium text-white"><Loader2 size={13} className="animate-spin" /> {tr("translatingAudio")} {dubLang}…</div>
@@ -5094,11 +5076,11 @@ export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles
             </div>
           </>
         )}
-        {showMetrics && hover && dur > 0 && !isTrailer && (
+        {showHighlights && hover && dur > 0 && !isTrailer && (
           // z-50 so it sits above the controls/menus; clamp the center to >=130px (half the max
           // width) from each edge so a near-left/right marker's tooltip is never clipped by the
           // player's overflow-hidden wrapper.
-          <div className="pointer-events-none absolute bottom-12 z-50 max-w-[260px] -translate-x-1/2 rounded-lg bg-slate-900/95 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg" style={{ left: `clamp(130px, ${(hover.at / dur) * 100}%, calc(100% - 130px))` }}>
+          <div id={markerTooltipId} role="tooltip" className="pointer-events-none absolute bottom-12 z-50 max-w-[260px] -translate-x-1/2 rounded-lg bg-slate-900/95 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg" style={{ left: `clamp(130px, ${(hover.at / dur) * 100}%, calc(100% - 130px))` }}>
             <span className="font-semibold" style={{ color: MARKER_STYLE[hover.type].color }}>{MARKER_STYLE[hover.type].label}</span>
             <span className="text-white/85"> · {hover.label}</span>
           </div>
@@ -5106,8 +5088,8 @@ export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles
         {/* Seek-bar hover preview: a mini video of the exact moment under the cursor. Always mounted (kept
             warm) but invisible until hovering; positioned to follow the cursor, clamped away from the edges. */}
         {!collapsed && src && dur > 0 && (
-          <div className={"pointer-events-none absolute bottom-12 z-50 -translate-x-1/2 overflow-hidden rounded-lg border border-white/20 bg-black shadow-2xl transition-opacity duration-100 " + (scrub ? "opacity-100" : "opacity-0")}
-            style={{ left: `clamp(90px, ${(scrub ? scrub.frac : 0) * 100}%, calc(100% - 90px))` }}>
+          <div aria-hidden={!scrub || !!hover} className={"pointer-events-none absolute bottom-12 z-50 -translate-x-1/2 overflow-hidden rounded-lg border border-white/20 bg-black shadow-2xl transition-opacity duration-100 " + (scrub && !hover ? "opacity-100" : "opacity-0")}
+            style={{ visibility: scrub && !hover ? "visible" : "hidden", left: `clamp(90px, ${(scrub ? scrub.frac : 0) * 100}%, calc(100% - 90px))` }}>
             <video ref={scrubRef} src={src} muted playsInline preload="metadata" className="block h-[96px] w-[168px] bg-black object-cover" />
             <div className="absolute inset-x-0 bottom-0 bg-black/75 py-0.5 text-center font-mono text-[10px] font-medium text-white">{fmtClock(scrub ? scrub.t : 0)}</div>
           </div>
@@ -5122,10 +5104,12 @@ export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles
           /* Recording / Highlights: chapter-segmented track with colored dots ABOVE it. */
           <div ref={barRef} onClick={onBar} onMouseMove={onBarHover} onMouseLeave={onBarLeave} className="relative h-4 cursor-pointer">
             {showHighlights && dur > 0 && markers.map((mk, i) => (
-              <button key={i} onMouseEnter={() => setHover(mk)} onMouseLeave={() => setHover(null)}
+              <button key={i} type="button" data-timeline-marker onMouseEnter={() => showMarker(mk)} onMouseLeave={() => setHover(null)}
+                onFocus={() => showMarker(mk)} onBlur={() => setHover((current) => current === mk ? null : current)}
+                onKeyDown={(e) => { if (e.key === "Escape") setHover(null); }}
                 onClick={(e) => { e.stopPropagation(); clearMode(); const v = videoRef.current; if (v) { v.currentTime = mk.at; v.play().catch(() => {}); } }}
                 className="absolute top-0 h-2 w-2 -translate-x-1/2 rounded-full border border-white/70 transition hover:scale-150"
-                style={{ left: `${(mk.at / dur) * 100}%`, background: MARKER_STYLE[mk.type].color }} aria-label={mk.label} />
+                style={{ left: `${(mk.at / dur) * 100}%`, background: MARKER_STYLE[mk.type].color }} aria-label={mk.label} aria-describedby={hover === mk ? markerTooltipId : undefined} />
             ))}
             {(dur > 0 ? (segs2.length ? segs2 : [{ start: 0, end: dur }]) : []).map((sg, i) => {
               const f = Math.min(1, Math.max(0, (shownCur - sg.start) / Math.max(0.5, sg.end - sg.start)));
@@ -6115,7 +6099,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} speakerTimeline={(meeting.coaching && meeting.coaching.speakerTimeline) || []} presenterMedia={meeting.presenterMedia || meeting.coaching || {}} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} speakerTimeline={(meeting.coaching && meeting.coaching.speakerTimeline) || []} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">

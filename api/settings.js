@@ -2,6 +2,15 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 
+// Retired recording options are ignored for older clients, without changing
+// unrelated sharing preferences or deleting any existing meeting media.
+function activeSharingPrefs(value) {
+  const prefs = value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+  delete prefs.pipDuringShare;
+  delete prefs.pipCorner;
+  return prefs;
+}
+
 async function userId(req) {
   const t = parseCookies(req).om_session;
   const s = await sb(`sessions?token=eq.${encodeURIComponent(t || "")}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
@@ -19,7 +28,7 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const u = await sb(`app_users?id=eq.${uid}&select=auto_join,notetaker_name,recall_calendar_id,recall_calendar_status,sharing_prefs,policy`);
       const row = u[0] || {};
-      const prefs = { ...PREF_DEFAULTS, ...((row.sharing_prefs && typeof row.sharing_prefs === "object") ? row.sharing_prefs : {}) };
+      const prefs = { ...PREF_DEFAULTS, ...activeSharingPrefs(row.sharing_prefs) };
       const policy = (row.policy && typeof row.policy === "object") ? row.policy : {};
       return res.status(200).json({ auto_join: row.auto_join !== false, notetaker_name: row.notetaker_name || "OctoMeet AI", recall_connected: !!row.recall_calendar_id, recall_status: row.recall_calendar_status || null, sharing_prefs: prefs, policy });
     }
@@ -30,7 +39,7 @@ export default async function handler(req, res) {
       if (typeof body.notetaker_name === "string") patch.notetaker_name = body.notetaker_name.slice(0, 80);
       if (body.sharing_prefs && typeof body.sharing_prefs === "object") {
         const cur = (await sb(`app_users?id=eq.${uid}&select=sharing_prefs`))[0] || {};
-        patch.sharing_prefs = { ...PREF_DEFAULTS, ...((cur.sharing_prefs && typeof cur.sharing_prefs === "object") ? cur.sharing_prefs : {}), ...body.sharing_prefs };
+        patch.sharing_prefs = activeSharingPrefs({ ...PREF_DEFAULTS, ...activeSharingPrefs(cur.sharing_prefs), ...activeSharingPrefs(body.sharing_prefs) });
       }
       // Meeting Policy: store the whole object AND sync the auto_join + notetaker_name columns
       // the cron/calendar arming already reads, so policy actually drives the bot.

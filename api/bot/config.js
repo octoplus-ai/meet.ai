@@ -1,9 +1,5 @@
-// Bot runtime config: the worker fetches per-meeting recording settings at boot (secret-authed,
-// read-only). Currently just the "training PiP" toggle (show the active speaker's camera over a
-// screen share). Isolated + fail-safe: any error returns the safe default so the bot is never blocked.
-import { sb } from "../lib/supa.js";
-
-const enc = encodeURIComponent;
+// Compatibility endpoint for older workers. Presenter Screen has been retired;
+// saved user preferences must never enable a new sidecar capture.
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -15,18 +11,8 @@ export default async function handler(req, res) {
     const meetingId = (req.query && req.query.meetingId) || "";
     if (!meetingId) return res.status(400).json({ error: "meetingId required" });
 
-    const rows = await sb(`meetings?id=eq.${enc(meetingId)}&select=user_id`);
-    const uid = rows[0] && rows[0].user_id;
-    let pipDuringShare = true; // ON for all meetings by default
-    let pipCorner = "br"; // which corner the burned-in presenter cam sits in (default bottom-right)
-    if (uid) {
-      const u = await sb(`app_users?id=eq.${enc(uid)}&select=sharing_prefs`);
-      const prefs = (u[0] && u[0].sharing_prefs && typeof u[0].sharing_prefs === "object") ? u[0].sharing_prefs : {};
-      pipDuringShare = prefs.pipDuringShare !== false; // only OFF if the owner explicitly disabled capture
-      if (/^(tl|tr|bl|br)$/.test(prefs.pipCorner || "")) pipCorner = prefs.pipCorner;
-    }
-    return res.status(200).json({ pipDuringShare, pipCorner });
+    return res.status(200).json({ pipDuringShare: false, pipCorner: "br" });
   } catch (e) {
-    return res.status(200).json({ pipDuringShare: true, pipCorner: "br" }); // defaults; a config read must never block the bot
+    return res.status(200).json({ pipDuringShare: false, pipCorner: "br" });
   }
 }
