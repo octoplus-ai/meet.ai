@@ -14,6 +14,7 @@ import {
 import { THEME_LIST, getTheme, customTheme, coerceDeck, deckHTML } from "./slides/deck.js";
 import { exportPptx } from "./slides/pptx.js";
 import { EXTRA_LANGS } from "./i18n-extra.js";
+import SpeakerOverlay from "./media/SpeakerOverlay.jsx";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
@@ -732,6 +733,7 @@ function adaptReal(m) {
     highlights: hl,
     coverAt,
     coaching: r.coaching || null,
+    presenterMedia: { ...(r.coaching || {}), ...(m.stage_info?.presenterMedia || {}) },
     pitchAnalysis: (r.coaching && r.coaching.pitch) || null,
     nextSteps: r.next_steps || [],
     participants: richParts.map((p) => ({ name: p.name || "Speaker", role: p.role || "", talkPct: p.talkPct || 0, wpm: p.wpm || 0, sentiment: p.sentiment || "Neutral", isHost: !!p.isHost, initials: (p.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() })),
@@ -4652,7 +4654,7 @@ function splitPhrases(text) {
   return out.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
 }
 
-function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {}, speakerTimeline = [], pipUrl = null, shareIntervals = [] }) {
+export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meetingId, shareTok, coverDone, coverUrl, durationMin, dubs = {}, nameMap = {}, speakerTimeline = [], presenterMedia = {} }) {
   const [dur, setDur] = useState(0);
   const [cur, setCur] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -4668,11 +4670,6 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   const [showMetrics, setShowMetrics] = useState(true);
   const [showHighlights, setShowHighlights] = useState(true);
   const [showNames, setShowNames] = useState(false); // Read.ai-style active-speaker name label - OFF by default: Meet already paints each person's name onto their tile in the composited video, so our overlay is redundant (toggle kept in Settings for anyone who wants the lower-third)
-  const [showPip, setShowPip] = useState(false); // training PiP: overlay the speaker's camera during a screen share - OFF by default (button turns it on); shows only when activated AND inside a share
-  const [pipCorner, setPipCorner] = useState("tr"); // which of the 4 corners the pip sits in (drag to move)
-  const [pipDragPos, setPipDragPos] = useState(null); // live {left,top} while dragging
-  const pipRef = useRef(null);
-  const pipDragRef = useRef(null);
   const [autoplayClick, setAutoplayClick] = useState(true);
   const [volume, setVolume] = useState(1);
   const [volOpen, setVolOpen] = useState(false);
@@ -4935,39 +4932,6 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
   // chosen language (translated cache when available, else the original text).
   // Netflix-style subtitle: the active phrase for the chosen language (same logic the dub uses).
   const capText = cc ? phraseAt(subLang, cur).text : "";
-  // Training PiP: whether the current playback time is inside a screen-share span (only then do we overlay
-  // the speaker's camera). shareIntervals come from the worker (in the main video's time base).
-  const inShare = !!(showPip && pipUrl && (shareIntervals || []).some((iv) => Array.isArray(iv) && cur >= iv[0] && cur < iv[1]));
-  // Keep the PiP overlay <video> tightly locked to the main video. Big drift (after a seek) -> hard snap;
-  // small continuous drift -> nudge playbackRate so it eases back into lock WITHOUT a visible jump; also
-  // mirrors play/pause and the main video's speed. Driven by the main video's own events + a 250ms poll.
-  useEffect(() => {
-    const pv = pipRef.current, mv = videoRef.current;
-    if (!pv || !mv || !pipUrl || !showPip) return;
-    const sync = () => {
-      try {
-        const rate = mv.playbackRate || 1;
-        const drift = (pv.currentTime || 0) - (mv.currentTime || 0);
-        // The PiP is MUTED, so we can correct hard without any audio artifact. Snap sooner (0.12s) and, for a
-        // residual drift, nudge the rate by ±25% (was a weak ±5% that took ~4s to close a 0.2s gap = the "lots
-        // of delay" the user saw). This keeps the presenter cam within ~0.1s of the main video.
-        if (Math.abs(drift) > 0.12) { pv.currentTime = mv.currentTime; pv.playbackRate = rate; } // hard snap (after a seek / big drift)
-        else if (Math.abs(drift) > 0.02) { pv.playbackRate = rate * (drift > 0 ? 0.75 : 1.25); } // strong ease back into lock
-        else if (pv.playbackRate !== rate) { pv.playbackRate = rate; }
-        if (mv.paused && !pv.paused) pv.pause();
-        else if (!mv.paused && pv.paused) { const p = pv.play(); if (p && p.catch) p.catch(() => {}); }
-      } catch (e) {}
-    };
-    sync();
-    const ev = ["timeupdate", "seeked", "play", "pause", "ratechange"];
-    ev.forEach((n) => mv.addEventListener(n, sync));
-    // Prefer per-rendered-frame sync (requestVideoFrameCallback) for frame-tight lock; fall back to a fast poll.
-    let rafId = 0, useRvfc = typeof mv.requestVideoFrameCallback === "function";
-    const rvfc = () => { sync(); rafId = mv.requestVideoFrameCallback(rvfc); };
-    if (useRvfc) rafId = mv.requestVideoFrameCallback(rvfc);
-    const id = setInterval(sync, useRvfc ? 250 : 100);
-    return () => { clearInterval(id); if (useRvfc && rafId) { try { mv.cancelVideoFrameCallback(rafId); } catch (e) {} } ev.forEach((n) => mv.removeEventListener(n, sync)); };
-  }, [showPip, pipUrl, playing, videoRef]);
 
   // "started" = the user actually pressed play (NOT just the poster frame seeked to coverAt).
   // So a freshly opened report shows "Recording" and plays from 0; only after real playback
@@ -5019,34 +4983,8 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
           <ChevronsDownUp size={18} />
         </button>
       )}
-      {/* Training PiP toggle (only when this recording captured a speaker-cam stream): show/hide the person
-          talking over a screen share, like the CC button but on top. */}
-      {!collapsed && pipUrl && (
-        <button onClick={() => setShowPip((s) => !s)} title={tr("presenterScreen")}
-          className={"group/pipbtn absolute right-24 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg shadow transition " + (showPip ? "bg-violet-600 text-white hover:bg-violet-500" : "bg-white/90 text-violet-700 hover:bg-white")}>
-          <Users size={17} />
-          <span className="pointer-events-none absolute right-0 top-11 z-50 whitespace-nowrap rounded-md bg-black/85 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition group-hover/pipbtn:opacity-100">{tr("presenterScreen")}</span>
-        </button>
-      )}
-      {/* Training PiP overlay: the speaker's camera, synced to the main video, shown only during a share.
-          Draggable to any of the 4 corners (like a Meet self-tile) - snaps to the nearest corner on release. */}
-      {!collapsed && pipUrl && showPip && (() => {
-        const cls = { tr: "right-3 top-14", tl: "left-3 top-14", br: "right-3 bottom-20", bl: "left-3 bottom-20" };
-        return (
-          <div
-            className={"group/pip absolute z-30 w-[26%] max-w-[320px] rounded-xl border-2 border-white/80 bg-black shadow-2xl transition-opacity duration-200 " + (pipDragPos ? "cursor-grabbing" : cls[pipCorner] + " cursor-grab") + " " + (inShare ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none")}
-            style={{ aspectRatio: "16 / 9", ...(pipDragPos ? { left: pipDragPos.left, top: pipDragPos.top, right: "auto", bottom: "auto" } : {}) }}
-            onPointerDown={(e) => { if (!inShare) return; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (er) {} pipDragRef.current = { moved: false }; }}
-            onPointerMove={(e) => { const d = pipDragRef.current; if (!d) return; d.moved = true; const wrap = wrapRef.current && wrapRef.current.getBoundingClientRect(); const box = e.currentTarget.getBoundingClientRect(); if (!wrap) return; setPipDragPos({ left: Math.max(4, Math.min(wrap.width - box.width - 4, e.clientX - wrap.left - box.width / 2)), top: Math.max(4, Math.min(wrap.height - box.height - 4, e.clientY - wrap.top - box.height / 2)) }); }}
-            onPointerUp={(e) => { const d = pipDragRef.current; pipDragRef.current = null; const wrap = wrapRef.current && wrapRef.current.getBoundingClientRect(); if (d && d.moved && wrap) { const x = e.clientX - wrap.left, y = e.clientY - wrap.top; setPipCorner((y < wrap.height / 2 ? "t" : "b") + (x < wrap.width / 2 ? "l" : "r")); } setPipDragPos(null); }}>
-            <video ref={pipRef} src={pipUrl} muted playsInline preload="auto" className="pointer-events-none h-full w-full rounded-[10px] object-cover" />
-            <span className="pointer-events-none absolute left-1/2 top-1 -translate-x-1/2 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white opacity-0 transition group-hover/pip:opacity-100">drag to move</span>
-          </div>
-        );
-      })()}
-      {/* The presenter pip shows ONLY in 2 cases: (1) it is activated (the button, ON by default), AND (2) the
-          playback is inside a screen share. No "armed" indicator outside a share - nothing presenter-related shows
-          when there is no share, so the overlay never appears in a third, unexpected condition. */}
+      <SpeakerOverlay mainRef={videoRef} containerRef={wrapRef} collapsed={collapsed} time={cur}
+        meetingId={meetingId} media={presenterMedia} language={CUR_LANG} />
       {/* Dubbing in progress indicator */}
       {!collapsed && dubStatus === "dubbing" && (
         <div className="absolute left-3 top-3 z-40 flex items-center gap-2 rounded-lg bg-black/75 px-3 py-1.5 text-[12px] font-medium text-white"><Loader2 size={13} className="animate-spin" /> {tr("translatingAudio")} {dubLang}…</div>
@@ -5110,7 +5048,7 @@ function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles, meeti
       )}
       {/* Hover menu: smart playback modes (only when paused so it doesn't block viewing). */}
       {!collapsed && !playing && (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2.5 bg-black/30">
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 bg-black/30">
           {MENU.map((mi) => (
             <button key={mi.k} onClick={(e) => { e.stopPropagation(); mi.resume ? resumePlay() : startMode(mi.k); }}
               className={"flex w-60 items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-semibold backdrop-blur-sm transition " + (mi.primary ? "bg-violet-600 text-white shadow-lg hover:bg-violet-500" : "bg-white/15 text-white hover:bg-white/25")}>
@@ -6177,7 +6115,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
       <div className="mx-auto max-w-5xl px-6 py-5">
         {meeting.video ? (
           <div className="mb-5">
-            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} speakerTimeline={(meeting.coaching && meeting.coaching.speakerTimeline) || []} pipUrl={(meeting.coaching && meeting.coaching.pipUrl) || null} shareIntervals={(meeting.coaching && meeting.coaching.shareIntervals) || []} />
+            <MeetingVideo videoRef={videoRef} src={meeting.video} coverAt={meeting.coverAt} markers={markers} turns={meeting.transcript} subtitles={meeting.subtitles} meetingId={meeting.id} shareTok={shared ? shareTok : null} coverDone={!!meeting.cover_url} coverUrl={meeting.cover_url || null} durationMin={meeting.durationMin} dubs={meeting.dubs} nameMap={fullNameMap} speakerTimeline={(meeting.coaching && meeting.coaching.speakerTimeline) || []} presenterMedia={meeting.presenterMedia || meeting.coaching || {}} />
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">

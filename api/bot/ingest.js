@@ -4,6 +4,7 @@
 // POST { secret, meetingId?|botId?, title?, meetingUrl?, durationMin?, recordingUrl?, turns:[{speaker,text,t}] }
 import { sb } from "../lib/supa.js";
 import { analyzeTranscript, ANALYSIS_VERSION, sanitizeSpeakerMap, notifyParticipants } from "../lib/process.js";
+import { cameraMetadata, preserveCameraMetadata } from "../lib/speaker-media.js";
 
 const enc = encodeURIComponent;
 
@@ -24,6 +25,25 @@ export default async function handler(req, res) {
     if (!meeting) return res.status(404).json({ error: "meeting not found" });
     if (meeting.status === "done") return res.status(200).json({ ok: true, alreadyDone: true, meeting_id: meeting.id });
     const uid = meeting.user_id;
+
+    // Keep captured camera evidence even if transcription/AI fails. The worker
+    // sends it additively in stage.presenterMedia using its existing transport.
+    const priorReports = await sb(`reports?meeting_id=eq.${enc(meeting.id)}&select=coaching`);
+    const priorCoaching = priorReports?.[0]?.coaching || {};
+    const priorCamera = { ...preserveCameraMetadata(priorCoaching), ...preserveCameraMetadata(meeting.stage_info?.presenterMedia) };
+    const nestedCamera = body.stage?.presenterMedia;
+    const hasCameraDelivery = (nestedCamera && typeof nestedCamera === "object" && !Array.isArray(nestedCamera) && Object.keys(nestedCamera).length > 0) ||
+      ["pipUrl", "pipStatus", "pipIntervals", "pipTimeline", "shareIntervals"].some((key) => Object.hasOwn(body, key));
+    const presenterMedia = hasCameraDelivery || !Object.keys(priorCamera).length ? cameraMetadata(body) : priorCamera;
+    const stageInfo = { ...(meeting.stage_info || {}), ...(body.stage && typeof body.stage === "object" && !Array.isArray(body.stage) ? body.stage : {}), presenterMedia };
+    const mediaPatch = { stage_info: stageInfo };
+    if (body.recordingUrl) mediaPatch.recording_url = body.recordingUrl;
+    if (body.coverUrl) mediaPatch.cover_url = body.coverUrl;
+    if (Number.isFinite(body.durationMin) && body.durationMin > 0) mediaPatch.duration_min = body.durationMin;
+    await sb(`meetings?id=eq.${enc(meeting.id)}`, { method: "PATCH", body: mediaPatch });
+    if (priorReports?.[0] && hasCameraDelivery) {
+      await sb(`reports?meeting_id=eq.${enc(meeting.id)}`, { method: "PATCH", body: { coaching: { ...priorCoaching, ...presenterMedia } } });
+    }
 
     const turns = Array.isArray(body.turns) ? body.turns : [];
     const text = turns.map((t) => `[${t.t || ""}] ${t.speaker || "Speaker"}: ${t.text || ""}`).join("\n").trim();
@@ -135,7 +155,7 @@ export default async function handler(req, res) {
       meeting_id: meeting.id, user_id: uid,
       summary: ai.summary || "", action_items: ai.actionItems || [], next_steps: ai.nextSteps || [],
       key_questions: ai.keyQuestions || [], topics: ai.topics || [], chapters: ai.chapters || [],
-      highlights: ai.highlights || [], coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, speakerTimeline: Array.isArray(body.speakerTimeline) ? body.speakerTimeline.slice(0, 4000) : [], pipUrl: body.pipUrl || null, shareIntervals: Array.isArray(body.shareIntervals) ? body.shareIntervals.slice(0, 500) : [] }, participants,
+      highlights: ai.highlights || [], coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, ...presenterMedia }, participants,
       sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
       transcript: finalText, scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
       read_score: sc.overall || 0, category: ai.category || null, report_version: ANALYSIS_VERSION,
@@ -147,7 +167,7 @@ export default async function handler(req, res) {
     const patch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString(), participants: participants.map((p) => p.name), capture_mode: "inhouse_bot" };
     // Queryable stage verification from the worker ({spotlight: true/false}): confirms the
     // active-speaker layout was applied for THIS recording without digging through fly logs.
-    if (body.stage && typeof body.stage === "object") { patch.stage_info = body.stage; console.log("stage verification for", meeting.id, JSON.stringify(body.stage)); }
+    patch.stage_info = stageInfo;
     if (body.durationMin) patch.duration_min = body.durationMin;
     if (body.recordingUrl) patch.recording_url = body.recordingUrl;
     if (body.coverUrl) patch.cover_url = body.coverUrl; // real frame extracted by the worker -> report + recap email thumbnail

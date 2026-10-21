@@ -6,6 +6,7 @@ import { annotateEvent, getValidToken } from "./google.js";
 import { randomToken } from "./session.js";
 import { sendViaGmail, reportEmail, getBotSender } from "./email.js";
 import { deliverReport } from "./deliver.js";
+import { preserveCameraMetadata } from "./speaker-media.js";
 
 const APP_URL = "https://meet.octoplusteam.com/"; // branded domain (same deployment; better email deliverability)
 const arr = (x) => (Array.isArray(x) ? x : []);
@@ -293,6 +294,7 @@ export async function processMeeting(meeting, { force = false } = {}) {
   assignTimestamps(ai, tr.turns); // accurate per-item timestamps from the transcript
   const participants = mergeParticipants(tr.stats, ai.participants);
   const sc = ai.scores || {};
+  const previousCameraReport = force ? (await sb(`reports?meeting_id=eq.${meeting.id}&select=coaching`))?.[0] : null;
 
   const reportRow = {
     meeting_id: meeting.id, user_id: meeting.user_id,
@@ -303,7 +305,7 @@ export async function processMeeting(meeting, { force = false } = {}) {
     topics: ai.topics || [],
     chapters: ai.chapters || [],
     highlights: ai.highlights || [],
-    coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null },
+    coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, ...preserveCameraMetadata(previousCameraReport?.coaching), ...preserveCameraMetadata(meeting.stage_info?.presenterMedia) },
     participants,
     sentiment_timeline: ai.sentimentTimeline || [],
     sentiment_label: ai.sentimentLabel || "Neutral",
@@ -375,7 +377,7 @@ export async function reanalyzeStored(meeting) {
     summary: ai.summary || rep.summary || "",
     topics: ai.topics || [], key_questions: ai.keyQuestions || [], action_items: ai.actionItems || [],
     next_steps: ai.nextSteps || [], chapters: ai.chapters || [], highlights: ai.highlights || [],
-    coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, speakerTimeline: (rep.coaching && Array.isArray(rep.coaching.speakerTimeline)) ? rep.coaching.speakerTimeline : [], pipUrl: (rep.coaching && rep.coaching.pipUrl) || null, shareIntervals: (rep.coaching && Array.isArray(rep.coaching.shareIntervals)) ? rep.coaching.shareIntervals : [] }, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
+    coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, ...preserveCameraMetadata(rep.coaching), ...preserveCameraMetadata(meeting.stage_info?.presenterMedia) }, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",
     scores: { overall: sc.overall || 0, engagement: sc.engagement || 0, sentiment: sc.sentiment || 0, balance: sc.balance || 0, clarity: sc.clarity || 0, charisma: sc.charisma || 0 },
     read_score: sc.overall || rep.read_score || 0,
     category: ai.category || rep.category || null,
