@@ -1,5 +1,5 @@
 // Vercel Cron: autonomously arm bots for every auto-join user's upcoming meetings.
-// Runs even when nobody has the app open. Recall then joins each at its start time.
+// Runs even when nobody has the app open. The own bot joins at each start time.
 import { sb } from "../lib/supa.js";
 import { armUserCalendar } from "../lib/schedule.js";
 import { ensureWatch } from "../lib/calendar-watch.js";
@@ -19,13 +19,13 @@ export default async function handler(req, res) {
       || (process.env.RECALL_WEBHOOK_SECRET && key === process.env.RECALL_WEBHOOK_SECRET);
     if (!isCron) return res.status(401).json({ error: "unauthorized" });
 
-    const users = await sb(`app_users?auto_join=eq.true&select=id,notetaker_name,recall_calendar_id`);
+    if (!process.env.BOT_ORCHESTRATOR_URL) return res.status(503).json({ error: "bot_backend_unavailable" });
+    // Match settings/arm-all: null is the enabled default; only explicit false opts out.
+    const users = await sb(`app_users?or=(auto_join.eq.true,auto_join.is.null)&select=id,notetaker_name,auto_join`);
     const results = [];
     for (const u of users) {
       try {
-        // Recall-Calendar users are handled by the calendar webhook (V2) — skip V1 to avoid
-        // duplicates. IGNORED in in-house mode: the own bot arms straight from Google Calendar.
-        if (u.recall_calendar_id && !process.env.BOT_ORCHESTRATOR_URL) { results.push({ user: u.id, via: "recall_calendar", armed: 0 }); continue; }
+        if (u.auto_join === false) continue;
         const r = await armUserCalendar(u.id, { botName: u.notetaker_name || "OctoMeet AI", days: 7 });
         // Keep a live Google Calendar push channel so new meetings arm INSTANTLY (not just on the
         // next sweep). Cheap no-op unless the channel is missing or about to expire.

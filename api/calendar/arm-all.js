@@ -1,5 +1,5 @@
-// Schedules a Recall bot for ALL of the signed-in user's upcoming calendar
-// meetings (Read.ai-style auto-join). Safe to call repeatedly — dedups per event.
+// Schedules the own bot for hosted and invited meetings in the connected calendar.
+// Safe to call repeatedly — dedups per event.
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
 import { armUserCalendar } from "../lib/schedule.js";
@@ -14,10 +14,8 @@ export default async function handler(req, res) {
 
     const u = await sb(`app_users?id=eq.${uid}&select=auto_join,notetaker_name,recall_calendar_id`);
     if (u[0] && u[0].auto_join === false) return res.status(200).json({ ok: true, autoJoin: false, armed: 0 });
-    // Single scheduling path: if the Recall Calendar (V2) is connected, IT handles
-    // every meeting (via connect-recall + the calendar webhook). Running V1 too would
-    // race V2 and create duplicate bots/rows, so we skip it here.
-    if (u[0] && u[0].recall_calendar_id) return res.status(200).json({ ok: true, via: "recall_calendar", armed: 0 });
+    // Historical Recall metadata must not suppress the own-bot scheduling path.
+    if (!process.env.BOT_ORCHESTRATOR_URL) return res.status(503).json({ error: "bot_backend_unavailable" });
 
     const result = await armUserCalendar(uid, { botName: (u[0] && u[0].notetaker_name) || "OctoMeet AI", days: 7 });
     res.status(200).json({ ok: true, ...result });

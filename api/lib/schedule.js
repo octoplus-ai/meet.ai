@@ -162,13 +162,14 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
 
 }
 
-// Schedule bots for ALL of a user's upcoming calendar events with a meeting link.
+// Schedule hosted AND invited events, including tentative/unanswered invitations.
+// Organizer identity and calendar write permission are not prerequisites to attend.
 export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
   const { events, error, truncated, fetchedAt } = await listUpcomingEvents(userId, { days });
   if (error) return { error, armed: 0 };
   let armed = 0, already = 0, skipped = 0;
   for (const e of events) {
-    if (!e.meetingUrl || e.selfDeclined) { skipped++; continue; }
+    if (!e.meetingUrl || e.selfDeclined || e.status === "cancelled") { skipped++; continue; }
     const res = await scheduleBot(userId, { meetingUrl: e.meetingUrl, title: e.title, joinAt: e.start, calendarEventId: e.id, botName });
     if (res.ok) armed++;
     // "already" armed: scheduleBot annotated the event when it was first armed - don't PATCH the
@@ -193,7 +194,7 @@ export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
     for (const row of armedRows) {
       if (!row.meeting_url) continue;
       const ev = liveEvents.get(row.calendar_event_id);
-      if (ev && !ev.selfDeclined) continue;
+      if (ev && !ev.selfDeclined && ev.status !== "cancelled") continue;
       await sb(`meetings?id=eq.${row.id}`, { method: "PATCH", body: { status: "skipped", error: "event cancelled or declined", status_synced_at: new Date().toISOString() } });
       await stopOrchestratorJob(row.id);
       disarmed++;

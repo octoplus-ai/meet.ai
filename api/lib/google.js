@@ -87,7 +87,9 @@ export async function listUpcomingEvents(userId, { days = 7 } = {}) {
   if (!token) return { error: "no token", events: [] };
   const now = new Date();
   const max = new Date(now.getTime() + days * 86400000);
-  const base = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=250&singleEvents=true&orderBy=startTime`;
+  // Include invitations from other organizers, including pending/hidden invitations
+  // returned by Google. Do not require organizer.self or an accepted RSVP.
+  const base = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=250&singleEvents=true&orderBy=startTime&showHiddenInvitations=true&showDeleted=false`;
   // Follow nextPageToken: a busy calendar spans multiple pages, and a dropped page means
   // auto-join silently never arms those meetings. Any failed page fails the whole fetch
   // (callers must never treat a partial list as complete). Hard cap at 500 items.
@@ -107,6 +109,7 @@ export async function listUpcomingEvents(userId, { days = 7 } = {}) {
     meetingUrl: extractMeetingUrl(e),
     attendees: (e.attendees || []).length,
     organizer: e.organizer?.email || null,
+    status: e.status || "confirmed",
     selfDeclined: (e.attendees || []).some((a) => a.self && a.responseStatus === "declined"),
   }));
   // truncated = the cap cut a pending page: the list is INCOMPLETE. Arming can proceed, but

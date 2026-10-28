@@ -42,11 +42,14 @@ export default async function handler(req, res) {
     }
 
     const now = new Date().toISOString();
-    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now)}&maxResults=25&singleEvents=true&orderBy=startTime`;
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now)}&maxResults=25&singleEvents=true&orderBy=startTime&showHiddenInvitations=true&showDeleted=false`;
     const cal = await fetch(url, { headers: { Authorization: `Bearer ${tk.access_token}` } }).then((r) => r.json());
     if (cal.error) return res.status(401).json({ error: "calendar auth failed — please reconnect Google", detail: cal.error });
 
-    const events = (cal.items || []).map((e) => ({
+    // The calendar UI defaults linked events to auto-join ON. Do not present a
+    // rejected/cancelled invitation as armed when the scheduler will exclude it.
+    const events = (cal.items || []).filter((e) => e.status !== "cancelled" &&
+      !(e.attendees || []).some((a) => a.self && a.responseStatus === "declined")).map((e) => ({
       id: e.id,
       title: e.summary || "(no title)",
       start: e.start?.dateTime || e.start?.date,
