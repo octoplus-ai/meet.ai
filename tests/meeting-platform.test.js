@@ -24,6 +24,34 @@ test('host spoofing, unsafe protocols, userinfo, nonmeeting pages and malformed 
   }
 });
 
+test('Zoom host-start links become guest joins and discard all host or handoff parameters', () => {
+  const start = 'https://app.zoom.us/wc/12345678901/start?zak=fixture-host-credential&pwd=opaque%2Btoken%2F%3D&role=1&launch=true&handoff_token=fixture-handoff#host';
+  const parsed = parseMeetingUrl(start);
+  assert.equal(parsed.platform, 'zoom'); assert.equal(parsed.meetingId, '12345678901');
+  assert.equal(parsed.url, 'https://app.zoom.us/j/12345678901?pwd=opaque%2Btoken%2F%3D');
+  assert.equal(parsed.browserJoinUrl, 'https://app.zoom.us/wc/12345678901/join?pwd=opaque%2Btoken%2F%3D');
+  assert.equal(parsed.passcode, undefined);
+  assert.deepEqual([...new URL(parsed.url).searchParams.keys()], ['pwd']);
+  assert.deepEqual(parseMeetingUrl(parsed.url), parsed, 'Normalization remains stable across app/orchestrator/worker');
+  assert.equal(parseMeetingUrl('https://app.zoom.us/wc/12345678901/start/?zak=fixture&launch=1').url, 'https://app.zoom.us/j/12345678901');
+  assert.throws(() => requireEnabledMeeting(start), { code: 'platform_disabled', status: 409 });
+  assert.equal(requireEnabledMeeting(start, { BOT_ENABLED_PLATFORMS: 'zoom' }).browserJoinUrl, parsed.browserJoinUrl);
+  for (const bad of ['https://app.zoom.us.evil.test/wc/12345678901/start', 'https://app.zoom.us/wc/123/start', 'https://app.zoom.us/wc/12345678901/start/extra', 'https://user:pass@app.zoom.us/wc/12345678901/start']) {
+    assert.throws(() => parseMeetingUrl(bad), error => ['invalid_meeting_url', 'unsupported_platform'].includes(error.code));
+  }
+});
+
+test('calendar extraction converts Zoom host-start invitations to guest URLs without host tokens', () => {
+  const start = 'https://app.zoom.us/wc/12345678901/start?launch=1&pwd=fixture%2Btoken&zak=fixture-host';
+  const expected = 'https://app.zoom.us/j/12345678901?pwd=fixture%2Btoken';
+  for (const event of [
+    { hangoutLink: start },
+    { conferenceData: { entryPoints: [{ entryPointType: 'video', uri: start }] } },
+    { description: `<a href="${start.replaceAll('&', '&amp;')}">Join meeting</a>` },
+    { location: `Join: (${start}).` },
+  ]) assert.equal(extractMeetingUrl(event), expected);
+});
+
 test('calendar extracts direct, HTML and plain-text links consistently', () => {
   const url = 'https://zoom.us/j/12345678901?pwd=abc&from=calendar';
   assert.equal(extractMeetingUrl({description: `<a href="${url.replace('&', '&amp;')}">Join</a>`}), url);

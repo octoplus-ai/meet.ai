@@ -26,8 +26,18 @@ export function parseMeetingUrl(raw) {
     meetingId = match[1] || match[2];
   } else if (host === 'zoom.us' || host.endsWith('.zoom.us') || host === 'zoom.com' || host.endsWith('.zoom.com')) {
     platform = 'zoom';
-    const match = path.match(/^\/(?:j\/(\d{9,12})|wc\/(\d{9,12})\/join|wc\/join\/(\d{9,12}))\/?$/);
-    if (match) meetingId = match[1] || match[2] || match[3];
+    const match = path.match(/^\/(?:j\/(\d{9,12})|wc\/(\d{9,12})\/join|wc\/join\/(\d{9,12})|wc\/(\d{9,12})\/start)\/?$/);
+    if (match) {
+      meetingId = match[1] || match[2] || match[3] || match[4];
+      if (match[4]) {
+        // A copied host-start URL must only ever join as a guest. Retain the
+        // opaque meeting access token, never host credentials or launch state.
+        const pwd = url.searchParams.get('pwd');
+        url.pathname = `/j/${meetingId}`;
+        url.search = '';
+        if (pwd !== null) url.searchParams.set('pwd', pwd);
+      }
+    }
     else if (!/^\/my\/[A-Za-z0-9._-]{1,128}\/?$/.test(path)) throw invalid();
   } else if (['teams.microsoft.com', 'teams.live.com', 'teams.cloud.microsoft'].includes(host)) {
     platform = 'teams';
