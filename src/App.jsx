@@ -14,6 +14,7 @@ import {
 import { THEME_LIST, getTheme, customTheme, coerceDeck, deckHTML } from "./slides/deck.js";
 import { exportPptx } from "./slides/pptx.js";
 import { EXTRA_LANGS } from "./i18n-extra.js";
+import { parseMeetingUrl, platformLabel } from "../shared/meeting-platform.js";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
@@ -127,7 +128,7 @@ const EXTRA = {
     gmailNudgeMsg: "Activá el envío de reportes por email: reconectá tu cuenta de Google para conceder el permiso de Gmail (un solo click).", reconnectGoogle: "Reconectar Google", accountSettings: "Account Settings",
     planBilling: "Plan & Billing", addPeople2: "Add People", support: "Support",
     logOut: "Log Out", sendingBotToMeeting: "Sending OctoMeet to the meeting…", botJoiningMeeting: "OctoMeet is joining the meeting 🎥",
-    pasteMeetingUrlPh: "Paste meeting URL + Enter", addToFolder: "Add to Folder", searchFoldersPh: "Search folders...",
+    pasteMeetingUrlPh: "Meet, Zoom or Teams link + Enter", addToFolder: "Add to Folder", searchFoldersPh: "Search folders...",
     createFolderTitle: "Create folder", createFolderNamed: "Create “{q}”", noFoldersYet: "No folders yet - type to create one.",
     cancel: "Cancel", save: "Save", share: "Share",
     download: "Download", renameReport2: "Rename Report", deleteReport2: "Delete Report",
@@ -218,7 +219,7 @@ const EXTRA = {
     gmailNudgeMsg: "Activá el envío de reportes por email: reconectá tu cuenta de Google para conceder el permiso de Gmail (un solo click).", reconnectGoogle: "Reconectar Google", accountSettings: "Configuración de la cuenta",
     planBilling: "Plan y facturación", addPeople2: "Agregar personas", support: "Soporte",
     logOut: "Cerrar sesión", sendingBotToMeeting: "Enviando OctoMeet a la reunión…", botJoiningMeeting: "OctoMeet se está uniendo a la reunión 🎥",
-    pasteMeetingUrlPh: "Pegá la URL de la reunión + Enter", addToFolder: "Agregar a carpeta", searchFoldersPh: "Buscar carpetas...",
+    pasteMeetingUrlPh: "Enlace de Meet, Zoom o Teams + Enter", addToFolder: "Agregar a carpeta", searchFoldersPh: "Buscar carpetas...",
     createFolderTitle: "Crear carpeta", createFolderNamed: "Crear \"{q}\"", noFoldersYet: "No hay carpetas todavía - escribí para crear una.",
     cancel: "Cancelar", save: "Guardar", share: "Compartir",
     download: "Descargar", renameReport2: "Renombrar reporte", deleteReport2: "Eliminar reporte",
@@ -645,12 +646,20 @@ function statusSummary(status) {
 }
 // Detect the meeting platform from its URL so the preview badge shows the real medium
 // (Google Meet / Zoom / Teams) like Read.ai - not the generic OctoMeet icon.
-function platformFromUrl(url) {
-  if (!url) return null;
-  if (/meet\.google\.com/i.test(url)) return "Google Meet";
-  if (/zoom\.us|zoom\.com/i.test(url)) return "Zoom";
-  if (/teams\.(microsoft|live)\.com|teams\.microsoft/i.test(url)) return "Microsoft Teams";
-  return null;
+function platformFromUrl(url) { return platformLabel(url); }
+function botStartError(data = {}) {
+  const messages = {
+    invalid_meeting_url: ["Use a valid HTTPS meeting link from Meet, Zoom or Teams.", "Usá un enlace HTTPS válido de Meet, Zoom o Teams."],
+    unsupported_platform: ["This meeting platform is not supported.", "Esta plataforma de reuniones no está admitida."],
+    platform_disabled: ["Recording for this platform is not enabled yet. No bot was scheduled.", "La grabación en esta plataforma todavía no está habilitada. No se programó un bot."],
+    invalid_join_at: ["Choose a valid meeting date and time.", "Elegí una fecha y hora válidas para la reunión."],
+    bot_backend_unavailable: ["The bot service is unavailable. Try again later.", "El servicio del bot no está disponible. Reintentá más tarde."],
+    bot_dispatch_timeout: ["The bot request could not be confirmed. Check the meeting status before retrying.", "No se pudo confirmar la solicitud del bot. Revisá el estado de la reunión antes de reintentar."],
+    bot_dispatch_failed: ["The bot service did not accept this meeting. Try again later.", "El servicio del bot no aceptó esta reunión. Reintentá más tarde."],
+    meeting_not_armed: ["This meeting is not armed. Check its status before retrying.", "Esta reunión no tiene un bot programado. Revisá su estado antes de reintentar."],
+    recording_limit: ["Your plan's recording limit has been reached.", "Se alcanzó el límite de grabación de tu plan."],
+  };
+  return (messages[data.error] || ["Could not schedule the bot. Try again later.", "No se pudo programar el bot. Reintentá más tarde."])[CUR_LANG === "es" ? 1 : 0];
 }
 // "mm:ss" / "h:mm:ss" → seconds (for seeking the video to a highlight's moment).
 function tsToSeconds(t) {
@@ -1367,6 +1376,7 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user, pinned
   const [durOpen, setDurOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveUrl, setLiveUrl] = useState("");
+  const [liveBusy, setLiveBusy] = useState(false);
   // Collapsed by default; expands on hover or when pinned, and stays open while any popup is active.
   const collapsed = !(pinned || hovered || langOpen || menuOpen || durOpen || liveOpen);
   const copyLink = async () => {
@@ -1463,17 +1473,22 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user, pinned
         ) : (
           <>
             {liveOpen ? (
-              <input autoFocus value={liveUrl} onChange={(e) => setLiveUrl(e.target.value)}
+              <input autoFocus value={liveUrl} disabled={liveBusy} aria-busy={liveBusy} onChange={(e) => setLiveUrl(e.target.value)}
                 onKeyDown={async (e) => {
                   if (e.key === "Escape") { setLiveOpen(false); setLiveUrl(""); }
-                  if (e.key === "Enter" && liveUrl.trim()) {
-                    const url = liveUrl.trim(); setLiveOpen(false); setLiveUrl("");
+                  if (e.key === "Enter" && liveUrl.trim() && !liveBusy) {
+                    let url;
+                    try { url = parseMeetingUrl(liveUrl).url; }
+                    catch (error) { toast(botStartError({ error: error.code })); return; }
+                    setLiveBusy(true);
                     toast(tr("sendingBotToMeeting"));
                     try {
                       const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, botName: notetakerName() }) });
                       const d = await r.json();
-                      toast(r.ok ? tr("botJoiningMeeting") : ("Error: " + (d.error || "failed")));
-                    } catch (er) { toast("Network error"); }
+                      if (!r.ok || d.error || d.ok === false) toast(botStartError(d));
+                      else { setLiveOpen(false); setLiveUrl(""); toast(tr("botJoiningMeeting")); }
+                    } catch (er) { toast(botStartError({ error: "bot_backend_unavailable" })); }
+                    finally { setLiveBusy(false); }
                   }
                 }}
                 placeholder={tr("pasteMeetingUrlPh")} className="mb-3 w-full rounded-md border border-violet-400 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-slate-500 outline-none" />
@@ -2679,23 +2694,29 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   (meetings || []).forEach((m) => { if (m.calendarEventId) byEvent[m.calendarEventId] = m; });
 
   const startBot = async (url, title, joinAt, calendarEventId) => {
-    if (!url) { toast("This event has no meeting link"); return; }
+    if (!url) { toast("This event has no meeting link"); return false; }
+    try { url = parseMeetingUrl(url).url; }
+    catch (error) { toast(botStartError({ error: error.code })); return false; }
     const future = joinAt && new Date(joinAt).getTime() > Date.now() + 30 * 1000;
     toast(future ? "Scheduling OctoMeet…" : "Sending OctoMeet to the meeting…");
     try {
       const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, title, joinAt, calendarEventId, botName: notetakerName() }) });
       const d = await r.json();
-      toast(r.ok ? (d.already ? "OctoMeet is already set for this meeting ✓" : future ? "OctoMeet will join automatically at the start time 🗓️" : "OctoMeet is joining 🎥") : ("Error: " + (d.error || "failed")));
-    } catch (e) { toast("Network error"); }
+      const accepted = r.ok && !d.error && d.ok !== false;
+      toast(accepted ? (d.already ? "OctoMeet is already set for this meeting ✓" : future ? "OctoMeet will join automatically at the start time 🗓️" : "OctoMeet is joining 🎥") : botStartError(d));
+      return accepted;
+    } catch (e) { toast(botStartError({ error: "bot_backend_unavailable" })); return false; }
   };
   const arm = (e, key, val) => {
-    setArmed((s) => { const next = { ...s, [key]: val }; store.set(CAL_ARMED_KEY, next); return next; });
+    const previous = !!armed[key];
+    const remember = (value) => setArmed((s) => { const next = { ...s, [key]: value }; store.set(CAL_ARMED_KEY, next); return next; });
+    remember(val);
     if (val && e.eventId) {
       // Re-enable through the per-event endpoint: it also revives a previously skipped row.
       fetch("/api/event-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: e.eventId, enable: true }) })
-        .then((r) => r.json()).then((d) => toast(d && d.ok !== false ? "OctoMeet will join this meeting 🗓️" : "Couldn't arm: " + (d.detail || d.error || "failed")))
-        .catch(() => toast("Network error"));
-    } else if (val) startBot(e.url, e.name, e.startIso, e.eventId);
+        .then(async (r) => { const d = await r.json(); if (!r.ok || !d.ok) { remember(previous); toast(botStartError({ error: d.detail || d.error })); } else toast("OctoMeet will join this meeting 🗓️"); })
+        .catch(() => { remember(previous); toast(botStartError({ error: "bot_backend_unavailable" })); });
+    } else if (val) startBot(e.url, e.name, e.startIso, e.eventId).then((accepted) => { if (!accepted) remember(previous); });
     else if (e.eventId) {
       // Server-side disarm: marks the meeting skipped AND cancels the orchestrator job -
       // the localStorage flag alone never stopped an already-armed bot.
@@ -3931,7 +3952,7 @@ function LoginView({ onLogin, onGoogle }) {
           {tip && (
             <div className="absolute bottom-full left-1/2 z-10 mb-2 w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-2xl">
               <div className="text-sm font-bold text-slate-800">Effortless meeting notes.</div>
-              <p className="mt-1 text-[13px] leading-relaxed text-slate-500">Octomeet syncs your calendar events so you can choose which meetings to join and summarize automatically. Works with Zoom, Microsoft Teams, and Google Meet.</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-slate-500">Octomeet syncs Google Calendar events and recognizes Meet, Zoom and Teams links. Recording availability depends on which platforms are enabled.</p>
             </div>
           )}
         </div>

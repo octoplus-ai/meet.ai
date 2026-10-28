@@ -1,5 +1,6 @@
 // Google Calendar helpers: get a valid (refreshed) access token and list events.
 import { sb } from "./supa.js";
+import { extractMeetingUrl } from "../../shared/meeting-platform.js";
 
 export async function getValidToken(userId) {
   const r = await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google&select=*`);
@@ -103,7 +104,7 @@ export async function listUpcomingEvents(userId, { days = 7 } = {}) {
     title: e.summary || "(no title)",
     start: e.start?.dateTime || e.start?.date,
     end: e.end?.dateTime || e.end?.date,
-    meetingUrl: e.hangoutLink || (e.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri) || (e.conferenceData?.entryPoints?.[0]?.uri) || null,
+    meetingUrl: extractMeetingUrl(e),
     attendees: (e.attendees || []).length,
     organizer: e.organizer?.email || null,
     selfDeclined: (e.attendees || []).some((a) => a.self && a.responseStatus === "declined"),

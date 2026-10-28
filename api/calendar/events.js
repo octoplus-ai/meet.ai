@@ -2,6 +2,7 @@
 // Refreshes the access token if expired.
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
+import { extractMeetingUrl } from "../../shared/meeting-platform.js";
 
 async function getToken(userId) {
   const r = await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google&select=*`);
@@ -51,7 +52,7 @@ export default async function handler(req, res) {
       start: e.start?.dateTime || e.start?.date,
       end: e.end?.dateTime || e.end?.date,
       hangoutLink: e.hangoutLink || null,
-      meetingUrl: e.hangoutLink || (e.conferenceData?.entryPoints?.[0]?.uri) || null,
+      meetingUrl: extractMeetingUrl(e),
       attendees: (e.attendees || []).length,
       organizer: e.organizer?.email || null,
     }));

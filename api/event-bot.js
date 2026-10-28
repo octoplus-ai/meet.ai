@@ -130,6 +130,7 @@ export default async function handler(req, res) {
       meetingUrl, title: (ev && ev.title) || (m && m.title) || "Meeting",
       joinAt: (ev && ev.start) || (m && m.start_time) || null, calendarEventId: eventId,
       botName: (users[0] && users[0].notetaker_name) || "OctoMeet AI",
+      manualRetry: true,
     });
     return res.status(200).json({ ok: !!(r.ok || r.already), enabled: true, detail: r.error || undefined });
   } catch (e) {

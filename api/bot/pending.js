@@ -3,6 +3,9 @@
 // this on startup + every few minutes so scheduled meetings SURVIVE orchestrator restarts and
 // a failed "arm" POST is self-healed. Source of truth = the meetings table.
 import { sb } from "../lib/supa.js";
+import { effectivePlanForUser } from "../lib/internal-plan.js";
+import { limitsForPlan } from "../lib/plan.js";
+import { requireEnabledMeeting, meetingLimitMinutes } from "../../shared/meeting-platform.js";
 
 export default async function handler(req, res) {
   try {
@@ -25,7 +28,8 @@ export default async function handler(req, res) {
     const errCooldown = now - 90 * 1000;   // re-arm a timed-out meeting ~90s after it failed -> near-continuous lobby coverage
     // Retry ONLY admission/inactivity timeouts (empty room, host just late). NOT a denial or a redirect -
     // if the host actively rejected the bot, or the link is wrong, re-knocking every 90s would be spam.
-    const RETRYABLE_ERR = /NOT_ADMITTED_TIMEOUT|REQUEST_TIMEOUT|HARD_TIMEOUT/i;
+    const RETRYABLE_ERR = /NOT_ADMITTED_TIMEOUT|REQUEST_TIMEOUT|HARD_TIMEOUT|ADMISSION_TIMEOUT/i;
+    const NO_RETRY_ERR = /AUTH_REQUIRED|MEETING_DENIED|CAPTCHA_REQUIRED|POLICY_BLOCKED|PASSCODE_REQUIRED|PASSCODE_INVALID/i;
     const raw = await sb(
       `meetings?capture_mode=eq.inhouse_bot&status=in.(scheduled,joining,error)&start_time=gte.${encodeURIComponent(from)}&start_time=lte.${encodeURIComponent(to)}` +
       `&select=id,user_id,meeting_url,start_time,end_time,title,bot_id,status,status_synced_at,error&order=start_time.asc&limit=100`
@@ -37,11 +41,12 @@ export default async function handler(req, res) {
       return now < endMs + GRACE_MS; // future meetings pass (end is ahead); long-past ones are dropped
     };
     const rows = (raw || []).filter((r) => {
+      try { requireEnabledMeeting(r.meeting_url, process.env); } catch { return false; }
       if (!inWindow(r)) return false; // the whole meeting window has passed -> stop attending (never loop a bot into a dead room)
       const syncMs = r.status_synced_at ? new Date(r.status_synced_at).getTime() : 0;
       if (r.status === "scheduled") return true; // future + ongoing scheduled meetings (arms/keeps the boot timer)
       if (r.status === "joining") return !r.status_synced_at || syncMs < staleJoin; // worker died in the lobby -> re-arm (a live, waiting worker stays fresh and is skipped)
-      if (r.status === "error") return RETRYABLE_ERR.test(r.error || "") && syncMs < errCooldown; // never admitted (arrived to an empty room) -> keep trying within the window
+      if (r.status === "error") return !NO_RETRY_ERR.test(r.error || "") && RETRYABLE_ERR.test(r.error || "") && syncMs < errCooldown; // never admitted (arrived to an empty room) -> keep trying within the window
       return false;
     });
 
@@ -56,21 +61,26 @@ export default async function handler(req, res) {
         { method: "PATCH", body: { status: "processing", status_synced_at: new Date().toISOString() } });
     } catch (e) { /* best-effort */ }
 
-    // Resolve each owner's notetaker display name (best-effort).
+    // Reconciliation must preserve the owner's existing plan cap after a restart.
+    // An unavailable owner lookup conservatively retains the Free 60-minute cap.
     const uids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
-    const names = {};
+    const names = Object.create(null), caps = Object.create(null);
     if (uids.length) {
-      const us = await sb(`app_users?id=in.(${uids.map(encodeURIComponent).join(",")})&select=id,notetaker_name`).catch(() => []);
-      (us || []).forEach((u) => { names[u.id] = u.notetaker_name || ""; });
+      const us = await sb(`app_users?id=in.(${uids.map(encodeURIComponent).join(",")})&select=id,email,plan,notetaker_name`).catch(() => []);
+      (us || []).forEach((u) => {
+        names[u.id] = u.notetaker_name || "";
+        caps[u.id] = meetingLimitMinutes(limitsForPlan(effectivePlanForUser(u)).maxMeetingMin);
+      });
     }
 
     res.status(200).json({
       pending: rows.map((r) => ({
-        meetingId: r.id, botId: r.bot_id, userId: r.user_id, meetingUrl: r.meeting_url,
+        meetingId: r.id, botId: r.bot_id, userId: r.user_id, meetingUrl: requireEnabledMeeting(r.meeting_url, process.env).url,
         joinAt: r.start_time, title: r.title || "", botName: names[r.user_id] || "OctoMeet AI",
+        maxMeetingMin: caps[r.user_id] || 60,
       })),
     });
   } catch (e) {
-    res.status(500).json({ error: String(e.message || e) });
+    res.status(500).json({ error: "pending_feed_failed" });
   }
 }
