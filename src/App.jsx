@@ -15,6 +15,7 @@ import { THEME_LIST, getTheme, customTheme, coerceDeck, deckHTML } from "./slide
 import { exportPptx } from "./slides/pptx.js";
 import { EXTRA_LANGS } from "./i18n-extra.js";
 import { parseMeetingUrl, platformLabel } from "../shared/meeting-platform.js";
+import { captureFailureMessage, delayedProcessingCount, failedCaptures, savedRecordingUrl } from "./media/meeting-activity.js";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
@@ -117,7 +118,7 @@ const EXTRA = {
     pickColors: "Custom palette", bgColor: "Background color", accentColor: "Accent color",
     // hardcoded-string sweep
     statusScheduled: "🗓️ OctoMeet is scheduled to join this meeting and will start recording automatically at the start time.", statusJoining: "🔄 OctoMeet is joining the meeting now. Admit it from the waiting room to start recording.", statusInCall: "🟡 OctoMeet is in the meeting. Recording will begin once allowed.",
-    statusRecording: "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.", statusProcessing: "⏳ Meeting ended - generating your AI report from the transcript. This page updates automatically.", octoMeetScore: "Octo Score",
+    statusRecording: "🔴 OctoMeet is recording live. Your AI report will appear here automatically when the meeting ends.", statusProcessing: "⏳ Processing this meeting. The recording and report will appear as they become available.", octoMeetScore: "Octo Score",
     octoMeetScoreTip: "how effective the meeting was, combining real-time sentiment and engagement.", badgeScheduled: "Scheduled", badgeJoining: "Joining…",
     badgeInCall: "In call", badgeRecording: "Recording", badgeProcessing: "Processing report…",
     badgeFailed: "Failed", signInToViewReport: "Sign in to view this report", reportRestrictedContinue: "This report is restricted. Continue with the account it was shared with",
@@ -138,7 +139,9 @@ const EXTRA = {
     inProgress: "In progress", anytimeOpt: "Anytime", todayOpt: "Today",
     thisWeekOpt: "This week", thisMonthOpt: "This month", allReportsOpt: "All Reports",
     myReportsOpt: "My reports", ownedOrInvited: "Owned or invited to", recordedByOctomeet: "Recorded by OctoMeet", liveRecordingBanner: "OctoMeet is recording “{title}”{more} - the AI report will appear here automatically.", liveRecMore: " +{n} more",
-    generatingReportsBanner: "Generating {n} AI report{s} from your meeting{s}… this updates automatically.", refreshBtn: "Refresh", newBadge: "NEW!",
+    processingMeetingBanner: "Processing “{title}”… this updates automatically.", processingMeetingsBanner: "Processing {n} meetings… this updates automatically.",
+    delayedProcessingBanner: "“{title}” is taking longer to process than expected. The report is not ready yet.", delayedProcessingMany: "{n} meetings are taking longer to process than expected. Their reports are not ready yet.",
+    failedCapturesTitle: "Meetings that could not be completed", savedRecording: "View saved recording", noCompletedReport: "Report unavailable", showAllFailures: "Show all {n}", showFewerFailures: "Show fewer", refreshBtn: "Refresh", newBadge: "NEW!",
     crmBannerMsg: "Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.", addHubspot: "Add Hubspot", addSalesforce: "Add Salesforce",
     dismiss: "Dismiss", clearFilters: "Clear filters", deselectAll: "Deselect all",
     selectAll2: "Select all", nSelected: "{n} selected", noIncompleteMatch: "No in-progress meetings match “{q}”.",
@@ -208,7 +211,7 @@ const EXTRA = {
     pickColors: "Paleta personalizada", bgColor: "Color de fondo", accentColor: "Color de acento",
     // hardcoded-string sweep
     statusScheduled: "🗓️ OctoMeet está programado para unirse a esta reunión y empezará a grabar automáticamente en el horario de inicio.", statusJoining: "🔄 OctoMeet se está uniendo a la reunión ahora. Admitilo desde la sala de espera para empezar a grabar.", statusInCall: "🟡 OctoMeet está en la reunión. La grabación va a empezar una vez que se permita.",
-    statusRecording: "🔴 OctoMeet está grabando en vivo. Tu reporte con IA va a aparecer acá automáticamente cuando termine la reunión.", statusProcessing: "⏳ La reunión terminó - generando tu reporte con IA a partir de la transcripción. Esta página se actualiza automáticamente.", octoMeetScore: "Octo Score",
+    statusRecording: "🔴 OctoMeet está grabando en vivo. Tu reporte con IA va a aparecer acá automáticamente cuando termine la reunión.", statusProcessing: "⏳ Procesando esta reunión. La grabación y el informe aparecerán cuando estén disponibles.", octoMeetScore: "Octo Score",
     octoMeetScoreTip: "qué tan efectiva fue la reunión, combinando el sentimiento y el engagement en tiempo real.", badgeScheduled: "Programada", badgeJoining: "Uniéndose…",
     badgeInCall: "En llamada", badgeRecording: "Grabando", badgeProcessing: "Procesando reporte…",
     badgeFailed: "Falló", signInToViewReport: "Iniciá sesión para ver este reporte", reportRestrictedContinue: "Este reporte es restringido. Continuá con la cuenta con la que se compartió",
@@ -229,7 +232,9 @@ const EXTRA = {
     inProgress: "En progreso", anytimeOpt: "Cualquier momento", todayOpt: "Hoy",
     thisWeekOpt: "Esta semana", thisMonthOpt: "Este mes", allReportsOpt: "Todos los reportes",
     myReportsOpt: "Mis reportes", ownedOrInvited: "Propios o invitado", recordedByOctomeet: "Grabado por OctoMeet", liveRecordingBanner: "OctoMeet está grabando \"{title}\"{more} - el reporte con IA aparecerá acá automáticamente.", liveRecMore: " +{n} más",
-    generatingReportsBanner: "Generando {n} reportes con IA de tus reuniones… esto se actualiza automáticamente.", refreshBtn: "Actualizar", newBadge: "NUEVO!",
+    processingMeetingBanner: "Procesando “{title}”… esto se actualiza automáticamente.", processingMeetingsBanner: "Procesando {n} reuniones… esto se actualiza automáticamente.",
+    delayedProcessingBanner: "“{title}” está demorando más de lo esperado. El informe todavía no está listo.", delayedProcessingMany: "{n} reuniones están demorando más de lo esperado. Sus informes todavía no están listos.",
+    failedCapturesTitle: "Reuniones que no se pudieron completar", savedRecording: "Ver grabación guardada", noCompletedReport: "Informe no disponible", showAllFailures: "Ver las {n}", showFewerFailures: "Ver menos", refreshBtn: "Actualizar", newBadge: "NUEVO!",
     crmBannerMsg: "Conectá tu CRM para recibir recomendaciones inteligentes sobre cuándo avanzar tus oportunidades a la siguiente etapa.", addHubspot: "Agregar HubSpot", addSalesforce: "Agregar Salesforce",
     dismiss: "Descartar", clearFilters: "Limpiar filtros", deselectAll: "Deseleccionar todo",
     selectAll2: "Seleccionar todo", nSelected: "{n} seleccionados", noIncompleteMatch: "No hay reuniones en progreso que coincidan con \"{q}\".",
@@ -745,6 +750,7 @@ function adaptReal(m) {
     dubs: (m.dubs && typeof m.dubs === "object") ? m.dubs : {},
     video: (done && m.capture_mode === "inhouse_bot" && m.recording_url) ? m.recording_url
       : ((done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null),
+    savedRecording: savedRecordingUrl(m.recording_url),
     // Owner's Link Access choice; legacy rows with a minted token default to public (their
     // links were already out in the wild), token-less rows default to restricted.
     linkAccess: m.link_access || (m.share_token ? "public" : "restricted"),
@@ -2015,11 +2021,12 @@ function ParticipantsCell({ meeting, emailBook }) {
   );
 }
 
-function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder, user, onRename, onDelete }) {
+export function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder, user, onRename, onDelete }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
   const [tab, setTab] = useState("reports");
   const [showCrm, setShowCrm] = useState(true);
+  const [showAllFailures, setShowAllFailures] = useState(false);
   const [renaming, setRenaming] = useState(null);   // meeting being renamed
   const [renameVal, setRenameVal] = useState("");
   const [deleting, setDeleting] = useState(null);    // meeting pending delete confirm
@@ -2089,8 +2096,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   const submitRename = () => { if (renaming && renameVal.trim()) { onRename && onRename(renaming, renameVal.trim()); toast("Renamed"); } setRenaming(null); };
   const confirmDelete = () => { if (deleting) { onDelete && onDelete(deleting); toast("Report deleted"); } setDeleting(null); };
 
-  // "error" is intentionally excluded: a failed capture never shows anywhere -
-  // it's either a real report (recorded) or nothing at all.
+  // Failed captures stay in their own activity list, never among completed reports.
   const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing"];
   const sourceOpts = useMemo(() => [{ value: "all", label: tr("allSources") }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
   const folderOpts = useMemo(() => [{ value: "all", label: tr("allFoldersOpt") }, ...[...new Set(meetings.flatMap((m) => m.folders || (m.folder ? [m.folder] : [])).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
@@ -2100,11 +2106,8 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
 
   // Date & Time column sort direction - newest first by default; the header toggles it.
   const [sortDir, setSortDir] = useState("desc");
-  const filtered = useMemo(
-    () => (tab === "incomplete"
-      ? meetings.filter((m) => m.real && INCOMPLETE.includes(m.status))
-      // Reports tab: only finished reports (or demo rows). Never failed, never in-progress.
-      : meetings.filter((m) => !m.real || m.status === "done"))
+  const matchingMeetings = useMemo(
+    () => meetings
       .filter((m) => !folderFilter || (m.folders || (m.folder ? [m.folder] : [])).includes(folderFilter))
       .filter((m) => fOwner === "all" || (fOwner === "mine" ? !m.shared : m.real))
       .filter((m) => fSource === "all" || m.source === fSource)
@@ -2122,8 +2125,11 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
         return hay.includes(s);
       })
       .sort((a, b) => (sortDir === "asc" ? whenMs(a) - whenMs(b) : whenMs(b) - whenMs(a))),
-    [meetings, q, tab, folderFilter, fOwner, fDate, fRange, fType, fSource, fFolder, sortDir]
+    [meetings, q, folderFilter, fOwner, fDate, fRange, fSource, fFolder, sortDir]
   );
+  const filtered = useMemo(() => matchingMeetings.filter((m) => tab === "incomplete"
+    ? m.real && INCOMPLETE.includes(m.status) : !m.real || m.status === "done"), [matchingMeetings, tab]);
+  const failed = useMemo(() => failedCaptures(matchingMeetings), [matchingMeetings]);
   const groups = useMemo(() => {
     const order = ["TODAY", "THIS WEEK", "THIS MONTH", "EARLIER"];
     const by = {};
@@ -2154,6 +2160,7 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
   // (<13 min; worker beats every 5 min) drops any row a dead worker left behind.
   const live = useMemo(() => meetings.filter((m) => m.real && ["in_call", "recording"].includes(m.status) && (Date.now() - (m.syncedAt || 0)) < 13 * 60000), [meetings]);
   const proc = useMemo(() => meetings.filter((m) => m.real && m.status === "processing"), [meetings]);
+  const processingDelayed = delayedProcessingCount(proc) > 0;
   const selectedMeetings = filtered.filter((m) => sel.has(m.id));
   const allSelected = filtered.length > 0 && filtered.every((m) => sel.has(m.id));
   const toggleAll = () => setSel(allSelected ? new Set() : new Set(filtered.map((m) => m.id)));
@@ -2204,16 +2211,18 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
       <div className="flex-1 overflow-y-auto px-6 py-5">
           <>
             {(live.length > 0 || proc.length > 0) && (
-              <div className={"mb-5 flex items-center gap-3 rounded-xl border px-4 py-3 " + (live.length ? "border-rose-200 bg-rose-50" : "border-violet-200 bg-violet-50")}>
+              <div role="status" className={"mb-5 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 " + (live.length ? "border-rose-200 bg-rose-50" : "border-violet-200 bg-violet-50")}>
                 {live.length ? (
                   <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" /></span>
-                ) : <Loader2 size={15} className="animate-spin text-violet-600" />}
-                <span className="flex-1 text-sm font-medium text-slate-700">
+                ) : processingDelayed ? <Clock size={15} className="shrink-0 text-violet-600" /> : <Loader2 size={15} className="shrink-0 animate-spin text-violet-600 motion-reduce:animate-none" />}
+                <span className="min-w-0 flex-1 break-words text-sm font-medium text-slate-700">
                   {live.length
                     ? tf("liveRecordingBanner", { title: live[0].title, more: live.length > 1 ? tf("liveRecMore", { n: live.length - 1 }) : "" })
-                    : tf("generatingReportsBanner", { n: proc.length, s: proc.length > 1 ? "s" : "" })}
+                    : proc.length === 1 ? tf(processingDelayed ? "delayedProcessingBanner" : "processingMeetingBanner", { title: proc[0].title })
+                    : processingDelayed ? tf("delayedProcessingMany", { n: delayedProcessingCount(proc) }) : tf("processingMeetingsBanner", { n: proc.length })}
                 </span>
-                <button onClick={() => window.location.reload()} className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"><RefreshCw size={12} /> {tr("refreshBtn")}</button>
+                {!live.length && proc.length === 1 && proc[0].savedRecording && <a href={proc[0].savedRecording} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600"><Play size={15} />{tr("savedRecording")}</a>}
+                <button onClick={onRefresh} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600"><RefreshCw size={12} /> {tr("refreshBtn")}</button>
               </div>
             )}
             {tab === "reports" && showCrm && (
@@ -2260,6 +2269,24 @@ function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFi
                 {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">{tr("selMeetingsPres")}</span>}
               </div>
             </div>
+            {failed.length > 0 && (
+              <section aria-label={tr("failedCapturesTitle")} className="my-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-900"><AlertTriangle size={16} className="shrink-0" />{tr("failedCapturesTitle")} ({failed.length})</h2>
+                <ul className="mt-2 divide-y divide-amber-200">
+                  {(showAllFailures ? failed : failed.slice(0, 3)).map((m) => (
+                    <li key={m.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center">
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm font-semibold text-slate-900">{m.title}</p>
+                        <p className="mt-1 text-xs text-slate-600">{m.source} · {fmtDateFull(m.date)} · {m.timeStart} · {tr("noCompletedReport")}</p>
+                        <p className="mt-1 max-w-prose text-sm leading-relaxed text-slate-700">{captureFailureMessage(m.error, { hasRecording: !!m.savedRecording, lang: CUR_LANG })}</p>
+                      </div>
+                      {m.savedRecording && <a href={m.savedRecording} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-violet-400 hover:text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600"><Play size={15} />{tr("savedRecording")}</a>}
+                    </li>
+                  ))}
+                </ul>
+                {failed.length > 3 && <button onClick={() => setShowAllFailures(value => !value)} aria-expanded={showAllFailures} className="min-h-11 rounded-lg px-2 py-2 text-sm font-semibold text-amber-900 underline underline-offset-4 hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-700">{showAllFailures ? tr("showFewerFailures") : tf("showAllFailures", { n: failed.length })}</button>}
+              </section>
+            )}
             {/* Select all — right under the search/filters row */}
             {filtered.length > 0 && (
               <div className="mb-1 flex items-center gap-3">
