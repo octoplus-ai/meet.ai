@@ -7,6 +7,7 @@ import { getBot, latestCode, mapStatus } from "./lib/recall.js";
 import { processMeeting, reanalyzeStored } from "./lib/process.js";
 import { getEventAttendees } from "./lib/google.js";
 import { serializeRtmsMedia } from './lib/rtms-media.js';
+import { serializeLegacyMedia } from './lib/legacy-media.js';
 import { isRtmsDeleting } from './lib/share.js';
 
 // This endpoint self-heals: it can run up to 2 full Claude re-analyses (~15-25s each) plus
@@ -142,7 +143,7 @@ export default async function handler(req, res) {
       }));
     }
 
-    res.status(200).json({ meetings: m.filter(row => !isRtmsDeleting(row)).map(row => serializeRtmsMedia(row)), pendingDeletions });
+    res.status(200).json({ meetings: m.filter(row => !isRtmsDeleting(row)).map(row => serializeLegacyMedia(serializeRtmsMedia(row))), pendingDeletions });
   } catch (e) {
     console.error("meetings error:", e && (e.message || e));
     res.status(500).json({ meetings: [], error: "failed to load meetings" });
