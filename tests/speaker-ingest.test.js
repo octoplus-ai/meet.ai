@@ -4,7 +4,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { cameraMetadata, preserveCameraMetadata } from "../api/lib/speaker-media.js";
 const source = fs.readFileSync(new URL("../api/bot/ingest.js", import.meta.url), "utf8")
-  .replace(/^import .*;\r?\n/gm, "").replace("export default async function handler", "async function handler");
+  .replace(/^import .*;\r?\n/gm, "").replace('export const config', 'const config').replace("export default async function handler", "async function handler");
 const payload = { secret: "mock", meetingId: "m", pipUrl: "https://media.example.test/m/pip.mp4", shareIntervals: [[0, 60]], durationMin: 1,
   stage: { presenterMedia: { pipStatus: "partial", pipIntervals: [[10, 30]], pipTimeline: [{ t: 0, state: "camera_off", name: "Test" }] } } };
 async function run({ body = payload, status = "processing", failAI = false, prior } = {}) {

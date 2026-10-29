@@ -2,93 +2,20 @@
 // run a rich Read.ai-style analysis with Claude, and persist a full report.
 import { sb } from "./supa.js";
 import { getBot, getTranscript, durationMin } from "./recall.js";
-import { annotateEvent, getValidToken } from "./google.js";
-import { randomToken } from "./session.js";
-import { sendViaGmail, reportEmail, getBotSender } from "./email.js";
-import { deliverReport } from "./deliver.js";
+import { annotateEvent } from "./google.js";
+import { notifyMeetingParticipants } from "./notifications.js";
+
+
 import { preserveCameraMetadata } from "./speaker-media.js";
 
 const APP_URL = "https://meet.octoplusteam.com/"; // branded domain (same deployment; better email deliverability)
 const arr = (x) => (Array.isArray(x) ? x : []);
 
-export function recapCoverUrl(meeting, shareToken) {
-  // RTMS objects are private: email clients cannot prove the viewer's identity.
-  // Send the report link; its authenticated page can load the cover through the gateway.
-  if (meeting.capture_mode === "zoom_rtms") return "";
-  return meeting.cover_url || (meeting.bot_id && meeting.capture_mode !== "inhouse_bot" ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + encodeURIComponent(shareToken) : "");
-}
-
-// Auto-recap: when a report is ready, email everyone involved (calendar attendees + owner)
-// from the OWNER's Gmail - unless the owner turned it off in Report Sharing preferences.
-// Idempotent via meetings.notified_at. Best-effort; never throws into the pipeline.
+// Delivery is durable per recipient; notified_at is set only after confirmed success.
+export { recapCoverUrl } from './notifications.js';
 export async function notifyParticipants(meeting, ai, rep) {
-  try {
-    if (meeting.notified_at) return;
-    const ownerId = meeting.user_id;
-    const native = meeting.capture_mode === "zoom_rtms";
-    const nativeGuard = native ? `&user_id=eq.${encodeURIComponent(ownerId)}&capture_mode=eq.zoom_rtms&status=eq.done&stage_info->>deletion=is.null&stage_info->>rtmsSessionId=eq.${encodeURIComponent(meeting.stage_info?.rtmsSessionId || "")}` : "";
-    const canNotify = async () => !native || (!!meeting.stage_info?.rtmsSessionId && (await sb(`meetings?id=eq.${encodeURIComponent(meeting.id)}${nativeGuard}&select=id&limit=1`))?.length === 1);
-    if (!(await canNotify())) return;
-    const u = (await sb(`app_users?id=eq.${ownerId}&select=name,email,sharing_prefs,integrations`))[0] || {};
-    const prefs = (u.sharing_prefs && typeof u.sharing_prefs === "object") ? u.sharing_prefs : {};
-    const ints = (u.integrations && typeof u.integrations === "object") ? u.integrations : {};
-    const token = await getValidToken(ownerId);
-    // Resolve the sender BEFORE claiming: if we can't deliver ANYTHING right now (no bot sender,
-    // no owner Gmail, no auto-push integration), leave notified_at null so a later retry - after
-    // the bot mailbox or the owner's Google reconnects - still sends the recap instead of losing it.
-    const bot = await getBotSender();
-    const sendToken = (bot && bot.token) || token;
-    const sendFrom = (bot && bot.fromAddress) || u.email;
-    const hasPush = Object.keys(ints).some((k) => ints[k] && ints[k].autoPush && (ints[k].url || ints[k].token));
-    if (!(sendToken && u.email) && !hasPush) return;
-    // ATOMIC CLAIM: only ONE run may send the recap. A conditional PATCH (notified_at IS NULL)
-    // is resolved atomically by Postgres row-locking, so concurrent processMeeting runs
-    // (webhook retry + poll/reprocess) can never double-send. If we don't win, bail.
-    const claim = await sb(`meetings?id=eq.${meeting.id}&notified_at=is.null${nativeGuard}`, { method: "PATCH", body: { notified_at: new Date().toISOString() }, prefer: "return=representation" });
-    if (!Array.isArray(claim) || !claim.length) return;
-    const title = meeting.title || "Meeting report";
-    let whenText = "";
-    if (meeting.start_time) { try { whenText = new Date(meeting.start_time).toLocaleString("en-US", { month: "long", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) {} }
-    const sharer = u.name || u.email || "OctoMeet";
-    let shares = arr(meeting.shares);
-    const entryFor = (email) => { let e = shares.find((s) => (s.email || "").toLowerCase() === email); if (!e) { e = { email, role: "Viewer", name: "", token: randomToken(), magic: randomToken() }; shares.push(e); } if (!e.magic) e.magic = randomToken(); return e; };
-
-    // 1) Auto-push the report to connected integrations flagged autoPush (independent of email pref).
-    const pushData = { title, summary: ai.summary || "", score: (rep.scores && rep.scores.overall) || 0, actionItems: ai.actionItems || rep.action_items || [], nextSteps: ai.nextSteps || rep.next_steps || [], date: meeting.start_time, link: APP_URL };
-    for (const target of Object.keys(ints)) { const cfg = ints[target]; if (cfg && cfg.autoPush && (cfg.url || cfg.token)) { try { if (!(await canNotify())) return; const r = await deliverReport(target, cfg, pushData); console.log("auto-push " + target + ": " + (r.ok ? "ok" : r.error)); } catch (e) {} } }
-
-    // 2) Auto-recap email to attendees + owner (only if the pref is on and Gmail is connected).
-    let sent = 0;
-    let attendeeList = null; // persisted so the app (search, copy-emails, Ask Octo) knows participant emails
-    if (meeting.calendar_event_id && token) {
-      try {
-        const ev = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(meeting.calendar_event_id)}`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
-        attendeeList = arr(ev && ev.attendees).filter((at) => at && at.email && !at.resource).map((at) => ({ email: String(at.email).toLowerCase(), name: at.displayName || "", response: at.responseStatus || "" }));
-      } catch (e) { /* ignore */ }
-    }
-    // Recipients: autoRecap ON (default) -> calendar attendees + owner; OFF -> owner ONLY (the
-    // owner always gets their recap the moment the meeting ends). Sender resolved above.
-    if (sendToken && u.email) {
-      const recips = new Set([u.email.toLowerCase()]);
-      if (prefs.autoRecap !== false) (attendeeList || []).forEach((at) => { if (at.response !== "declined") recips.add(at.email); });
-      const to = [...recips].filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e));
-      for (const email of to) {
-        if (!(await canNotify())) return;
-        const e = entryFor(email);
-        // recall/thumb only resolves for real Recall bot ids - never for the in-house bot.
-        const coverUrl = recapCoverUrl(meeting, e.token);
-        const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: APP_URL + "?share=" + e.token, coverUrl, sharerName: sharer, kind: "auto" });
-        const r = await sendViaGmail(sendToken, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: sendFrom, replyTo: u.email });
-        if (r.ok) sent++;
-      }
-    }
-    const finalPatch = { shares }; // notified_at already claimed above
-    if (attendeeList && attendeeList.length) finalPatch.attendees = attendeeList;
-    await sb(`meetings?id=eq.${meeting.id}${nativeGuard}`, { method: "PATCH", body: finalPatch });
-    console.log("post-report actions: " + sent + " recap emails for " + meeting.id);
-  } catch (e) { console.error("post-report actions error:", e && (e.message || e)); }
+  return notifyMeetingParticipants(meeting);
 }
-
 // Bump this whenever analyzeTranscript's prompt/output shape improves. Existing reports
 // with a lower report_version are re-analyzed automatically (from their STORED transcript,
 // no Recall needed) so every past meeting reflects the latest improvements without re-recording.
@@ -279,7 +206,7 @@ function mergeParticipants(stats, aiParts) {
 export async function processMeeting(meeting, { force = false } = {}) {
   if (!force && meeting.status === "done") {
     const existing = await sb(`reports?meeting_id=eq.${meeting.id}&select=id`);
-    if (existing.length) return { skipped: "already done" };
+    if (existing.length) { await notifyParticipants(meeting); return { skipped: "already done" }; }
   }
 
   const bot = await getBot(meeting.bot_id);

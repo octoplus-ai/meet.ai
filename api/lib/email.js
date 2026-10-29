@@ -14,7 +14,7 @@ const BOT_SENDER_EMAIL = (process.env.BOT_SENDER_EMAIL || "octomeetnotetaker@gma
 // every call - Gmail access tokens expire in ~1h while warm serverless instances live longer, so
 // caching the token itself would eventually 401 every outgoing mail. null = not connected.
 let _botUser, _botUserAt = 0;
-export async function getBotSender() {
+export async function getBotSender(options) {
   try {
     if (_botUser === undefined || Date.now() - _botUserAt > 5 * 60000) {
       // ilike (no wildcards) = case-insensitive equality, in case the login stored mixed case.
@@ -22,7 +22,7 @@ export async function getBotSender() {
       _botUserAt = Date.now();
     }
     if (!_botUser) return null;
-    const token = await getValidToken(_botUser.id); // refreshed per call, never cached
+    const token = await getValidToken(_botUser.id, options); // refreshed per call, never cached
     return token ? { token, fromAddress: _botUser.email } : null;
   } catch (e) {
     _botUser = undefined; // transient failure: don't pin "no bot" for the life of the instance
@@ -47,7 +47,7 @@ function transport() {
 
 // Send via the user's OWN Gmail (Gmail API messages.send + their OAuth access token).
 // From = the user's address with a friendly display name. No app password needed.
-export async function sendViaGmail(token, { to, subject, html, text, fromName, fromAddress, replyTo }) {
+export async function sendViaGmail(token, { to, subject, html, text, fromName, fromAddress, replyTo }, { timeoutMs = 15000 } = {}) {
   if (!token) return { ok: false, error: "no_token", needScope: true };
   const list = (Array.isArray(to) ? to : [to]).filter(Boolean);
   if (!list.length) return { ok: false, error: "no recipients" };
@@ -68,10 +68,16 @@ export async function sendViaGmail(token, { to, subject, html, text, fromName, f
   ].join("\r\n");
   const encoded = Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   try {
-    const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ raw: encoded }) });
-    if (!r.ok) { const t = await r.text().catch(() => ""); console.error("[gmail] send failed", r.status, t.slice(0, 300)); return { ok: false, error: (r.status === 403 || r.status === 401) ? "needScope" : "send_failed", detail: t.slice(0, 200) }; }
-    return { ok: true };
-  } catch (e) { console.error("[gmail] send error", e && e.message); return { ok: false, error: String(e.message || e) }; }
+    const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ raw: encoded }), signal: AbortSignal.timeout(Math.max(1, Math.min(15000, timeoutMs))) });
+    const data = await r.json().catch(() => null);
+    if (!r.ok) {
+      const reason = data?.error?.errors?.[0]?.reason;
+      const auth = r.status === 401 || (r.status === 403 && !['rateLimitExceeded', 'userRateLimitExceeded', 'dailyLimitExceeded'].includes(reason));
+      console.error("[gmail] send rejected", r.status);
+      return { ok: false, status: r.status, error: auth ? "needScope" : "send_failed" };
+    }
+    return { ok: true, status: r.status, id: data?.id || null };
+  } catch { console.error("[gmail] send outcome unknown"); return { ok: false, error: "send_outcome_unknown", uncertain: true }; }
 }
 
 export async function sendMail({ to, subject, html, text, fromName, replyTo }) {

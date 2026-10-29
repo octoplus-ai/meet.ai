@@ -318,6 +318,7 @@ test('autonomous sweep includes default-on members and legacy calendar members w
     armUserCalendar: async id => { armed.push(id); return { armed: 1 }; },
     ensureWatch: async id => { watched.push(id); return { fresh: true }; },
     sweepRtmsDeletions: async options => { cleanups.push(options); return {}; },
+    drainMeetingNotifications: async () => [],
   });
   vm.runInContext(source('cron/auto-join.js'), context);
   const res = response();

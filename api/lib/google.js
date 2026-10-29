@@ -2,15 +2,17 @@
 import { sb } from "./supa.js";
 import { extractMeetingUrl } from "../../shared/meeting-platform.js";
 
-export async function getValidToken(userId) {
+export async function getValidToken(userId, { timeoutMs = 8000 } = {}) {
   const r = await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google&select=*`);
   let tk = r[0];
   if (!tk) return null;
   // Treat a missing expiry as expired (never trust a stale token), and refresh when we can.
   const expired = !tk.expiry || new Date(tk.expiry) <= new Date();
   if (expired && tk.refresh_token) {
-    const nt = await fetch("https://oauth2.googleapis.com/token", {
+    let nt;
+    try { nt = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
+      signal: AbortSignal.timeout(Math.max(1, Math.min(8000, timeoutMs))),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID || "540014435995-d8rb5g8a9c4rv82vo4dtak9eoh3e2ufi.apps.googleusercontent.com",
@@ -18,7 +20,8 @@ export async function getValidToken(userId) {
         refresh_token: tk.refresh_token,
         grant_type: "refresh_token",
       }),
-    }).then((x) => x.json());
+    }).then((x) => x.json()); }
+    catch { console.error("[google] token refresh unavailable"); return null; }
     if (nt.access_token) {
       tk.access_token = nt.access_token;
       await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google`, {
@@ -26,7 +29,7 @@ export async function getValidToken(userId) {
         body: { access_token: nt.access_token, expiry: new Date(Date.now() + (nt.expires_in || 3600) * 1000).toISOString() },
       });
     } else {
-      console.error("[google] token refresh failed:", JSON.stringify(nt));
+      console.error("[google] token refresh failed:", nt.error === 'invalid_grant' ? 'reconnect_required' : 'provider_rejected');
       // Do NOT hand back the stale token: callers treat any truthy token as "connected" and
       // would send doomed 401 requests instead of falling back (e.g. bot sender -> owner Gmail).
       return null;

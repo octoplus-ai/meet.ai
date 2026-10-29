@@ -7,6 +7,7 @@ import { analyzeTranscript, ANALYSIS_VERSION, sanitizeSpeakerMap, notifyParticip
 import { cameraMetadata, preserveCameraMetadata } from "../lib/speaker-media.js";
 
 const enc = encodeURIComponent;
+export const config = { maxDuration: 300 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
@@ -23,7 +24,10 @@ export default async function handler(req, res) {
     else if (body.meetingUrl) rows = await sb(`meetings?meeting_url=eq.${enc(body.meetingUrl)}&status=neq.done&select=*&order=created_at.desc&limit=1`);
     const meeting = rows[0];
     if (!meeting) return res.status(404).json({ error: "meeting not found" });
-    if (meeting.status === "done") return res.status(200).json({ ok: true, alreadyDone: true, meeting_id: meeting.id });
+    if (meeting.status === "done") {
+      await notifyParticipants(meeting);
+      return res.status(200).json({ ok: true, alreadyDone: true, meeting_id: meeting.id });
+    }
     const uid = meeting.user_id;
 
     // Keep captured camera evidence even if transcription/AI fails. The worker

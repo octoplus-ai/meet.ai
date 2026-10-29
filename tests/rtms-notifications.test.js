@@ -1,46 +1,26 @@
-import test from 'node:test';
+import test, { before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
-import vm from 'node:vm';
-
-const source=await readFile(new URL('../api/lib/process.js',import.meta.url),'utf8');
-const notifySource=source.slice(source.indexOf('export async function notifyParticipants'),source.indexOf('// Bump this whenever')).replace('export async','async');
-function fixture({native=true,deleteAt,integrations={}}={}){
-  let deleted=deleteAt==='initial',reads=0;const calls=[];
-  const context={APP_URL:'https://fixture.invalid/',arr:x=>Array.isArray(x)?x:[],console:{log(){},error(){}},encodeURIComponent,
-    sb:async(path,options={})=>{
-      if(path.startsWith('app_users?'))return[{name:'Owner',email:'owner@example.invalid',integrations}];
-      if(path.startsWith('meetings?')){
-        calls.push({type:'database',path,options});
-        if(!options.method){reads++;if(deleteAt==='before_first_send'&&reads===2)deleted=true;}
-        if(path.includes('stage_info->>deletion=is.null')&&deleted)return[];
-        return[{id:'meeting'}];
-      }
-      throw new Error('Unexpected fixture request '+path);
-    },
-    getValidToken:async()=>{if(deleteAt==='token_lookup')deleted=true;return'fixture';},getBotSender:async()=>null,
-    randomToken:()=> 'random-fixture',recapCoverUrl:()=>'',reportEmail:()=>({subject:'recap',text:'captured text',html:'text'}),
-    sendViaGmail:async()=>{calls.push({type:'email'});return{ok:true};},
-    deliverReport:async target=>{calls.push({type:'push',target});if(deleteAt==='after_first_push')deleted=true;return{ok:true};},
-  };
-  vm.runInNewContext(notifySource+';this.notify=notifyParticipants',context);
-  return {calls,run:()=>context.notify({id:'meeting',user_id:'owner',capture_mode:native?'zoom_rtms':'inhouse_bot',stage_info:native?{rtmsSessionId:'capture'}:{},title:'Actual meeting'},{summary:'Actual discussion'},{} )};
+import { randomUUID } from 'node:crypto';
+import { createMeetingNotifier } from '../api/lib/notifications.js';
+import { notificationDatabase, notificationRest, seedNotifications, ids } from './helpers/notification-db.mjs';
+let db;
+before(async()=>{db=await notificationDatabase();});after(async()=>{await db?.close();});beforeEach(async()=>seedNotifications(db,{native:true}));
+const remove = () => db.query("update meetings set stage_info=stage_info||'{\"deletion\":\"requested\"}'::jsonb where id=$1",[ids.meeting]);
+function fixture({ deleteAt, integrations = {} }={}) {
+  const calls=[];let checks=0;
+  const rest=notificationRest(db);
+  const notifier=createMeetingNotifier({database:async(path,options)=>{
+    if(path.startsWith('meetings?') && path.includes('select=id,user_id,status')) {checks++;if(deleteAt==='before_first_send'&&checks===1)await remove();}
+    return rest(path,options);
+  },ownerToken:async()=>{if(deleteAt==='token_lookup')await remove();return 'fixture-token';},botSender:async()=>null,
+    token:()=>randomUUID().replaceAll('-',''),logger:{log(){},error(){}},
+    send:async()=>{calls.push('email');return{ok:true,status:200,id:'message-fixture'};},
+    push:async target=>{calls.push(target);if(deleteAt==='after_first_push')await remove();return{ok:true,status:200};},
+  });
+  return { calls, run: async()=>{if(deleteAt==='initial')await remove();if(Object.keys(integrations).length)await db.query('update app_users set integrations=$1 where id=$2',[integrations,ids.user]);return notifier.notify({id:ids.meeting,user_id:ids.user});} };
 }
-test('already deleted native reports do not resolve sender tokens, claim or send',async()=>{
-  const f=fixture({deleteAt:'initial'});await f.run();assert.equal(f.calls.length,1);assert.equal(f.calls[0].options.method,undefined);
-});
-test('deletion during sender lookup prevents the atomic notification claim',async()=>{
-  const f=fixture({deleteAt:'token_lookup'});await f.run();assert.equal(f.calls.some(x=>x.type==='email'),false);
-  const claim=f.calls.find(x=>x.options?.body?.notified_at);assert.match(claim.path,/user_id=eq.owner/);assert.match(claim.path,/stage_info->>deletion=is.null/);assert.match(claim.path,/rtmsSessionId=eq.capture/);
-});
-test('deletion after a claim suppresses the next email',async()=>{
-  const f=fixture({deleteAt:'before_first_send'});await f.run();assert.equal(f.calls.some(x=>x.type==='email'),false);
-});
-test('deletion after one accepted integration push stops remaining pushes and recap email',async()=>{
-  const f=fixture({deleteAt:'after_first_push',integrations:{first:{autoPush:true,url:'https://first.invalid'},second:{autoPush:true,url:'https://second.invalid'}}});
-  await f.run();assert.deepEqual(f.calls.filter(x=>x.type==='push').map(x=>x.target),['first']);assert.equal(f.calls.some(x=>x.type==='email'),false);
-});
-test('valid native notification preserves recap behavior and guards its final share write; legacy adds no checks',async()=>{
-  const native=fixture();await native.run();assert.equal(native.calls.filter(x=>x.type==='email').length,1);assert.match(native.calls.at(-1).path,/stage_info->>deletion=is.null/);
-  const legacy=fixture({native:false});await legacy.run();assert.equal(legacy.calls.filter(x=>x.type==='email').length,1);assert.equal(legacy.calls.filter(x=>x.type==='database'&&!x.options.method).length,0);
-});
+test('already deleted native report never queues or sends',async()=>{const f=fixture({deleteAt:'initial'});await f.run();assert.deepEqual(f.calls,[]);assert.equal((await db.query('select count(*) from meeting_notification_deliveries')).rows[0].count,0);});
+test('deletion during sender lookup cancels the claimed delivery before Gmail',async()=>{const f=fixture({deleteAt:'token_lookup'});await f.run();assert.deepEqual(f.calls,[]);assert.equal((await db.query('select status from meeting_notification_deliveries')).rows[0].status,'cancelled');});
+test('deletion after claim suppresses email',async()=>{const f=fixture({deleteAt:'before_first_send'});await f.run();assert.deepEqual(f.calls,[]);});
+test('deletion during one push stops subsequent deliveries',async()=>{const f=fixture({deleteAt:'after_first_push',integrations:{first:{autoPush:true,url:'https://first.invalid'},second:{autoPush:true,url:'https://second.invalid'}}});await f.run();assert.equal(f.calls.filter(x=>x!=='email').length,1);assert.equal(f.calls.filter(x=>x==='email').length,1);});
+test('native and legacy recaps use the same delivery ledger',async()=>{const native=fixture();await native.run();assert.deepEqual(native.calls,['email']);assert.ok((await db.query('select notified_at from meetings')).rows[0].notified_at);await seedNotifications(db);const legacy=fixture();await legacy.run();assert.deepEqual(legacy.calls,['email']);});

@@ -14,7 +14,10 @@ export function createRtmsIngest({ database = sb, authorize = authorizeRtmsCallb
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const authorized = await authorize(req, body); session = authorized.session; const meeting = authorized.meeting;
       const media = rtmsMedia(body, session);
-      if (session.delivered_at) return res.status(200).json({ ok: true, alreadyDone: true, meeting_id: session.meeting_id });
+      if (session.delivered_at) {
+        await notify(meeting);
+        return res.status(200).json({ ok: true, alreadyDone: true, meeting_id: session.meeting_id });
+      }
       // Persist real media before expensive analysis, without overwriting canceled/finalized meetings.
       const saved = await database('rpc/zoom_session_update', { method: 'POST', body: { p_session_id: session.id, p_status: 'processing', p_error: null, p_media: media } });
       if (!saved?.ok || saved.alreadyDone || meeting.status === 'skipped') return res.status(409).json({ error: 'zoom_capture_conflict', stop: true, ...(saved?.delete === true ? { delete: true } : {}) });

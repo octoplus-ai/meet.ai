@@ -4,6 +4,7 @@ import { sb } from "../lib/supa.js";
 import { armUserCalendar } from "../lib/schedule.js";
 import { ensureWatch } from "../lib/calendar-watch.js";
 import { sweepRtmsDeletions } from '../lib/rtms-cleanup.js';
+import { drainMeetingNotifications } from '../lib/notifications.js';
 
 export const config = { maxDuration: 60 };
 
@@ -40,6 +41,9 @@ export default async function handler(req, res) {
         results.push({ user: u.id, error: String(e.message || e) });
       }
     }
+    // Calendar admission takes priority over recap retries. These are queued jobs only;
+    // existing historical reports are never enumerated or replayed by this sweep.
+    await drainMeetingNotifications({ limit: 2, budgetMs: 12000 }).catch(() => {});
     res.status(200).json({ ok: true, users: users.length, results });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });

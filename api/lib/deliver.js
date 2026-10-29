@@ -1,6 +1,6 @@
 // Deliver a report to one connected integration (Slack/Discord/Notion/generic webhook).
 // Shared by /api/push (manual) and the report pipeline (auto-push). Returns {ok,status,detail}.
-export async function deliverReport(target, cfg, data) {
+export async function deliverReport(target, cfg, data, { timeoutMs = 10000 } = {}) {
   if (!cfg || !(cfg.url || cfg.token)) return { ok: false, error: "not_connected" };
   const title = data.title || "Meeting";
   const summary = data.summary || "";
@@ -9,10 +9,12 @@ export async function deliverReport(target, cfg, data) {
   const actions = actionItems.map((a) => `• ${a.task}${a.owner ? " (" + a.owner + ")" : ""}`).join("\n");
   const link = data.link;
   let resp;
+  const signal = AbortSignal.timeout(Math.max(1, Math.min(10000, timeoutMs)));
   try {
     if (target === "notion") {
       resp = await fetch("https://api.notion.com/v1/pages", {
         method: "POST",
+        signal,
         headers: { Authorization: `Bearer ${cfg.token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
         body: JSON.stringify({
           parent: { page_id: cfg.parent },
@@ -27,11 +29,11 @@ export async function deliverReport(target, cfg, data) {
         }),
       });
     } else if (target === "slack") {
-      resp = await fetch(cfg.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `*${title}*  ·  OctoMeet Score ${score}\n${summary}\n\n*Action items:*\n${actions || "-"}\n\n<${link}|Open full report>` }) });
+      resp = await fetch(cfg.url, { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `*${title}*  ·  OctoMeet Score ${score}\n${summary}\n\n*Action items:*\n${actions || "-"}\n\n<${link}|Open full report>` }) });
     } else if (target === "discord") {
-      resp = await fetch(cfg.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: `**${title}** · OctoMeet Score ${score}\n${summary}\n\nAction items:\n${actions || "-"}\n${link}` }) });
+      resp = await fetch(cfg.url, { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: `**${title}** · OctoMeet Score ${score}\n${summary}\n\nAction items:\n${actions || "-"}\n${link}` }) });
     } else {
-      resp = await fetch(cfg.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, date: data.date, score, summary, action_items: actionItems, next_steps: data.nextSteps || [], link }) });
+      resp = await fetch(cfg.url, { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, date: data.date, score, summary, action_items: actionItems, next_steps: data.nextSteps || [], link }) });
     }
     if (!resp.ok) { const tx = await resp.text().catch(() => ""); return { ok: false, error: "delivery_failed", status: resp.status, detail: tx.slice(0, 200) }; }
     return { ok: true };

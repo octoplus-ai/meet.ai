@@ -33,7 +33,10 @@ export default async function handler(req, res) {
       const rows = await sb(`meetings?id=eq.${enc(body.meetingId)}&select=*`);
       meeting = rows[0];
       if (!meeting) return res.status(404).json({ error: "meeting not found" });
-      if (meeting.status === "done") return res.status(200).json({ ok: true, alreadyDone: true, meeting_id: meeting.id });
+      if (meeting.status === "done") {
+        await notifyParticipants(meeting);
+        return res.status(200).json({ ok: true, alreadyDone: true, meeting_id: meeting.id });
+      }
       uid = meeting.user_id;
     } else {
       uid = await userId(req, body);
