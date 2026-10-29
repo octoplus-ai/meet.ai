@@ -52,7 +52,7 @@ async function dispatchFailed(meetingId, failure) {
   return { ...failure, meeting_id: meetingId };
 }
 
-export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarEventId, botName, manualRetry = false }) {
+export async function scheduleBot(userId, { meetingUrl, title, joinAt, endAt, calendarEventId, botName, manualRetry = false }) {
   let parsed;
   try { parsed = parseMeetingUrl(meetingUrl); }
   catch (error) { return { error: error.code === "unsupported_platform" ? error.code : "invalid_meeting_url", status: 400 }; }
@@ -61,39 +61,47 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
   const OWN = process.env.BOT_ORCHESTRATOR_URL;
   if (!OWN) return { error: "bot_backend_unavailable", status: 503 };
   if (joinAt && !Number.isFinite(new Date(joinAt).getTime())) return { error: "invalid_join_at", status: 400 };
+  const now = Date.now();
+  const joinDate = joinAt ? new Date(joinAt) : null;
+  const endDate = endAt ? new Date(endAt) : null;
+  if (endDate && (!Number.isFinite(endDate.getTime()) || endDate.getTime() <= (joinDate?.getTime() ?? now))) return { error: "invalid_end_at", status: 400 };
+  // The calendar window controls admission retries, never an admitted recording's duration.
+  const windowOpen = (start, end) => {
+    const startMs = start?.getTime();
+    if (!Number.isFinite(startMs)) return false;
+    const endMs = end ? new Date(end).getTime() : NaN;
+    return now < (endMs > startMs ? endMs : startMs + 120 * 60000) + 5 * 60000;
+  };
 
   if (calendarEventId) {
     // Dedup on the calendar event (one row per event, enforced by a DB unique index). Include ALL
     // statuses so a past errored meeting doesn't trigger a duplicate INSERT (23505) on every sweep.
-    const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&select=id,bot_id,status,start_time,status_synced_at,meeting_url,error`);
+    const ex = await sb(`meetings?user_id=eq.${userId}&calendar_event_id=eq.${encodeURIComponent(calendarEventId)}&select=id,bot_id,status,start_time,end_time,status_synced_at,meeting_url,error,recording_url`);
     if (ex && ex.length) {
       const m0 = ex[0];
-      const evStart = joinAt ? new Date(joinAt) : null;
-      // RE-ARM the same row (can't insert a second one) when:
-      //  - it errored and the event was rescheduled to the future, OR
-      //  - it errored, the meeting is still ongoing (<60 min in), and the last attempt ended >12 min
-      //    ago (join-wait is 10 min, so cycles never overlap and a ghost meeting can't spam boots),
-      //    OR the user explicitly MOVED the event time (an edit beats the cooldown), OR
-      //  - it's "scheduled" OR stuck "joining" but the event time moved (user rescheduled), OR
-      //  - the Meet link changed (the bot would join a dead room), OR
-      //  - the DISARM pass skipped it as cancelled but the event is back with a future time
-      //    (user-skipped rows - no "cancelled" error text - stay off: that's their choice).
+      const evStart = joinDate;
       const lastSync = m0.status_synced_at ? new Date(m0.status_synced_at).getTime() : 0;
-      const futureEv = evStart && evStart.getTime() > Date.now() + 30000;
-      const ongoingEv = evStart && evStart.getTime() > Date.now() - 60 * 60000;
-      // A meeting whose start is well in the past and never got admitted is OVER - stop arming it
-      // (join-wait is 10 min; 20 min past = the window closed). Prevents the perpetual re-arm loop
-      // that kept a rescheduled-but-never-held meeting stuck "joining" forever.
-      const windowOpen = evStart && evStart.getTime() > Date.now() - 20 * 60000;
-      const cooledDown = Date.now() - lastSync > 12 * 60000;
+      const futureEv = evStart && evStart.getTime() > now + 30000;
+      const cooledDown = now - lastSync > 12 * 60000;
       const timeChanged = evStart && m0.start_time && Math.abs(new Date(m0.start_time).getTime() - evStart.getTime()) > 120000;
       const urlChanged = meetingUrl && m0.meeting_url && meetingUrl !== m0.meeting_url;
+      // A moved event must not inherit the previous occurrence's end time.
+      const eventEnd = endDate?.toISOString() || (!timeChanged ? m0.end_time : null);
+      const withinWindow = windowOpen(evStart, eventEnd);
+      // Keep the existing completed-report reuse window narrow. Extending admission
+      // retries must not detach historical reports from older calendar occurrences.
+      const ongoingEv = withinWindow && evStart && evStart.getTime() > now - 60 * 60000;
+      const guardedRow = `meetings?id=eq.${encodeURIComponent(m0.id)}&status=eq.${encodeURIComponent(m0.status)}` +
+        (m0.status_synced_at ? `&status_synced_at=eq.${encodeURIComponent(m0.status_synced_at)}` : "&status_synced_at=is.null");
       // Calendar polling must not repeatedly knock after a host denial or policy/auth barrier.
       // Only an authenticated manual retry or a changed event may retry these terminal outcomes.
-      const retryBlocked = /AUTH_REQUIRED|MEETING_DENIED|CAPTCHA_REQUIRED|POLICY_BLOCKED|PASSCODE_REQUIRED|PASSCODE_INVALID/i.test(m0.error || "") && !manualRetry && !timeChanged && !urlChanged;
+      const ended = /MEETING_ENDED/i.test(m0.error || "");
+      const retryBlocked = !manualRetry && (ended
+        ? !((timeChanged && futureEv) || urlChanged)
+        : /AUTH_REQUIRED|MEETING_DENIED|CAPTCHA_REQUIRED|POLICY_BLOCKED|PASSCODE_REQUIRED|PASSCODE_INVALID/i.test(m0.error || "") && !timeChanged && !urlChanged);
       const rearm = OWN && (
-        (m0.status === "error" && !retryBlocked && (futureEv || (ongoingEv && (cooledDown || timeChanged || urlChanged || manualRetry)))) ||
-        ((m0.status === "scheduled" || m0.status === "joining") && windowOpen && (timeChanged || urlChanged)) ||
+        (m0.status === "error" && !retryBlocked && (manualRetry || (withinWindow && (futureEv || cooledDown || timeChanged || urlChanged)))) ||
+        ((m0.status === "scheduled" || m0.status === "joining") && withinWindow && (timeChanged || urlChanged)) ||
         (m0.status === "skipped" && /cancelled or declined/i.test(m0.error || "") && futureEv)
       );
       // REUSED EVENT: the meeting already recorded (done) and the user re-scheduled the SAME
@@ -102,18 +110,27 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
       if (!rearm && m0.status === "done" && timeChanged && (futureEv || ongoingEv)) {
         await sb(`meetings?id=eq.${m0.id}`, { method: "PATCH", body: { calendar_event_id: `${calendarEventId}#${Date.now()}` } });
       } else if (!rearm) {
+        // Backfill/update the calendar end for pending rows without resetting their lifecycle.
+        // The CAS also protects a recording/ingest that completed after the read above.
+        if (endDate && ["scheduled", "joining", "error"].includes(m0.status) && !m0.recording_url && m0.end_time !== endDate.toISOString()) {
+          await sb(guardedRow, { method: "PATCH", body: { end_time: endDate.toISOString() } });
+        }
         if (["error", "skipped"].includes(m0.status)) return { error: "meeting_not_armed", status: 409, meeting_id: m0.id };
         return { already: true, meeting: m0 };
       }
       if (rearm) {
-        // PLAN GATE: Free tier gets a 60m meeting cap + a monthly recording budget; paid = 4h + unlimited.
+        // Plan limits still apply; every admitted recording is capped at two hours.
         const gate = await recordingGate(userId);
         if (!gate.allow) return { error: "recording_limit", limit: true, plan: gate.plan, usedMin: gate.usedMin, capMin: gate.capMin };
         const schedOwn = futureEv;
         // start_time is ALWAYS the event's real start (never now()): overwriting it to now() made
         // timeChanged permanently true on the next sweep -> infinite re-arm loop for past events.
         const startIso = evStart ? evStart.toISOString() : new Date().toISOString();
-        await sb(`meetings?id=eq.${m0.id}`, { method: "PATCH", body: { status: schedOwn ? "scheduled" : "joining", error: null, meeting_url: meetingUrl, start_time: startIso, status_synced_at: new Date().toISOString() } });
+        const updated = await sb(guardedRow, { method: "PATCH", prefer: "return=representation", body: {
+          status: schedOwn ? "scheduled" : "joining", error: null, meeting_url: meetingUrl,
+          start_time: startIso, end_time: eventEnd || null, status_synced_at: new Date().toISOString(),
+        } });
+        if (!updated?.length) return { error: "meeting_not_armed", status: 409, meeting_id: m0.id };
         const APP0 = (process.env.APP_URL || "https://meet-ai-three-beige.vercel.app").replace(/\/+$/, "");
         const dispatched = await dispatchOwnBot({
           meetingId: m0.id, botId: m0.bot_id, userId, meetingUrl, platform: parsed.platform,
@@ -126,15 +143,14 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
       // (done-reuse falls through: a fresh row is inserted and armed below)
     }
   }
+  if (!manualRetry && joinDate && !windowOpen(joinDate, endDate)) return { error: "meeting_not_armed", status: 409 };
   // Cross-path dedup (V1 + V2 + cron): never two bots for the same active meeting URL.
   const exUrl = await sb(`meetings?user_id=eq.${userId}&meeting_url=eq.${encodeURIComponent(meetingUrl)}&status=in.(scheduled,joining,in_call,recording,processing)&select=id,bot_id`);
   if (exUrl && exUrl.length) return { already: true, meeting: exUrl[0] };
 
-  const joinDate = joinAt ? new Date(joinAt) : null;
-
   // ===== Own bot only: validated platform, explicitly enabled rollout. =====
   if (OWN) {
-    // PLAN GATE: Free tier gets a 60m meeting cap + a monthly recording budget; paid = 4h + unlimited.
+    // Plan limits still apply; every admitted recording is capped at two hours.
     // Fails open (recordingGate returns allow:true on any lookup error) so a paid user is never blocked.
     const gate = await recordingGate(userId);
     if (!gate.allow) return { error: "recording_limit", limit: true, plan: gate.plan, usedMin: gate.usedMin, capMin: gate.capMin };
@@ -146,7 +162,8 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, calendarE
         user_id: userId, title: title || "Live meeting", source: "OctoMeet Bot", meeting_url: meetingUrl,
         bot_id: botId, status: scheduledOwn ? "scheduled" : "joining", capture_mode: "inhouse_bot",
         stage_info: { platform: parsed.platform },
-        start_time: scheduledOwn ? joinDate.toISOString() : new Date().toISOString(), calendar_event_id: calendarEventId || null,
+        start_time: joinDate ? joinDate.toISOString() : new Date().toISOString(), end_time: endDate?.toISOString() || null,
+        calendar_event_id: calendarEventId || null,
       },
     });
     const APP = (process.env.APP_URL || "https://meet-ai-three-beige.vercel.app").replace(/\/+$/, "");
@@ -170,7 +187,7 @@ export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
   let armed = 0, already = 0, skipped = 0;
   for (const e of events) {
     if (!e.meetingUrl || e.selfDeclined || e.status === "cancelled") { skipped++; continue; }
-    const res = await scheduleBot(userId, { meetingUrl: e.meetingUrl, title: e.title, joinAt: e.start, calendarEventId: e.id, botName });
+    const res = await scheduleBot(userId, { meetingUrl: e.meetingUrl, title: e.title, joinAt: e.start, endAt: e.end, calendarEventId: e.id, botName });
     if (res.ok) armed++;
     // "already" armed: scheduleBot annotated the event when it was first armed - don't PATCH the
     // calendar event again on every sweep (the orchestrator hits this every few minutes now).

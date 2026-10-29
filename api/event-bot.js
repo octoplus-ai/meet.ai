@@ -38,7 +38,7 @@ async function sessionUser(req, body) {
 
 // Latest meetings row linked to this calendar event (the DB enforces one per event, but be safe).
 async function rowFor(uid, eventId) {
-  const rows = await sb(`meetings?user_id=eq.${uid}&calendar_event_id=eq.${enc(eventId)}&select=id,status,start_time,title,meeting_url,bot_id,attendees,duration_min&order=created_at.desc&limit=1`);
+  const rows = await sb(`meetings?user_id=eq.${uid}&calendar_event_id=eq.${enc(eventId)}&select=id,status,start_time,end_time,title,meeting_url,bot_id,attendees,duration_min&order=created_at.desc&limit=1`);
   return rows[0] || null;
 }
 
@@ -146,6 +146,7 @@ export default async function handler(req, res) {
     const r = await scheduleBot(uid, {
       meetingUrl, title: (ev && ev.title) || (m && m.title) || "Meeting",
       joinAt: (ev && ev.start) || (m && m.start_time) || null, calendarEventId: eventId,
+      endAt: ev ? ev.end || null : m?.end_time || null,
       botName: (users[0] && users[0].notetaker_name) || "OctoMeet AI",
       manualRetry: true,
     });

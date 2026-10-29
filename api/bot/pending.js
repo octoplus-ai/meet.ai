@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     // Retry ONLY admission/inactivity timeouts (empty room, host just late). NOT a denial or a redirect -
     // if the host actively rejected the bot, or the link is wrong, re-knocking every 90s would be spam.
     const RETRYABLE_ERR = /NOT_ADMITTED_TIMEOUT|REQUEST_TIMEOUT|HARD_TIMEOUT|ADMISSION_TIMEOUT/i;
-    const NO_RETRY_ERR = /AUTH_REQUIRED|MEETING_DENIED|CAPTCHA_REQUIRED|POLICY_BLOCKED|PASSCODE_REQUIRED|PASSCODE_INVALID/i;
+    const NO_RETRY_ERR = /AUTH_REQUIRED|MEETING_DENIED|CAPTCHA_REQUIRED|POLICY_BLOCKED|PASSCODE_REQUIRED|PASSCODE_INVALID|MEETING_ENDED/i;
     const raw = await sb(
       `meetings?capture_mode=eq.inhouse_bot&status=in.(scheduled,joining,error)&start_time=gte.${encodeURIComponent(from)}&start_time=lte.${encodeURIComponent(to)}` +
       `&select=id,user_id,meeting_url,start_time,end_time,title,bot_id,status,status_synced_at,error&order=start_time.asc&limit=100`

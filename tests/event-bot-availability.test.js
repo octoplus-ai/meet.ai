@@ -195,6 +195,19 @@ test('enable replaces a valid skipped placeholder and requires scheduler acknowl
     assert.equal(f.schedules[0].rowsAtDispatch.length, 0);
     assert.equal(f.schedules[0].options.calendarEventId, 'event-1');
     assert.equal(f.schedules[0].options.manualRetry, true);
+    assert.equal(f.schedules[0].options.joinAt, start);
+    assert.equal(f.schedules[0].options.endAt, end);
+  }
+});
+
+test('authenticated enable preserves the current calendar end or the stored end when the event is unavailable', async () => {
+  for (const hasLiveEvent of [true, false]) {
+    const storedEnd = new Date(Date.now() + 120 * 60000).toISOString();
+    const f = fixture({ rows: [row('error', { end_time: storedEnd })], events: hasLiveEvent ? [event()] : [] });
+    const res = await f.call('event-bot.js', { method: 'POST' });
+    assert.equal(res.code, 200); assert.equal(res.body.ok, true);
+    assert.equal(f.schedules[0].options.endAt, hasLiveEvent ? end : storedEnd);
+    assert.equal(f.schedules[0].options.manualRetry, true); assert.equal(f.mutations.length, 0);
   }
 });
 

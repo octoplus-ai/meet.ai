@@ -63,12 +63,24 @@ test('missing owners and lookup failures conservatively retain a 60-minute cap',
 
 test('admission timeouts retry inside the meeting window; denied/auth/captcha/policy never retry', async () => {
   const retry = ['NOT_ADMITTED_TIMEOUT', 'REQUEST_TIMEOUT', 'HARD_TIMEOUT', 'ADMISSION_TIMEOUT'];
-  const blocked = ['AUTH_REQUIRED', 'MEETING_DENIED', 'CAPTCHA_REQUIRED', 'POLICY_BLOCKED', 'PASSCODE_REQUIRED', 'PASSCODE_INVALID', 'MEETING_DENIED ADMISSION_TIMEOUT'];
+  const blocked = ['AUTH_REQUIRED', 'MEETING_DENIED', 'CAPTCHA_REQUIRED', 'POLICY_BLOCKED', 'PASSCODE_REQUIRED', 'PASSCODE_INVALID', 'MEETING_ENDED', 'MEETING_DENIED ADMISSION_TIMEOUT', 'MEETING_ENDED ADMISSION_TIMEOUT'];
   const rows = [...retry, ...blocked].map(error => row(error, { status: 'error', error }));
   rows.push(row('cooldown', { status: 'error', error: 'ADMISSION_TIMEOUT', status_synced_at: new Date().toISOString() }));
   rows.push(row('expired', { status: 'error', error: 'ADMISSION_TIMEOUT', start_time: new Date(Date.now() - 3 * 3600000).toISOString() }));
   const result = await feed({ rows });
   assert.deepEqual(Array.from(result.body.pending, item => item.meetingId), retry);
+});
+
+test('stored calendar ends bound automatic reconciliation on all platforms without changing capture limits', async () => {
+  const now = Date.now();
+  const rows = Object.entries(urls).flatMap(([platform, meeting_url]) => [
+    row(`${platform}-grace`, { meeting_url, status: 'error', error: 'ADMISSION_TIMEOUT', end_time: new Date(now - 4 * 60000).toISOString() }),
+    row(`${platform}-ended`, { meeting_url, status: 'error', error: 'ADMISSION_TIMEOUT', end_time: new Date(now - 6 * 60000).toISOString() }),
+    row(`${platform}-scheduled-ended`, { meeting_url, end_time: new Date(now - 6 * 60000).toISOString() }),
+  ]);
+  const result = await feed({ rows, env: { BOT_ENABLED_PLATFORMS: 'google_meet,zoom,teams' } });
+  assert.deepEqual(Array.from(result.body.pending, item => item.meetingId), Object.keys(urls).map(platform => `${platform}-grace`));
+  assert.ok(result.body.pending.every(item => item.maxMeetingMin === 60), 'The calendar end must not replace the owner plan duration');
 });
 
 test('pending feed failures return no raw database message or meeting secret', async () => {

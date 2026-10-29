@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     if (!ins.ok || ev.error) return res.status(502).json({ error: "create_failed", detail: (ev.error && ev.error.message) || "" });
 
     const meetUrl = ev.hangoutLink || (ev.conferenceData && ev.conferenceData.entryPoints && (ev.conferenceData.entryPoints.find((p) => p.entryPointType === "video") || {}).uri) || "";
-    const event = { id: ev.id, hangoutLink: meetUrl, htmlLink: ev.htmlLink, start: (ev.start && ev.start.dateTime) || startISO, title };
+    const event = { id: ev.id, hangoutLink: meetUrl, htmlLink: ev.htmlLink, start: (ev.start && ev.start.dateTime) || startISO, end: (ev.end && ev.end.dateTime) || endISO, title };
 
     // Auto-arm the bot (respect Meeting Policy). Future joinAt -> scheduleBot sets join_at + status "scheduled".
     let armed = { skippedAutoJoinOff: true };
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
     const botName = policy.notetakerName || u.notetaker_name || "OctoMeet AI";
     if (!meetUrl) armed = { error: "no_meet_link" };
     else if (autoJoin) {
-      try { armed = await scheduleBot(userId, { meetingUrl: meetUrl, title, joinAt: event.start, calendarEventId: ev.id, botName }); }
+      try { armed = await scheduleBot(userId, { meetingUrl: meetUrl, title, joinAt: event.start, endAt: event.end, calendarEventId: ev.id, botName }); }
       catch (e) { armed = { error: String(e.message || e) }; }
     }
 

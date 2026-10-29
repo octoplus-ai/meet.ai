@@ -18,6 +18,7 @@ const response = () => ({ code: 200, status(code) { this.code = code; return thi
 function scheduler(options = {}) {
   const db = [], calls = [], annotations = [];
   let row = options.prior ? { ...options.prior } : null;
+  let beforePatch = options.beforePatch;
   const env = { BOT_ORCHESTRATOR_URL: "https://orchestrator.example.test/", APP_URL: "https://app.example.test", ...options.env };
   const context = vm.createContext({ Date, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes,
     process: { env }, AbortSignal: options.AbortSignal || AbortSignal,
@@ -29,10 +30,17 @@ function scheduler(options = {}) {
       if (query === "meetings" && request.method === "POST") { row = { id: "fixture-new", ...request.body }; return [row]; }
       if (query.startsWith("meetings?id=") && request.method === "PATCH") {
         if (options.failStateWrite && request.body.status === "error") throw new Error("synthetic DB failure");
-        if (!query.includes("&status=in.") || ["scheduled", "joining"].includes(row?.status)) Object.assign(row, request.body);
-        return [row];
+        if (beforePatch) { const hook = beforePatch; beforePatch = null; hook(row); }
+        const matches = [...new URLSearchParams(query.split('?')[1])].every(([key, expression]) => {
+          if (expression.startsWith('eq.')) return String(row?.[key]) === expression.slice(3);
+          if (expression === 'is.null') return row?.[key] == null;
+          if (expression.startsWith('in.(')) return expression.slice(4, -1).split(',').includes(row?.[key]);
+          throw new Error(`Unhandled fixture filter: ${key}=${expression}`);
+        });
+        if (!matches) return [];
+        Object.assign(row, request.body); return [{ ...row }];
       }
-      if (query.includes("calendar_event_id=eq.")) return row ? [row] : [];
+      if (query.includes("calendar_event_id=eq.")) return row ? [{ ...row }] : [];
       if (query.includes("meeting_url=eq.")) return options.active ? [options.active] : [];
       if (query.includes("calendar_event_id=not.is.null")) return [];
       throw new Error("Unexpected mocked DB route");
@@ -163,8 +171,116 @@ test("a manual retry or corrected event can rearm a terminal failure within its 
   }
   const expired = new Date(Date.now() - 3 * 3600000).toISOString();
   const s = scheduler({ prior: { ...prior, start_time: expired } });
-  assert.equal((await s.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e", joinAt: expired, manualRetry: true })).error, "meeting_not_armed");
-  assert.equal(s.calls.length, 0);
+  assert.equal((await s.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e", joinAt: expired, manualRetry: true })).ok, true);
+  assert.equal(s.calls.length, 1, "An explicit authenticated retry can join a meeting running beyond its calendar window");
+  assert.equal(s.row.start_time, expired, "Manual retry must not rewrite the calendar start to now");
+});
+
+test("automatic creation and retries stop after the calendar end plus grace on every platform", async () => {
+  const start = new Date(Date.now() - 30 * 60000).toISOString();
+  const end = new Date(Date.now() - 6 * 60000).toISOString();
+  for (const meetingUrl of Object.values(urls)) for (const existing of [false, true]) {
+    const prior = existing ? { id: "old", status: "error", error: "ADMISSION_TIMEOUT", meeting_url: parseMeetingUrl(meetingUrl).url, start_time: start, status_synced_at: "2020-01-01" } : undefined;
+    const s = scheduler({ prior, env: { BOT_ENABLED_PLATFORMS: "google_meet,zoom,teams" } });
+    const result = await s.context.scheduleBot("u", { meetingUrl, calendarEventId: "e", joinAt: start, endAt: end });
+    assert.equal(result.error, "meeting_not_armed"); assert.equal(s.calls.length, 0);
+    assert.equal(s.db.filter(request => request.method === "POST").length, 0);
+    if (existing) {
+      assert.equal(s.row.end_time, end); assert.equal(s.row.start_time, start);
+      assert.equal(s.row.status, "error"); assert.equal(s.row.error, "ADMISSION_TIMEOUT");
+    }
+  }
+});
+
+test("late discovery preserves calendar times, allows the grace period and retains the independent two-hour capture cap", async () => {
+  const start = new Date(Date.now() - 30 * 60000).toISOString();
+  const end = new Date(Date.now() - 4 * 60000).toISOString();
+  for (const meetingUrl of Object.values(urls)) {
+    const s = scheduler({ env: { BOT_ENABLED_PLATFORMS: "google_meet,zoom,teams" }, gate: { allow: true, maxMeetingMin: 240 } });
+    const result = await s.context.scheduleBot("u", { meetingUrl, calendarEventId: "e", joinAt: start, endAt: end });
+    assert.equal(result.ok, true); assert.equal(s.row.start_time, start); assert.equal(s.row.end_time, end);
+    assert.equal(s.calls[0].joinAt, null); assert.equal(s.calls[0].maxMeetingMin, 120);
+    assert.equal(s.calls[0].endAt, undefined, "Calendar end must not stop an admitted recording");
+  }
+});
+
+test("the stored end bounds retries when a caller has no fresh calendar end", async () => {
+  const start = new Date(Date.now() - 30 * 60000).toISOString();
+  const end = new Date(Date.now() - 6 * 60000).toISOString();
+  const s = scheduler({ prior: { id: "old", status: "error", error: "ADMISSION_TIMEOUT", start_time: start, end_time: end, status_synced_at: "2020-01-01", meeting_url: urls.google_meet } });
+  const result = await s.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e", joinAt: start });
+  assert.equal(result.error, "meeting_not_armed"); assert.equal(s.calls.length, 0); assert.equal(s.row.end_time, end);
+});
+
+test("MEETING_ENDED cannot automatically rearm without a new future time or corrected link", async () => {
+  const start = new Date(Date.now() - 10 * 60000).toISOString();
+  const future = new Date(Date.now() + 30 * 60000).toISOString();
+  const end = new Date(Date.now() + 60 * 60000).toISOString();
+  const prior = { id: "old", status: "error", error: "MEETING_ENDED", start_time: start, end_time: end, status_synced_at: "2020-01-01", meeting_url: urls.google_meet };
+  for (const [input, expected] of [
+    [{ joinAt: start }, false],
+    [{ joinAt: new Date(Date.now() - 5 * 60000).toISOString() }, false],
+    [{ joinAt: future }, true],
+    [{ joinAt: start, meetingUrl: "https://meet.google.com/xyz-abcd-efg" }, true],
+    [{ joinAt: start, manualRetry: true }, true],
+  ]) {
+    const s = scheduler({ prior });
+    const result = await s.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e", endAt: end, ...input });
+    assert.equal(result.ok === true, expected, JSON.stringify(input)); assert.equal(s.calls.length, expected ? 1 : 0);
+  }
+  const sameFuture = scheduler({ prior: { ...prior, start_time: future } });
+  assert.equal((await sameFuture.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e", joinAt: future, endAt: end })).error, "meeting_not_armed");
+  assert.equal(sameFuture.calls.length, 0);
+});
+
+test("invalid calendar ends never allocate or rearm a bot", async () => {
+  const joinAt = new Date(Date.now() + 3600000).toISOString();
+  for (const endAt of ["not-a-date", joinAt, new Date(Date.now()).toISOString()]) {
+    const s = scheduler();
+    assert.equal((await s.context.scheduleBot("u", { meetingUrl: urls.google_meet, joinAt, endAt })).error, "invalid_end_at");
+    assert.equal(s.db.length, 0); assert.equal(s.calls.length, 0);
+  }
+});
+
+test("calendar metadata never overwrites active or completed capture times", async () => {
+  const start = new Date(Date.now() - 10 * 60000).toISOString();
+  const actualEnd = new Date(Date.now() - 2 * 60000).toISOString();
+  const calendarEnd = new Date(Date.now() + 20 * 60000).toISOString();
+  for (const status of ["in_call", "recording", "processing", "done"]) {
+    const prior = { id: "saved", status, meeting_url: urls.google_meet, start_time: start, end_time: actualEnd };
+    const s = scheduler({ prior });
+    const result = await s.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e", joinAt: start, endAt: calendarEnd });
+    assert.equal(result.already, true); assert.deepEqual(s.row, prior); assert.equal(s.calls.length, 0);
+    assert.equal(s.db.filter(call => call.method === "PATCH" || call.method === "POST").length, 0);
+  }
+});
+
+test("an expired or older calendar occurrence cannot detach a completed report", async () => {
+  const prior = { id: "saved", status: "done", calendar_event_id: "e", meeting_url: urls.google_meet,
+    start_time: new Date(Date.now() - 90 * 60000).toISOString(), end_time: new Date(Date.now() - 60 * 60000).toISOString() };
+  for (const [startOffset, endOffset] of [[-30, -6], [-70, 20]]) {
+    const s = scheduler({ prior });
+    const result = await s.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e",
+      joinAt: new Date(Date.now() + startOffset * 60000).toISOString(), endAt: new Date(Date.now() + endOffset * 60000).toISOString() });
+    assert.equal(result.already, true); assert.deepEqual(s.row, prior); assert.equal(s.calls.length, 0);
+    assert.equal(s.db.filter(call => call.method === "PATCH" || call.method === "POST").length, 0);
+  }
+});
+
+test("capture and completion racing a calendar update preserve actual end and prevent dispatch", async () => {
+  const start = new Date(Date.now() - 10 * 60000).toISOString();
+  const calendarEnd = new Date(Date.now() + 20 * 60000).toISOString();
+  const actualEnd = new Date(Date.now() - 1 * 60000).toISOString();
+  for (const original of ["scheduled", "error"]) for (const status of ["in_call", "recording", "processing", "done"]) {
+    const s = scheduler({ prior: { id: "race", status: original, start_time: start, status_synced_at: "2020-01-01", meeting_url: urls.google_meet },
+      beforePatch: row => Object.assign(row, { status, end_time: actualEnd, status_synced_at: new Date().toISOString() }) });
+    const result = await s.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e", joinAt: start, endAt: calendarEnd });
+    assert.notEqual(result.ok, true); assert.equal(s.row.status, status); assert.equal(s.row.end_time, actualEnd); assert.equal(s.calls.length, 0);
+  }
+  const updatedError = scheduler({ prior: { id: "race", status: "error", error: "ADMISSION_TIMEOUT", start_time: start, status_synced_at: "2020-01-01", meeting_url: urls.google_meet },
+    beforePatch: row => Object.assign(row, { error: "MEETING_ENDED", status_synced_at: new Date().toISOString() }) });
+  assert.equal((await updatedError.context.scheduleBot("u", { meetingUrl: urls.google_meet, calendarEventId: "e", joinAt: start, endAt: calendarEnd })).error, "meeting_not_armed");
+  assert.equal(updatedError.calls.length, 0); assert.equal(updatedError.row.error, "MEETING_ENDED");
 });
 
 test("manual retry never starts another bot for an in-call, recording or processing meeting", async () => {

@@ -130,7 +130,40 @@ test('accepted, tentative and pending invitations schedule the own bot for Meet,
     assert.equal(fixture.dispatched[0].platform, platform); assert.equal(fixture.dispatched[0].userId, 'member');
     assert.equal(fixture.rows[0].calendar_event_id, `${platform}-${status}`);
     assert.equal(fixture.rows[0].start_time, start);
+    assert.equal(fixture.rows[0].end_time, end);
   }
+});
+
+test('hosted events retain the same start, end and capture cap as invited events on all platforms', async () => {
+  for (const platform of Object.keys(urls)) {
+    const feed = calendar([{ items: [invite(`hosted-${platform}`, platform, 'accepted', { organizer: { self: true, email: 'member@example.test' } })] }]);
+    const { events } = await feed.context.listUpcomingEvents('member');
+    const fixture = scheduler(events);
+    assert.equal((await fixture.context.armUserCalendar('member')).armed, 1);
+    assert.equal(fixture.rows[0].start_time, start); assert.equal(fixture.rows[0].end_time, end);
+    assert.equal(fixture.dispatched[0].platform, platform); assert.equal(fixture.dispatched[0].maxMeetingMin, 120);
+  }
+});
+
+test('creating a calendar meeting forwards its returned end time to the own-bot scheduler', async () => {
+  let scheduled;
+  const context = vm.createContext({ Date, encodeURIComponent, crypto: { randomUUID: () => 'fixture-id' },
+    parseCookies: () => ({ om_session: 'fixture-session' }),
+    sb: async query => query.startsWith('sessions?') ? [{ user_id: 'member' }] : [{ auto_join: true }],
+    getValidToken: async () => 'fixture-token',
+    fetch: async (url, request) => {
+      assert.equal(url, 'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all');
+      const event = JSON.parse(request.body);
+      assert.equal(event.end.dateTime, end);
+      return { ok: true, json: async () => ({ ...event, id: 'created', hangoutLink: urls.google_meet }) };
+    },
+    scheduleBot: async (uid, options) => { assert.equal(uid, 'member'); scheduled = options; return { ok: true }; },
+  });
+  vm.runInContext(source('calendar/create-meeting.js'), context);
+  const res = response();
+  await context.handler({ method: 'POST', headers: {}, body: { title: 'Fixture', start, durationMin: 30 } }, res);
+  assert.equal(res.code, 200); assert.equal(res.body.ok, true);
+  assert.equal(scheduled.joinAt, start); assert.equal(scheduled.endAt, end); assert.equal(scheduled.calendarEventId, 'created');
 });
 
 test('a second calendar sweep does not duplicate bots or rows for the same invited meetings', async () => {
