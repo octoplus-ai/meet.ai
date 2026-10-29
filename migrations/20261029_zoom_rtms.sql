@@ -1,0 +1,337 @@
+-- Apply through the private database admin connection before enabling Zoom RTMS.
+-- No browser roles can read OAuth credentials, leases or callback secrets.
+begin;
+create table if not exists public.zoom_connections (
+  user_id uuid primary key references public.app_users(id) on delete cascade,
+  id uuid not null unique, zoom_user_id text not null, account_id text not null,
+  email text, token_ciphertext text, expires_at timestamptz,
+  scopes text[] not null default '{}', selected boolean not null default true,
+  needs_reconnect boolean not null default false, connected_at timestamptz not null default now(),
+  revoked_at timestamptz, refresh_lease uuid, refresh_lease_until timestamptz
+);
+create unique index if not exists zoom_unique_active_identity on public.zoom_connections(account_id,zoom_user_id) where revoked_at is null;
+create table if not exists public.zoom_oauth_states (
+  state_hash text primary key, user_id uuid not null references public.app_users(id) on delete cascade,
+  session_hash text not null, nonce_hash text not null, redirect_uri text not null, expires_at timestamptz not null,
+  claimed_at timestamptz, invalidated boolean not null default false, created_at timestamptz not null default now()
+);
+create table if not exists public.zoom_webhook_receipts (
+  event_key text primary key, lease uuid, lease_until timestamptz, completed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.zoom_rtms_stops (
+  stream_key text primary key,event_ts bigint not null,created_at timestamptz not null default now()
+);
+create table if not exists public.zoom_rtms_sessions (
+  id uuid primary key, stream_key text not null unique,
+  user_id uuid not null references public.app_users(id) on delete cascade,
+  meeting_id uuid unique references public.meetings(id) on delete cascade,
+  connection_id uuid not null, account_id text not null, operator_id text not null,
+  meeting_uuid text not null, zoom_meeting_id text not null, stream_id text not null,
+  state text not null default 'starting', event_ts bigint not null,
+  stopped_event_ts bigint, stop_requested boolean not null default false,
+  callback_hash text not null, callback_ciphertext text not null, callback_expires_at timestamptz not null,
+  max_meeting_min integer not null check (max_meeting_min between 1 and 120),
+  capture_deadline_at timestamptz not null,
+  ingest_lease uuid, ingest_lease_until timestamptz, delivered_at timestamptz,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create index if not exists zoom_rtms_instance_owner on public.zoom_rtms_sessions(user_id,meeting_uuid);
+-- Purge receipts deliberately have no cascading FK: storage cleanup must survive DB deletion/retries.
+create table if not exists public.zoom_rtms_deletions (
+  meeting_id uuid primary key,user_id uuid not null,session_id uuid not null,stream_key text not null,
+  requested_at timestamptz not null default now(),purged_at timestamptz
+);
+create index if not exists zoom_rtms_deletions_owner on public.zoom_rtms_deletions(user_id);
+create table if not exists public.zoom_rtms_account_deletions (
+  user_id uuid primary key,requested_at timestamptz not null default now()
+);
+alter table public.zoom_connections enable row level security;
+alter table public.zoom_oauth_states enable row level security;
+alter table public.zoom_webhook_receipts enable row level security;
+alter table public.zoom_rtms_sessions enable row level security;
+alter table public.zoom_rtms_stops enable row level security;
+alter table public.zoom_rtms_deletions enable row level security;
+alter table public.zoom_rtms_account_deletions enable row level security;
+revoke all on public.zoom_rtms_deletions,public.zoom_rtms_account_deletions from public,anon,authenticated;
+grant all on public.zoom_rtms_deletions,public.zoom_rtms_account_deletions to service_role;
+revoke all on public.zoom_connections,public.zoom_oauth_states,public.zoom_webhook_receipts,public.zoom_rtms_sessions,public.zoom_rtms_stops from public,anon,authenticated;
+grant all on public.zoom_connections,public.zoom_oauth_states,public.zoom_webhook_receipts,public.zoom_rtms_sessions,public.zoom_rtms_stops to service_role;
+
+create or replace function public.zoom_commit_connection(p_state_hash text,p_user_id uuid,p_id uuid,p_identity jsonb,p_secret text,p_expiry timestamptz,p_scopes text[])
+returns setof public.zoom_connections language plpgsql security definer set search_path=public as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||p_user_id::text,0));
+  if exists(select 1 from zoom_rtms_account_deletions where user_id=p_user_id) then return; end if;
+  if not exists(select 1 from zoom_oauth_states where state_hash=p_state_hash and user_id=p_user_id and claimed_at is not null and not invalidated and expires_at>now() for update) then return; end if;
+  insert into zoom_connections(user_id,id,zoom_user_id,account_id,email,token_ciphertext,expires_at,scopes)
+    values(p_user_id,p_id,p_identity->>'zoom_user_id',p_identity->>'account_id',p_identity->>'email',p_secret,p_expiry,p_scopes)
+    on conflict(user_id) do update set id=excluded.id,zoom_user_id=excluded.zoom_user_id,account_id=excluded.account_id,email=excluded.email,
+      token_ciphertext=excluded.token_ciphertext,expires_at=excluded.expires_at,scopes=excluded.scopes,selected=true,needs_reconnect=false,connected_at=now(),revoked_at=null,refresh_lease=null,refresh_lease_until=null;
+  update zoom_oauth_states set invalidated=true where user_id=p_user_id;
+  return query select * from zoom_connections where user_id=p_user_id;
+end $$;
+create or replace function public.zoom_claim_refresh(p_user_id uuid,p_id uuid,p_lease uuid)
+returns setof public.zoom_connections language sql security definer set search_path=public as $$
+  update zoom_connections set refresh_lease=p_lease,refresh_lease_until=now()+interval '30 seconds'
+  where user_id=p_user_id and id=p_id and revoked_at is null and not needs_reconnect and expires_at<=now()+interval '1 minute'
+    and (refresh_lease_until is null or refresh_lease_until<now()) returning *;
+$$;
+create or replace function public.zoom_disconnect(p_user_id uuid,p_connection_id uuid)
+returns boolean language plpgsql security definer set search_path=public as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||p_user_id::text,0));
+  if p_connection_id is not null and not exists(select 1 from zoom_connections where user_id=p_user_id and id=p_connection_id for update) then return false; end if;
+  update zoom_connections set revoked_at=now(),token_ciphertext=null,refresh_lease=null,refresh_lease_until=null
+    where user_id=p_user_id and (p_connection_id is null or id=p_connection_id);
+  update zoom_oauth_states set invalidated=true where user_id=p_user_id;
+  update zoom_rtms_sessions set stop_requested=true,updated_at=now() where user_id=p_user_id and delivered_at is null;
+  return true;
+end $$;
+create or replace function public.zoom_claim_event(p_key text,p_lease uuid)
+returns setof public.zoom_webhook_receipts language plpgsql security definer set search_path=public as $$
+begin
+  insert into zoom_webhook_receipts(event_key) values(p_key) on conflict do nothing;
+  return query update zoom_webhook_receipts set lease=p_lease,lease_until=now()+interval '30 seconds'
+    where event_key=p_key and completed_at is null and (lease_until is null or lease_until<now()) returning *;
+end $$;
+
+-- Creates exactly one owner-bound capture for a Zoom stream, including duplicate webhooks.
+create or replace function public.zoom_open_rtms_session(p_session jsonb,p_meeting_id uuid)
+returns setof public.zoom_rtms_sessions language plpgsql security definer set search_path=public as $$
+declare s zoom_rtms_sessions; c zoom_connections; m meetings; mid uuid; uid uuid=(p_session->>'user_id')::uuid; deadline timestamptz; prior_deadline timestamptz;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom-stream:'||(p_session->>'stream_key'),0));
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||uid::text,0));
+  if exists(select 1 from zoom_rtms_account_deletions where user_id=uid)
+    or exists(select 1 from zoom_rtms_deletions where user_id=uid and (meeting_id=p_meeting_id or stream_key=p_session->>'stream_key')) then return; end if;
+  if exists(select 1 from zoom_rtms_stops where stream_key=p_session->>'stream_key') then return; end if;
+  select * into s from zoom_rtms_sessions where stream_key=p_session->>'stream_key' for update;
+  if found then
+    if s.user_id=uid and s.operator_id=p_session->>'operator_id' and s.account_id=p_session->>'account_id' then return next s; end if;
+    return;
+  end if;
+  select * into c from zoom_connections where user_id=uid and id=(p_session->>'connection_id')::uuid and revoked_at is null and selected and not needs_reconnect for update;
+  if not found or c.zoom_user_id<>p_session->>'operator_id' or c.account_id<>p_session->>'account_id' then return; end if;
+  perform 1 from app_users where id=uid for update;
+  -- The signed Zoom event proves provider authorization, not OctoMeet auto-join preference.
+  if exists(select 1 from app_users where id=uid and auto_join=false)
+    and not exists(select 1 from meetings where id=p_meeting_id and user_id=uid and capture_mode='zoom_rtms'
+      and status in ('scheduled','joining','error') and stage_info->'manualIntent'='true'::jsonb) then return; end if;
+  if exists(select 1 from meetings where user_id=uid and status='skipped'
+    and start_time<=to_timestamp((p_session->>'event_ts')::double precision/1000)+interval '5 minutes'
+    and coalesce(end_time,start_time+interval '2 hours')+interval '5 minutes'>to_timestamp((p_session->>'event_ts')::double precision/1000)
+    and substring(meeting_url from '/(?:j|wc|wc/join)/([0-9]{9,12})(?:[/ ?#]|$)')=p_session->>'zoom_meeting_id') then return; end if;
+  -- Browser/RTMS routing may race with the signed event. Never open a second capture.
+  if exists(select 1 from meetings where user_id=uid and capture_mode is distinct from 'zoom_rtms'
+    and status in ('scheduled','joining','in_call','recording','processing')
+    and (status<>'scheduled' or (start_time<=to_timestamp((p_session->>'event_ts')::double precision/1000)+interval '5 minutes'
+      and coalesce(end_time,start_time+interval '2 hours')+interval '5 minutes'>to_timestamp((p_session->>'event_ts')::double precision/1000)))
+    and substring(meeting_url from '/(?:j|wc|wc/join)/([0-9]{9,12})(?:[/ ?#]|$)')=p_session->>'zoom_meeting_id') then return; end if;
+  if exists(select 1 from zoom_rtms_sessions where user_id=uid and meeting_uuid=p_session->>'meeting_uuid' and not stop_requested and delivered_at is null and callback_expires_at>now()) then return; end if;
+  deadline=to_timestamp((p_session->>'event_ts')::double precision/1000)+least(120,(p_session->>'max_meeting_min')::integer)*interval '1 minute';
+  select min(capture_deadline_at) into prior_deadline from zoom_rtms_sessions where user_id=uid and meeting_uuid=p_session->>'meeting_uuid';
+  deadline=least(deadline,coalesce(prior_deadline,deadline));
+  if deadline<=now() then return; end if;
+  if p_meeting_id is not null then
+    select * into m from meetings where id=p_meeting_id and user_id=uid for update;
+    if not found or m.capture_mode is distinct from 'zoom_rtms' or m.status not in ('scheduled','joining','error') or m.stage_info->>'deletion' is not null or exists(select 1 from zoom_rtms_sessions where meeting_id=m.id) then return; end if;
+    mid=m.id;
+  else
+    mid=gen_random_uuid();
+    insert into meetings(id,user_id,title,source,meeting_url,status,capture_mode,start_time,stage_info)
+      values(mid,uid,'Zoom meeting','Zoom','https://zoom.us/j/'||(p_session->>'zoom_meeting_id'),'joining','zoom_rtms',now(),jsonb_build_object('platform','zoom','capture','rtms'));
+  end if;
+  insert into zoom_rtms_sessions(id,stream_key,user_id,meeting_id,connection_id,account_id,operator_id,meeting_uuid,zoom_meeting_id,stream_id,event_ts,callback_hash,callback_ciphertext,callback_expires_at,max_meeting_min,capture_deadline_at)
+    values((p_session->>'id')::uuid,p_session->>'stream_key',uid,mid,c.id,c.account_id,c.zoom_user_id,p_session->>'meeting_uuid',p_session->>'zoom_meeting_id',p_session->>'stream_id',
+      (p_session->>'event_ts')::bigint,p_session->>'callback_hash',p_session->>'callback_ciphertext',(p_session->>'callback_expires_at')::timestamptz,least(120,(p_session->>'max_meeting_min')::integer,ceil(extract(epoch from deadline-now())/60)::integer),deadline) returning * into s;
+  update meetings set status='joining',error=null,status_synced_at=now(),stage_info=coalesce(stage_info,'{}'::jsonb)||jsonb_build_object('platform','zoom','capture','rtms','rtmsSessionId',s.id) where id=mid;
+  return next s;
+end $$;
+create or replace function public.zoom_stop_stream(p_key text,p_event_ts bigint)
+returns setof public.zoom_rtms_sessions language plpgsql security definer set search_path=public as $$
+declare s zoom_rtms_sessions;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom-stream:'||p_key,0));
+  select * into s from zoom_rtms_sessions where stream_key=p_key for update;
+  if found and p_event_ts<s.event_ts then return; end if;
+  insert into zoom_rtms_stops(stream_key,event_ts) values(p_key,p_event_ts) on conflict do nothing;
+  return query update zoom_rtms_sessions set stop_requested=true,stopped_event_ts=p_event_ts,updated_at=now()
+    where stream_key=p_key returning *;
+end $$;
+create or replace function public.zoom_stop_meeting(p_user_id uuid,p_meeting_id uuid)
+returns setof public.zoom_rtms_sessions language plpgsql security definer set search_path=public as $$
+declare s zoom_rtms_sessions;
+begin
+  select * into s from zoom_rtms_sessions where meeting_id=p_meeting_id and user_id=p_user_id and delivered_at is null for update;
+  if not found then return; end if;
+  update zoom_rtms_sessions set stop_requested=true,updated_at=now() where id=s.id;
+  update meetings set status='processing',status_synced_at=now() where id=s.meeting_id and user_id=p_user_id and capture_mode='zoom_rtms'
+    and status not in ('done','skipped') and stage_info->>'rtmsSessionId'=s.id::text;
+  return query select * from zoom_rtms_sessions where id=s.id;
+end $$;
+-- Status and media writes use the same lock order as ingest; late callbacks never reopen a report.
+create or replace function public.zoom_session_update(p_session_id uuid,p_status text,p_error text,p_media jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare s zoom_rtms_sessions; m meetings; stop_capture boolean;
+begin
+  select * into s from zoom_rtms_sessions where id=p_session_id for update;
+  if not found or s.callback_expires_at<=now() then return jsonb_build_object('ok',false,'stop',true); end if;
+  select * into m from meetings where id=s.meeting_id and user_id=s.user_id and capture_mode='zoom_rtms' for update;
+  if not found or m.stage_info->>'rtmsSessionId' is distinct from s.id::text then return jsonb_build_object('ok',false,'stop',true); end if;
+  if m.stage_info->>'deletion' is not null then return jsonb_build_object('ok',false,'stop',true,'delete',true); end if;
+  stop_capture=s.stop_requested or s.capture_deadline_at<=now() or s.delivered_at is not null or m.status in ('done','skipped');
+  if s.delivered_at is not null or m.status in ('done','skipped') then return jsonb_build_object('ok',true,'stop',true,'alreadyDone',s.delivered_at is not null); end if;
+  -- Stop intent never discards already captured media or prevents its authorized delivery.
+  if p_status not in ('joining','recording','processing','error') then return jsonb_build_object('ok',false,'stop',true); end if;
+  update meetings set
+    status=case when stop_capture and p_status in ('joining','recording') then 'processing'
+      when p_status='joining' and m.status in ('recording','processing','error') then m.status
+      when p_status='recording' and m.status in ('processing','error') then m.status else p_status end,
+    error=case when p_status='error' then p_error when m.status='error' and p_status in ('joining','recording') then m.error else null end,
+    status_synced_at=now(),recording_url=coalesce(p_media->>'recording_url',recording_url),cover_url=coalesce(p_media->>'cover_url',cover_url),
+    duration_min=coalesce((p_media->>'duration_min')::numeric,duration_min),
+    stage_info=coalesce(stage_info,'{}'::jsonb)||coalesce(p_media->'stage_info','{}'::jsonb)
+    where id=m.id;
+  update zoom_rtms_sessions set state=case when stop_capture then 'stopping' else p_status end,updated_at=now() where id=s.id;
+  return jsonb_build_object('ok',true,'stop',stop_capture);
+end $$;
+create or replace function public.zoom_claim_ingest(p_session_id uuid,p_lease uuid)
+returns setof public.zoom_rtms_sessions language sql security definer set search_path=public as $$
+  update zoom_rtms_sessions set ingest_lease=p_lease,ingest_lease_until=now()+interval '5 minutes',state='processing',updated_at=now()
+    where id=p_session_id and state<>'deleting' and delivered_at is null and callback_expires_at>now() and (ingest_lease_until is null or ingest_lease_until<now())
+      and not exists(select 1 from zoom_rtms_deletions d where d.session_id=p_session_id)
+      and not exists(select 1 from meetings m where m.id=zoom_rtms_sessions.meeting_id and m.stage_info->>'deletion' is not null)
+    returning *;
+$$;
+-- Explicit retry/reschedule keeps prior reports/media immutable and frees only the calendar link.
+create or replace function public.zoom_create_intent(p_user_id uuid,p_meeting jsonb)
+returns setof public.meetings language plpgsql security definer set search_path=public as $$
+declare st timestamptz=(p_meeting->>'start_time')::timestamptz; en timestamptz=coalesce((p_meeting->>'end_time')::timestamptz,st+interval '2 hours');
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||p_user_id::text,0));
+  if exists(select 1 from zoom_rtms_account_deletions where user_id=p_user_id) then return; end if;
+  if exists(select 1 from meetings where user_id=p_user_id and status in ('scheduled','joining','in_call','recording','processing')
+      and substring(meeting_url from '/(?:j|wc|wc/join)/([0-9]{9,12})(?:[/ ?#]|$)')=p_meeting->'stage_info'->>'zoomMeetingId'
+      and (status<>'scheduled' or start_time is null or start_time<=en+interval '5 minutes' and coalesce(end_time,start_time+interval '2 hours')+interval '5 minutes'>=st)) then return; end if;
+  return query insert into meetings(user_id,title,source,meeting_url,status,capture_mode,start_time,end_time,status_synced_at,stage_info,calendar_event_id)
+    values(p_user_id,p_meeting->>'title','Zoom',p_meeting->>'meeting_url','scheduled','zoom_rtms',st,(p_meeting->>'end_time')::timestamptz,now(),p_meeting->'stage_info',p_meeting->>'calendar_event_id') returning *;
+end $$;
+create or replace function public.zoom_replace_intent(p_user_id uuid,p_prior_id uuid,p_status text,p_synced timestamptz,p_meeting jsonb)
+returns setof public.meetings language plpgsql security definer set search_path=public as $$
+declare m meetings; s zoom_rtms_sessions; st timestamptz=(p_meeting->>'start_time')::timestamptz; en timestamptz=coalesce((p_meeting->>'end_time')::timestamptz,st+interval '2 hours');
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||p_user_id::text,0));
+  if exists(select 1 from zoom_rtms_account_deletions where user_id=p_user_id) then return; end if;
+  select * into s from zoom_rtms_sessions where meeting_id=p_prior_id and user_id=p_user_id for update;
+  select * into m from meetings where id=p_prior_id and user_id=p_user_id for update;
+  if not found or m.status not in ('done','error','skipped') or m.status<>p_status or m.status_synced_at is distinct from p_synced or m.stage_info->>'deletion' is not null then return; end if;
+  if exists(select 1 from meetings where user_id=p_user_id and id<>p_prior_id and status in ('scheduled','joining','in_call','recording','processing')
+    and substring(meeting_url from '/(?:j|wc|wc/join)/([0-9]{9,12})(?:[/ ?#]|$)')=p_meeting->'stage_info'->>'zoomMeetingId'
+    and (status<>'scheduled' or start_time is null or start_time<=en+interval '5 minutes' and coalesce(end_time,start_time+interval '2 hours')+interval '5 minutes'>=st)) then return; end if;
+  if s.id is not null then update zoom_rtms_sessions set stop_requested=true,updated_at=now() where id=s.id; end if;
+  if m.calendar_event_id is not null and m.calendar_event_id=p_meeting->>'calendar_event_id' then
+    update meetings set calendar_event_id=m.calendar_event_id||'#rtms:'||m.id::text where id=m.id;
+  end if;
+  return query insert into meetings(user_id,title,source,meeting_url,status,capture_mode,start_time,end_time,status_synced_at,stage_info,calendar_event_id)
+    values(p_user_id,p_meeting->>'title','Zoom',p_meeting->>'meeting_url','scheduled','zoom_rtms',(p_meeting->>'start_time')::timestamptz,(p_meeting->>'end_time')::timestamptz,now(),p_meeting->'stage_info',p_meeting->>'calendar_event_id') returning *;
+end $$;
+create or replace function public.zoom_disable_meeting(p_user_id uuid,p_meeting_id uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare m meetings; s zoom_rtms_sessions;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||p_user_id::text,0));
+  select * into s from zoom_rtms_sessions where meeting_id=p_meeting_id and user_id=p_user_id for update;
+  select * into m from meetings where id=p_meeting_id and user_id=p_user_id and capture_mode='zoom_rtms' for update;
+  if not found then return jsonb_build_object('ok',false); end if;
+  if m.status='done' or s.delivered_at is not null then return jsonb_build_object('ok',true,'alreadyDone',true); end if;
+  if s.id is not null then
+    update zoom_rtms_sessions set stop_requested=true,updated_at=now() where id=s.id;
+    update meetings set status='processing',status_synced_at=now(),stage_info=coalesce(stage_info,'{}'::jsonb)||jsonb_build_object('awaitingAuthorization',false) where id=m.id and status<>'skipped';
+    return jsonb_build_object('ok',true,'stopping',true,'stream_key',s.stream_key);
+  end if;
+  update meetings set status='skipped',error='capture_disabled',status_synced_at=now(),stage_info=coalesce(stage_info,'{}'::jsonb)||jsonb_build_object('awaitingAuthorization',false) where id=m.id;
+  return jsonb_build_object('ok',true,'stopping',false);
+end $$;
+create or replace function public.zoom_mark_manual_intent(p_user_id uuid,p_meeting_id uuid,p_status text,p_synced timestamptz)
+returns setof public.meetings language plpgsql security definer set search_path=public as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||p_user_id::text,0));
+  return query update meetings m set status_synced_at=now(),stage_info=coalesce(stage_info,'{}'::jsonb)||jsonb_build_object('manualIntent',true)
+    where id=p_meeting_id and user_id=p_user_id and capture_mode='zoom_rtms' and status=p_status and status in ('scheduled','joining')
+      and status_synced_at is not distinct from p_synced and stage_info->>'rtmsSessionId' is null
+      and stage_info->>'deletion' is null
+      and not exists(select 1 from zoom_rtms_account_deletions d where d.user_id=p_user_id)
+      and not exists(select 1 from zoom_rtms_sessions s where s.meeting_id=m.id) returning *;
+end $$;
+create or replace function public.zoom_expire_intents(p_user_id uuid,p_now timestamptz)
+returns setof public.meetings language plpgsql security definer set search_path=public as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||p_user_id::text,0));
+  return query update meetings m set status='error',error='RTMS_START_NOT_AUTHORIZED',status_synced_at=now(),stage_info=coalesce(stage_info,'{}'::jsonb)||jsonb_build_object('awaitingAuthorization',false)
+    where user_id=p_user_id and capture_mode='zoom_rtms' and status='scheduled'
+      and coalesce(end_time,start_time+interval '2 hours')+interval '5 minutes'<=p_now
+      and not exists(select 1 from zoom_rtms_sessions s where s.meeting_id=m.id) returning *;
+end $$;
+-- Report and meeting commit share one transaction. A canceled/deleted/replaced meeting wins.
+create or replace function public.zoom_commit_report(p_session_id uuid,p_lease uuid,p_report jsonb,p_media jsonb)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare s zoom_rtms_sessions; m meetings;
+begin
+  select * into s from zoom_rtms_sessions where id=p_session_id and ingest_lease=p_lease and delivered_at is null for update;
+  if not found then return false; end if;
+  select * into m from meetings where id=s.meeting_id and user_id=s.user_id and capture_mode='zoom_rtms' for update;
+  if not found or m.status in ('skipped','done') or m.stage_info->>'rtmsSessionId' is distinct from s.id::text or m.stage_info->>'deletion' is not null then return false; end if;
+  insert into reports(meeting_id,user_id,summary,action_items,next_steps,key_questions,topics,chapters,highlights,coaching,participants,sentiment_timeline,sentiment_label,transcript,scores,read_score,category,report_version)
+    select s.meeting_id,s.user_id,r.summary,r.action_items,r.next_steps,r.key_questions,r.topics,r.chapters,r.highlights,r.coaching,r.participants,r.sentiment_timeline,r.sentiment_label,r.transcript,r.scores,r.read_score,r.category,r.report_version
+    from jsonb_populate_record(null::reports,p_report) r
+    on conflict(meeting_id) do nothing;
+  update meetings set status='done',error=null,end_time=now(),status_synced_at=now(),
+    recording_url=coalesce(p_media->>'recording_url',recording_url),cover_url=coalesce(p_media->>'cover_url',cover_url),
+    duration_min=coalesce((p_media->>'duration_min')::numeric,duration_min),
+    stage_info=coalesce(stage_info,'{}'::jsonb)||coalesce(p_media->'stage_info','{}'::jsonb)
+    where id=s.meeting_id;
+  update zoom_rtms_sessions set delivered_at=now(),state='completed',ingest_lease=null,ingest_lease_until=null,updated_at=now() where id=s.id;
+  return true;
+end $$;
+-- Begin deletion commits before dispatching the remote purge. The same lock order as
+-- capture admission and report commit prevents an in-flight callback recreating media metadata.
+create or replace function public.zoom_begin_deletion(p_user_id uuid,p_meeting_id uuid default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare pending_count integer;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('zoom:'||p_user_id::text,0));
+  if p_meeting_id is null then
+    if not exists(select 1 from app_users where id=p_user_id) and not exists(select 1 from zoom_rtms_account_deletions where user_id=p_user_id) then return jsonb_build_object('ok',false); end if;
+    insert into zoom_rtms_account_deletions(user_id) values(p_user_id) on conflict do nothing;
+    update zoom_connections set revoked_at=coalesce(revoked_at,now()),token_ciphertext=null,refresh_lease=null,refresh_lease_until=null where user_id=p_user_id;
+    update zoom_oauth_states set invalidated=true where user_id=p_user_id;
+  elsif not exists(select 1 from meetings where id=p_meeting_id and user_id=p_user_id and capture_mode='zoom_rtms')
+    and not exists(select 1 from zoom_rtms_deletions where meeting_id=p_meeting_id and user_id=p_user_id) then return jsonb_build_object('ok',false); end if;
+  perform 1 from zoom_rtms_sessions where user_id=p_user_id and (p_meeting_id is null or meeting_id=p_meeting_id) order by id for update;
+  perform 1 from meetings where user_id=p_user_id and capture_mode='zoom_rtms' and (p_meeting_id is null or id=p_meeting_id) order by id for update;
+  insert into zoom_rtms_deletions(meeting_id,user_id,session_id,stream_key)
+    select meeting_id,user_id,id,stream_key from zoom_rtms_sessions where user_id=p_user_id and (p_meeting_id is null or meeting_id=p_meeting_id)
+    on conflict(meeting_id) do nothing;
+  update zoom_rtms_sessions set stop_requested=true,ingest_lease=null,ingest_lease_until=null,state='deleting',updated_at=now()
+    where user_id=p_user_id and (p_meeting_id is null or meeting_id=p_meeting_id);
+  update meetings set stage_info=coalesce(stage_info,'{}'::jsonb)||jsonb_build_object('deletion','requested'),status_synced_at=now()
+    where user_id=p_user_id and capture_mode='zoom_rtms' and (p_meeting_id is null or id=p_meeting_id);
+  select count(*) into pending_count from zoom_rtms_deletions where user_id=p_user_id and (p_meeting_id is null or meeting_id=p_meeting_id) and purged_at is null;
+  return jsonb_build_object('ok',true,'pending',pending_count);
+end $$;
+create or replace function public.zoom_ack_deletion(p_user_id uuid,p_meeting_id uuid,p_session_id uuid,p_stream_key text)
+returns boolean language plpgsql security definer set search_path=public as $$
+begin
+  update zoom_rtms_deletions set purged_at=coalesce(purged_at,now())
+    where user_id=p_user_id and meeting_id=p_meeting_id and session_id=p_session_id and stream_key=p_stream_key;
+  return found;
+end $$;
+-- SECURITY DEFINER RPCs are callable only by server-side service-role requests.
+revoke all on function public.zoom_commit_connection(text,uuid,uuid,jsonb,text,timestamptz,text[]),public.zoom_claim_refresh(uuid,uuid,uuid),public.zoom_disconnect(uuid,uuid),public.zoom_claim_event(text,uuid),public.zoom_open_rtms_session(jsonb,uuid),public.zoom_claim_ingest(uuid,uuid),public.zoom_commit_report(uuid,uuid,jsonb,jsonb),public.zoom_stop_stream(text,bigint),public.zoom_stop_meeting(uuid,uuid),public.zoom_session_update(uuid,text,text,jsonb) from public,anon,authenticated;
+grant execute on function public.zoom_commit_connection(text,uuid,uuid,jsonb,text,timestamptz,text[]),public.zoom_claim_refresh(uuid,uuid,uuid),public.zoom_disconnect(uuid,uuid),public.zoom_claim_event(text,uuid),public.zoom_open_rtms_session(jsonb,uuid),public.zoom_claim_ingest(uuid,uuid),public.zoom_commit_report(uuid,uuid,jsonb,jsonb),public.zoom_stop_stream(text,bigint),public.zoom_stop_meeting(uuid,uuid),public.zoom_session_update(uuid,text,text,jsonb) to service_role;
+revoke all on function public.zoom_create_intent(uuid,jsonb),public.zoom_replace_intent(uuid,uuid,text,timestamptz,jsonb),public.zoom_disable_meeting(uuid,uuid),public.zoom_expire_intents(uuid,timestamptz),public.zoom_mark_manual_intent(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.zoom_create_intent(uuid,jsonb),public.zoom_replace_intent(uuid,uuid,text,timestamptz,jsonb),public.zoom_disable_meeting(uuid,uuid),public.zoom_expire_intents(uuid,timestamptz),public.zoom_mark_manual_intent(uuid,uuid,text,timestamptz) to service_role;
+revoke all on function public.zoom_begin_deletion(uuid,uuid),public.zoom_ack_deletion(uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.zoom_begin_deletion(uuid,uuid),public.zoom_ack_deletion(uuid,uuid,uuid,text) to service_role;
+commit;

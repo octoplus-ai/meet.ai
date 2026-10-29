@@ -11,6 +11,13 @@ import { preserveCameraMetadata } from "./speaker-media.js";
 const APP_URL = "https://meet.octoplusteam.com/"; // branded domain (same deployment; better email deliverability)
 const arr = (x) => (Array.isArray(x) ? x : []);
 
+export function recapCoverUrl(meeting, shareToken) {
+  // RTMS objects are private: email clients cannot prove the viewer's identity.
+  // Send the report link; its authenticated page can load the cover through the gateway.
+  if (meeting.capture_mode === "zoom_rtms") return "";
+  return meeting.cover_url || (meeting.bot_id && meeting.capture_mode !== "inhouse_bot" ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + encodeURIComponent(shareToken) : "");
+}
+
 // Auto-recap: when a report is ready, email everyone involved (calendar attendees + owner)
 // from the OWNER's Gmail - unless the owner turned it off in Report Sharing preferences.
 // Idempotent via meetings.notified_at. Best-effort; never throws into the pipeline.
@@ -18,6 +25,10 @@ export async function notifyParticipants(meeting, ai, rep) {
   try {
     if (meeting.notified_at) return;
     const ownerId = meeting.user_id;
+    const native = meeting.capture_mode === "zoom_rtms";
+    const nativeGuard = native ? `&user_id=eq.${encodeURIComponent(ownerId)}&capture_mode=eq.zoom_rtms&status=eq.done&stage_info->>deletion=is.null&stage_info->>rtmsSessionId=eq.${encodeURIComponent(meeting.stage_info?.rtmsSessionId || "")}` : "";
+    const canNotify = async () => !native || (!!meeting.stage_info?.rtmsSessionId && (await sb(`meetings?id=eq.${encodeURIComponent(meeting.id)}${nativeGuard}&select=id&limit=1`))?.length === 1);
+    if (!(await canNotify())) return;
     const u = (await sb(`app_users?id=eq.${ownerId}&select=name,email,sharing_prefs,integrations`))[0] || {};
     const prefs = (u.sharing_prefs && typeof u.sharing_prefs === "object") ? u.sharing_prefs : {};
     const ints = (u.integrations && typeof u.integrations === "object") ? u.integrations : {};
@@ -33,7 +44,7 @@ export async function notifyParticipants(meeting, ai, rep) {
     // ATOMIC CLAIM: only ONE run may send the recap. A conditional PATCH (notified_at IS NULL)
     // is resolved atomically by Postgres row-locking, so concurrent processMeeting runs
     // (webhook retry + poll/reprocess) can never double-send. If we don't win, bail.
-    const claim = await sb(`meetings?id=eq.${meeting.id}&notified_at=is.null`, { method: "PATCH", body: { notified_at: new Date().toISOString() }, prefer: "return=representation" });
+    const claim = await sb(`meetings?id=eq.${meeting.id}&notified_at=is.null${nativeGuard}`, { method: "PATCH", body: { notified_at: new Date().toISOString() }, prefer: "return=representation" });
     if (!Array.isArray(claim) || !claim.length) return;
     const title = meeting.title || "Meeting report";
     let whenText = "";
@@ -44,7 +55,7 @@ export async function notifyParticipants(meeting, ai, rep) {
 
     // 1) Auto-push the report to connected integrations flagged autoPush (independent of email pref).
     const pushData = { title, summary: ai.summary || "", score: (rep.scores && rep.scores.overall) || 0, actionItems: ai.actionItems || rep.action_items || [], nextSteps: ai.nextSteps || rep.next_steps || [], date: meeting.start_time, link: APP_URL };
-    for (const target of Object.keys(ints)) { const cfg = ints[target]; if (cfg && cfg.autoPush && (cfg.url || cfg.token)) { try { const r = await deliverReport(target, cfg, pushData); console.log("auto-push " + target + ": " + (r.ok ? "ok" : r.error)); } catch (e) {} } }
+    for (const target of Object.keys(ints)) { const cfg = ints[target]; if (cfg && cfg.autoPush && (cfg.url || cfg.token)) { try { if (!(await canNotify())) return; const r = await deliverReport(target, cfg, pushData); console.log("auto-push " + target + ": " + (r.ok ? "ok" : r.error)); } catch (e) {} } }
 
     // 2) Auto-recap email to attendees + owner (only if the pref is on and Gmail is connected).
     let sent = 0;
@@ -62,9 +73,10 @@ export async function notifyParticipants(meeting, ai, rep) {
       if (prefs.autoRecap !== false) (attendeeList || []).forEach((at) => { if (at.response !== "declined") recips.add(at.email); });
       const to = [...recips].filter((e) => /^[^\s,<>"]+@[^\s,<>"]+\.[^\s,<>"]+$/.test(e));
       for (const email of to) {
+        if (!(await canNotify())) return;
         const e = entryFor(email);
         // recall/thumb only resolves for real Recall bot ids - never for the in-house bot.
-        const coverUrl = meeting.cover_url || (meeting.bot_id && meeting.capture_mode !== "inhouse_bot" ? APP_URL + "api/recall/thumb?botId=" + encodeURIComponent(meeting.bot_id) + "&share=" + e.token : "");
+        const coverUrl = recapCoverUrl(meeting, e.token);
         const { subject, html, text } = reportEmail({ title, whenText, summary: ai.summary || "", chapters: ai.chapters || [], actionItems: ai.actionItems || rep.action_items || [], viewUrl: APP_URL + "?share=" + e.token, coverUrl, sharerName: sharer, kind: "auto" });
         const r = await sendViaGmail(sendToken, { to: email, subject, html, text, fromName: `${sharer} via OctoMeet AI`, fromAddress: sendFrom, replyTo: u.email });
         if (r.ok) sent++;
@@ -72,7 +84,7 @@ export async function notifyParticipants(meeting, ai, rep) {
     }
     const finalPatch = { shares }; // notified_at already claimed above
     if (attendeeList && attendeeList.length) finalPatch.attendees = attendeeList;
-    await sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: finalPatch });
+    await sb(`meetings?id=eq.${meeting.id}${nativeGuard}`, { method: "PATCH", body: finalPatch });
     console.log("post-report actions: " + sent + " recap emails for " + meeting.id);
   } catch (e) { console.error("post-report actions error:", e && (e.message || e)); }
 }

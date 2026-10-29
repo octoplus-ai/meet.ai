@@ -4,6 +4,7 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { deliverReport } from "./lib/deliver.js";
+import { isRtmsDeleting } from "./lib/share.js";
 
 const APP = "https://meet-ai-three-beige.vercel.app/";
 
@@ -22,9 +23,9 @@ export default async function handler(req, res) {
     const cfg = ((u[0] && u[0].integrations) || {})[target];
     if (!cfg || !(cfg.url || cfg.token)) return res.status(400).json({ error: "not_connected" });
 
-    const rows = await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${id}&select=title,start_time,reports(summary,scores,action_items,next_steps)`);
+    const rows = await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${id}&select=title,start_time,capture_mode,stage_info,reports(summary,scores,action_items,next_steps)`);
     const m = rows[0];
-    if (!m) return res.status(404).json({ error: "meeting not found" });
+    if (!m || isRtmsDeleting(m)) return res.status(404).json({ error: "meeting not found" });
     const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
     const result = await deliverReport(target, cfg, { title: m.title || "Meeting", summary: r.summary || "", score: (r.scores && r.scores.overall) || 0, actionItems: r.action_items || [], nextSteps: r.next_steps || [], date: m.start_time, link: APP });
     if (!result.ok) return res.status(result.error === "not_connected" ? 400 : 502).json({ error: result.error || "delivery failed", status: result.status, detail: result.detail });

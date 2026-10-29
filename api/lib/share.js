@@ -3,9 +3,11 @@
 import { sb } from "./supa.js";
 import { randomToken } from "./session.js";
 
+export const isRtmsDeleting = meeting => meeting?.capture_mode === 'zoom_rtms' && !!meeting.stage_info?.deletion;
+
 export async function ensureShareToken(meetingId, userId) {
-  const rows = await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${userId}&select=id,share_token`);
-  if (!rows.length) return null;
+  const rows = await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${userId}&select=id,share_token,capture_mode,stage_info`);
+  if (!rows.length || isRtmsDeleting(rows[0])) return null;
   if (rows[0].share_token) return rows[0].share_token;
   const tok = randomToken();
   await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${userId}`, { method: "PATCH", body: { share_token: tok } });
@@ -21,6 +23,7 @@ export async function resolveShareToken(token) {
   try { rows = await sb(`meetings?shares=cs.${q}&select=*,reports(*)`); } catch (e) { return null; }
   if (!rows || !rows.length) return null;
   const m = rows[0];
+  if (isRtmsDeleting(m)) return null;
   const entry = (m.shares || []).find((s) => s && s.token === token && !s.revoked);
   if (!entry) return null;
   return { meeting: m, role: entry.role === "Editor" ? "Editor" : "Viewer", email: entry.email, magic: entry.magic || null };

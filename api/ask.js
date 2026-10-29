@@ -4,6 +4,7 @@
 // cited meeting ids. Keeps transcripts on the server (no giant client payloads / token blowups).
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
+import { isRtmsDeleting } from "./lib/share.js";
 
 export const config = { maxDuration: 60 }; // streamed answer over the whole corpus can run long
 
@@ -53,8 +54,8 @@ export default async function handler(req, res) {
     if (!question) return res.status(400).json({ error: "no question" });
 
     // Pull the corpus (finished meetings + their report) for this user.
-    const rows = await sb(`meetings?user_id=eq.${uid}&status=eq.done&select=id,title,start_time,created_at,source,meeting_url,participants,shares,attendees,reports(summary,topics,action_items,read_score,scores,transcript,participants)&order=created_at.desc&limit=200`);
-    const corpus = (rows || []).map((m) => {
+    const rows = await sb(`meetings?user_id=eq.${uid}&status=eq.done&select=id,title,start_time,created_at,source,meeting_url,capture_mode,stage_info,participants,shares,attendees,reports(summary,topics,action_items,read_score,scores,transcript,participants)&order=created_at.desc&limit=200`);
+    const corpus = (rows || []).filter(m => !isRtmsDeleting(m)).map((m) => {
       const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
       const tr = r.transcript;
       const transcriptText = Array.isArray(tr) ? tr.map((t) => `${t.speaker || ""}: ${t.text || ""}`).join("\n") : (typeof tr === "string" ? tr : "");

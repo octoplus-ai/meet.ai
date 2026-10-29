@@ -4,6 +4,8 @@
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
 import { stopOrchestratorJob } from "../lib/orch.js";
+import { disableRtmsMeeting } from '../lib/zoom-rtms.js';
+import { parseMeetingUrl } from '../../shared/meeting-platform.js';
 
 const enc = encodeURIComponent;
 
@@ -26,15 +28,20 @@ export default async function handler(req, res) {
     if (!uid) return res.status(401).json({ error: "not authenticated" });
     if (!body.meetingUrl) return res.status(400).json({ error: "meetingUrl required" });
 
-    const rows = await sb(`meetings?user_id=eq.${uid}&meeting_url=eq.${enc(body.meetingUrl)}&status=in.(scheduled,joining,in_call,recording)&select=id,status&order=created_at.desc&limit=1`);
-    const m = rows[0];
+    let parsed; try { parsed = parseMeetingUrl(body.meetingUrl); } catch { return res.status(400).json({ error: 'invalid_meeting_url' }); }
+    const rows = await sb(`meetings?user_id=eq.${uid}&status=in.(scheduled,joining,in_call,recording,processing)&select=id,status,start_time,end_time,meeting_url,capture_mode&order=created_at.desc`);
+    const m = rows.find(row => {
+      if (row.status === 'processing' && row.capture_mode !== 'zoom_rtms') return false;
+      try { const other = parseMeetingUrl(row.meeting_url); return other.platform === parsed.platform && (other.meetingId && parsed.meetingId ? other.meetingId === parsed.meetingId : other.url === parsed.url) && (row.status !== 'scheduled' || Date.parse(row.start_time) <= Date.now()+300000 && Date.parse(row.end_time || new Date(Date.parse(row.start_time)+7200000)) + 300000 > Date.now()); } catch { return false; }
+    });
     if (!m) return res.status(404).json({ error: "no active bot for this meeting" });
 
-    await sb(`meetings?id=eq.${m.id}`, { method: "PATCH", body: { status: "skipped", status_synced_at: new Date().toISOString() } });
+    if (m.capture_mode === 'zoom_rtms') return res.status(200).json(await disableRtmsMeeting(uid, m.id));
+    const changed = await sb(`meetings?id=eq.${m.id}&user_id=eq.${uid}&status=eq.${m.status}`, { method: "PATCH", prefer: 'return=representation', body: { status: "skipped", status_synced_at: new Date().toISOString() } });
+    if (!changed?.length) return res.status(409).json({ error: 'meeting_state_changed' });
     await stopOrchestratorJob(m.id);
     return res.status(200).json({ ok: true });
   } catch (e) {
-    console.error("bot stop error:", e && (e.stack || e.message));
-    res.status(500).json({ error: String(e.message || e) });
+    res.status(500).json({ error: 'bot_stop_failed' });
   }
 }

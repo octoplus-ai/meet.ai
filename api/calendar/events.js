@@ -3,6 +3,7 @@
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
 import { extractMeetingUrl, parseMeetingUrl, enabledPlatforms } from "../../shared/meeting-platform.js";
+import { resolveZoomCaptureRoute, expireRtmsIntents } from '../lib/zoom-routing.js';
 
 async function getToken(userId) {
   const r = await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google&select=*`);
@@ -16,6 +17,7 @@ export default async function handler(req, res) {
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (!s.length) return res.status(401).json({ error: "no session" });
     const userId = s[0].user_id;
+    if (process.env.ZOOM_RTMS_ROUTING === 'true') await expireRtmsIntents(userId);
 
     let tk = await getToken(userId);
     if (!tk) return res.status(400).json({ error: "no google token" });
@@ -61,20 +63,27 @@ export default async function handler(req, res) {
 
     const users = await sb(`app_users?id=eq.${userId}&select=auto_join`).catch(() => []);
     const ids = events.map(e => encodeURIComponent(`"${String(e.id).replace(/"/g, "")}"`)).join(",");
-    const rows = ids ? await sb(`meetings?user_id=eq.${userId}&calendar_event_id=in.(${ids})&select=calendar_event_id,status&order=created_at.desc`) : [];
+    const rows = ids ? await sb(`meetings?user_id=eq.${userId}&calendar_event_id=in.(${ids})&select=calendar_event_id,status,capture_mode&order=created_at.desc`) : [];
     const byEvent = new Map();
     for (const row of rows) if (!byEvent.has(row.calendar_event_id)) byEvent.set(row.calendar_event_id, row);
     const platforms = enabledPlatforms(process.env);
+    let zoomRoute;
     for (const event of events) {
-      let reason = event.meetingUrl ? null : "no_meeting_link";
+      let reason = event.meetingUrl ? null : "no_meeting_link", platform = null, captureMode = 'inhouse_bot';
       if (!reason) {
-        try { if (!platforms.has(parseMeetingUrl(event.meetingUrl).platform)) reason = "platform_disabled"; }
+        try { platform = parseMeetingUrl(event.meetingUrl).platform; if (!platforms.has(platform)) reason = "platform_disabled"; }
         catch { reason = "invalid_meeting_url"; }
-        if (!reason && !process.env.BOT_ORCHESTRATOR_URL) reason = "bot_backend_unavailable";
+        if (!reason) {
+          if (platform === 'zoom' && !zoomRoute) zoomRoute = await resolveZoomCaptureRoute(userId, platform);
+          if (platform === 'zoom' && zoomRoute?.mode === 'rtms') { captureMode = 'zoom_rtms'; if (!zoomRoute.ready) reason = zoomRoute.error; }
+          else if (!process.env.BOT_ORCHESTRATOR_URL) reason = 'bot_backend_unavailable';
+        }
       }
       event.botAvailable = !reason;
       event.botUnavailableReason = reason;
       event.botStatus = byEvent.get(event.id)?.status || null;
+      event.captureMode = byEvent.get(event.id)?.capture_mode || captureMode;
+      event.awaitingAuthorization = event.captureMode === 'zoom_rtms' && ['scheduled', 'joining'].includes(event.botStatus);
       event.botEnabled = !reason && ["scheduled", "joining", "in_call", "recording"].includes(event.botStatus);
       event.autoJoinEligible = !byEvent.has(event.id) && !reason && !!users[0] && users[0].auto_join !== false;
     }

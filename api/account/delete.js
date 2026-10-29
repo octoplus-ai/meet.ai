@@ -6,6 +6,10 @@
 // sensitive PII - transcripts, reports, tokens - is erased here immediately).
 import { sb } from "../lib/supa.js";
 import { currentUser } from "../lib/session.js";
+import { requestRtmsDeletion } from '../lib/rtms-cleanup.js';
+import { requireZoomMutation } from '../lib/zoom-security.js';
+
+export const config = { maxDuration: 60 };
 
 const enc = encodeURIComponent;
 
@@ -23,6 +27,16 @@ export default async function handler(req, res) {
   }
 
   try {
+    // This existing email-confirmed account action waits for RTMS files to be
+    // physically purged. Background cleanup never deletes the account itself;
+    // the user retries this confirmed request after receiving a pending result.
+    const native = await sb(`meetings?user_id=eq.${enc(uid)}&capture_mode=eq.zoom_rtms&select=id&limit=1`);
+    const previousDeletion = native?.length ? [] : await sb(`zoom_rtms_account_deletions?user_id=eq.${enc(uid)}&select=user_id&limit=1`).catch(() => []);
+    if (native?.length || previousDeletion?.length) {
+      requireZoomMutation(req);
+      const result = await requestRtmsDeletion(uid);
+      if (result.pending) return res.status(202).json(result);
+    }
     // 0) Best-effort: revoke the Google token so access can't linger after erasure.
     try {
       const tok = await sb(`oauth_tokens?user_id=eq.${enc(uid)}&select=access_token,refresh_token`);

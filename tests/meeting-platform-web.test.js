@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { parseMeetingUrl, extractMeetingUrl, enabledPlatforms, platformLabel, meetingLimitMinutes } from "../shared/meeting-platform.js";
+import { zoomCaptureErrorMessage } from '../src/media/meeting-capture.js';
 
 const urls = {
   google_meet: "https://meet.google.com/abc-defg-hij",
@@ -22,6 +23,7 @@ function scheduler(options = {}) {
   const env = { BOT_ORCHESTRATOR_URL: "https://orchestrator.example.test/", APP_URL: "https://app.example.test", ...options.env };
   const context = vm.createContext({ Date, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes,
     process: { env }, AbortSignal: options.AbortSignal || AbortSignal,
+    resolveZoomCaptureRoute: async () => ({ mode: 'browser' }),
     recordingGate: async () => options.gate || { allow: true, maxMeetingMin: 120 },
     annotateEvent: async (...args) => { annotations.push(args); }, stopOrchestratorJob: async () => {},
     listUpcomingEvents: async () => ({ events: options.events || [], truncated: false, fetchedAt: Date.now() }),
@@ -310,6 +312,7 @@ test("auto-join calendar helper extracts all three platforms with the shared par
 });
 test("calendar UI endpoint extracts the same links as auto-join, never a phone entry", async () => {
   const context = vm.createContext({ Date, URLSearchParams, encodeURIComponent, extractMeetingUrl, parseMeetingUrl, enabledPlatforms,
+    resolveZoomCaptureRoute: async () => ({ mode: 'browser' }),
     process: { env: { BOT_ENABLED_PLATFORMS: "google_meet,zoom,teams", BOT_ORCHESTRATOR_URL: "https://orchestrator.example.test" } },
     parseCookies: () => ({ om_session: "synthetic" }),
     sb: async (query) => query.startsWith("sessions?") ? [{ user_id: "u" }]
@@ -338,6 +341,7 @@ test("authenticated per-event enable explicitly opts into a manual retry", async
   let scheduled;
   const start = new Date(Date.now() - 5 * 60000).toISOString();
   const context = vm.createContext({ Date, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms,
+    resolveZoomCaptureRoute: async () => ({ mode: 'browser' }),
     process: { env: { BOT_ORCHESTRATOR_URL: "https://orchestrator.example.test" } },
     parseCookies: () => ({ om_session: "synthetic" }),
     listUpcomingEvents: async () => ({ events: [{ id: "event", meetingUrl: urls.google_meet, start }] }),
@@ -353,7 +357,7 @@ test("frontend labels use the canonical parser and error copy never echoes serve
   const start = app.indexOf("function platformFromUrl("); const end = app.indexOf('// "mm:ss"', start);
   assert.ok(start > 0 && end > start);
   for (const CUR_LANG of ["en", "es"]) {
-    const context = vm.createContext({ platformLabel, CUR_LANG }); vm.runInContext(app.slice(start, end), context);
+    const context = vm.createContext({ platformLabel, CUR_LANG, zoomCaptureErrorMessage }); vm.runInContext(app.slice(start, end), context);
     assert.equal(context.platformFromUrl("https://evil.example/?next=https://zoom.us/j/123"), null);
     const copy = context.botStartError({ error: "platform_disabled", detail: "synthetic-code" });
     assert.ok(copy.length > 20); assert.ok(!copy.includes("synthetic-code"));

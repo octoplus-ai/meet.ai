@@ -3,9 +3,10 @@
 // poll status -> stream the dubbed media. Persisted per language in meetings.dubs jsonb.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
 import { getBot, videoUrl } from "./lib/recall.js";
 import { getPlan, hasFeature } from "./lib/plan.js";
+import { authorizedRtmsMedia, signedRtmsMediaUrl } from "./lib/rtms-media.js";
 
 export const config = { maxDuration: 60 };
 const enc = encodeURIComponent;
@@ -17,14 +18,22 @@ async function ownerMeeting(req, meetingId) {
   if (!t || !meetingId) return null;
   const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
   if (!s.length) return null;
-  const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${s[0].user_id}&select=id,bot_id,dubs,duration_min,recording_url,capture_mode`);
-  return m.length ? { meeting: m[0], ownerId: s[0].user_id } : null;
+  const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${enc(s[0].user_id)}&select=id,user_id,bot_id,dubs,duration_min,recording_url,cover_url,capture_mode,status,stage_info`);
+  return m.length && !isRtmsDeleting(m[0]) ? { meeting: m[0], ownerId: s[0].user_id } : null;
 }
 // For media playback: owner session OR a valid share token.
 async function anyMeeting(req, meetingId, share) {
   const o = await ownerMeeting(req, meetingId);
-  if (o) return o.meeting;
-  if (share) { const r = await resolveShareToken(share); if (r && r.meeting && r.meeting.id === meetingId) { const m = await sb(`meetings?id=eq.${enc(meetingId)}&select=id,bot_id,dubs,duration_min`); if (m.length) return m[0]; } }
+  if (o) return o.meeting.capture_mode === "zoom_rtms" ? authorizedRtmsMedia(req, meetingId, null) : o.meeting;
+  if (share) {
+    const native = await authorizedRtmsMedia(req, meetingId, share);
+    if (native) return native;
+    const r = await resolveShareToken(share);
+    if (r?.meeting?.id === meetingId && r.meeting.capture_mode !== "zoom_rtms") {
+      const m = await sb(`meetings?id=eq.${enc(meetingId)}&select=id,bot_id,dubs,duration_min,capture_mode`);
+      if (m.length && m[0].capture_mode !== "zoom_rtms") return m[0];
+    }
+  }
   return null;
 }
 
@@ -51,7 +60,7 @@ export default async function handler(req, res) {
       res.setHeader("Accept-Ranges", up.headers.get("accept-ranges") || "bytes");
       const cr = up.headers.get("content-range"); if (cr) res.setHeader("Content-Range", cr);
       const cl = up.headers.get("content-length"); if (cl) res.setHeader("Content-Length", cl);
-      res.setHeader("Cache-Control", "private, max-age=3600");
+      res.setHeader("Cache-Control", m.capture_mode === "zoom_rtms" ? "private, no-store" : "private, max-age=3600");
       res.end(Buffer.from(await up.arrayBuffer()));
       return;
     }
@@ -99,7 +108,8 @@ export default async function handler(req, res) {
     // In-house recordings live at meetings.recording_url (R2) - getBot only resolves real Recall
     // bot ids, so that path stays the fallback.
     let src = null;
-    if (m.capture_mode === "inhouse_bot" && m.recording_url) src = m.recording_url;
+    if (m.capture_mode === "zoom_rtms") src = signedRtmsMediaUrl({ ...m, user_id: a.ownerId }, "recording", { ttl: 900 });
+    else if (m.capture_mode === "inhouse_bot" && m.recording_url) src = m.recording_url;
     else { const bot = m.bot_id ? await getBot(m.bot_id) : null; src = bot ? videoUrl(bot) : null; }
     if (!src) return res.status(400).json({ error: "no_recording", detail: "This meeting has no downloadable recording to dub." });
 

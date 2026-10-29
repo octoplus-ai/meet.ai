@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     catch (error) { return res.status(400).json({ error: error.code === "unsupported_platform" ? error.code : "invalid_meeting_url" }); }
 
     const result = await scheduleBot(s[0].user_id, {
-      meetingUrl: parsed.url, title: body.title, joinAt: body.joinAt,
+      meetingUrl: parsed.url, title: body.title, joinAt: body.joinAt, endAt: body.endAt,
       calendarEventId: body.calendarEventId, botName: body.botName,
       manualRetry: true,
     });

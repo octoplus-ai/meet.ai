@@ -12,6 +12,20 @@ export function savedRecordingUrl(value) {
 export function captureFailureMessage(error, { hasRecording = false, lang = "en" } = {}) {
   const es = lang === "es";
   const message = String(error || "");
+  const rtmsMessages = {
+    RTMS_START_NOT_AUTHORIZED: ["No authorized Zoom stream was received during the meeting window. Check your Zoom connection, auto-start settings and meeting content access before the next meeting.", "No se recibió una transmisión autorizada de Zoom durante el horario de la reunión. Revisá la conexión de Zoom, el inicio automático y el acceso al contenido antes de la próxima reunión."],
+    RTMS_CONNECTION_FAILED: ["OctoMeet could not complete the Zoom capture connection. Check your Zoom connection in Integrations and the meeting's content permissions.", "OctoMeet no pudo completar la conexión de captura con Zoom. Revisá la conexión de Zoom en Integraciones y los permisos de contenido de la reunión."],
+    RTMS_MEDIA_UNAVAILABLE: ["OctoMeet could not obtain usable audio or video from Zoom for this capture. Check the meeting's content permissions.", "OctoMeet no pudo obtener audio o video utilizable de Zoom para esta captura. Revisá los permisos de contenido de la reunión."],
+    RTMS_RECORDING_FAILED: ["The Zoom recording could not be completed. Check the meeting status before trying again.", "No se pudo completar la grabación de Zoom. Revisá el estado de la reunión antes de reintentar."],
+    RTMS_UPLOAD_FAILED: ["The Zoom recording could not be uploaded yet. Check the meeting status before trying again.", "Todavía no se pudo subir la grabación de Zoom. Revisá el estado de la reunión antes de reintentar."],
+    RTMS_TRANSCRIPTION_FAILED: ["The Zoom transcription could not be completed, so the report is not available.", "No se pudo completar la transcripción de Zoom, por lo que el informe no está disponible."],
+    RTMS_PROCESSING_FAILED: ["The Zoom report could not be completed. Check the meeting status before trying again.", "No se pudo completar el informe de Zoom. Revisá el estado de la reunión antes de reintentar."],
+    RTMS_NO_SPEECH: ["No speech transcript was obtained from this Zoom capture, so no report was generated.", "No se obtuvo una transcripción de voz de esta captura de Zoom, por lo que no se generó un informe."],
+  };
+  const rtmsMessage = rtmsMessages[message]?.[es ? 1 : 0];
+  if (rtmsMessage && (!hasRecording || ["RTMS_TRANSCRIPTION_FAILED", "RTMS_PROCESSING_FAILED", "RTMS_NO_SPEECH"].includes(message))) {
+    return (hasRecording ? (es ? "La grabación está guardada y podés ver el video. " : "The recording is saved and you can watch the video. ") : "") + rtmsMessage;
+  }
   if (hasRecording) return es
     ? "La grabación está guardada, pero el informe no se completó. Podés ver el video."
     : "The recording is saved, but the report did not complete. You can watch the video.";

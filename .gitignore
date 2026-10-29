@@ -2,3 +2,5 @@ node_modules
 dist
 test-results
 .env
+rtms-*-verification.log
+rtms-final-tests.log

@@ -72,6 +72,32 @@ test("saved media remains accessible even when the report failed", () => {
   }
 });
 
+test("native Zoom failures explain the stage without hiding a saved video or inventing a report", () => {
+  const cases = [
+    ["RTMS_START_NOT_AUTHORIZED", /No authorized Zoom stream was received during the meeting window/, /No se recibió una transmisión autorizada de Zoom durante el horario de la reunión/],
+    ["RTMS_CONNECTION_FAILED", /capture connection/, /conexión de captura/],
+    ["RTMS_MEDIA_UNAVAILABLE", /usable audio or video/, /audio o video utilizable/],
+    ["RTMS_RECORDING_FAILED", /recording could not be completed/, /completar la grabación/],
+    ["RTMS_UPLOAD_FAILED", /could not be uploaded yet/, /Todavía no se pudo subir/],
+    ["RTMS_TRANSCRIPTION_FAILED", /transcription could not be completed/, /completar la transcripción/],
+    ["RTMS_PROCESSING_FAILED", /report could not be completed/, /completar el informe/],
+    ["RTMS_NO_SPEECH", /no report was generated/, /no se generó un informe/],
+  ];
+  for (const [code, en, es] of cases) {
+    assert.match(captureFailureMessage(code), en);
+    assert.match(captureFailureMessage(code, { lang: "es" }), es);
+    for (const lang of ["en", "es"]) {
+      const saved = captureFailureMessage(code, { lang, hasRecording: true });
+      assert.match(saved, lang === "es" ? /grabación está guardada.*ver el video/ : /recording is saved.*watch the video/);
+      if (["RTMS_TRANSCRIPTION_FAILED", "RTMS_PROCESSING_FAILED", "RTMS_NO_SPEECH"].includes(code)) assert.match(saved, lang === "es" ? es : en);
+      if (code === "RTMS_UPLOAD_FAILED") assert.doesNotMatch(saved, /could not be uploaded|no se pudo subir/);
+      if (code === "RTMS_START_NOT_AUTHORIZED") assert.doesNotMatch(captureFailureMessage(code, { lang }), /host denied|anfitrión rechazó|waiting room|sala de espera/i);
+      assert.doesNotMatch(saved, /no saved recording|no hay una grabación guardada/);
+      assert.equal(captureFailureMessage(`${code}: token=secret`, { lang }), captureFailureMessage("unknown", { lang }));
+    }
+  }
+});
+
 test("unknown provider diagnostics never leak through the UI", () => {
   for (const lang of ["en", "es"]) {
     for (const code of ["AUTH_REQUIRED", "POLICY_BLOCKED", "MEETING_DENIED", "MEETING_ENDED", "ANNOUNCEMENT_UNAVAILABLE", "JOIN_REQUEST_NOT_REGISTERED", "ADMISSION_TIMEOUT"]) {

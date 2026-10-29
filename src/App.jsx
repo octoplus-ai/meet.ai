@@ -16,6 +16,11 @@ import { exportPptx } from "./slides/pptx.js";
 import { EXTRA_LANGS } from "./i18n-extra.js";
 import { parseMeetingUrl, platformLabel } from "../shared/meeting-platform.js";
 import { captureFailureMessage, delayedProcessingCount, failedCaptures, savedRecordingUrl } from "./media/meeting-activity.js";
+import { captureDisplayStatus, captureDispatchMessage, dispatchAccepted, meetingCaptureMode, recordingPlaybackUrl, zoomAuthorizationLabel, zoomAuthorizationSummary, zoomCaptureErrorMessage } from "./media/meeting-capture.js";
+import ZoomConnection from "./integrations/ZoomConnection.jsx";
+import { zoomReturn } from "./integrations/zoom-connection.js";
+import { deletionMessage, pendingDeletionItems, requestDeletion } from "./media/deletion.js";
+import PendingDeletions from "./media/PendingDeletions.jsx";
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
@@ -638,7 +643,8 @@ function MeetingDuration({ meeting }) {
   if (!(sec > 0)) return null;
   return <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-1.5 py-0.5 text-[12px] font-semibold text-slate-500" title="Meeting duration"><Clock size={11} className="text-slate-400" />{fmtDur(sec)}</span>;
 }
-function statusSummary(status) {
+function statusSummary(status, captureMode) {
+  if (captureDisplayStatus(status, captureMode) === "awaiting_authorization") return zoomAuthorizationSummary(CUR_LANG);
   switch (status) {
     case "scheduled": return tr("statusScheduled");
     case "joining": return tr("statusJoining");
@@ -653,6 +659,8 @@ function statusSummary(status) {
 // (Google Meet / Zoom / Teams) like Read.ai - not the generic OctoMeet icon.
 function platformFromUrl(url) { return platformLabel(url); }
 function botStartError(data = {}) {
+  const zoomMessage = zoomCaptureErrorMessage(data.error, CUR_LANG);
+  if (zoomMessage) return zoomMessage;
   const messages = {
     invalid_meeting_url: ["Use a valid HTTPS meeting link from Meet, Zoom or Teams.", "Usá un enlace HTTPS válido de Meet, Zoom o Teams."],
     unsupported_platform: ["This meeting platform is not supported.", "Esta plataforma de reuniones no está admitida."],
@@ -676,7 +684,7 @@ function tsToSeconds(t) {
   if (p.length === 1) return p[0];
   return null;
 }
-function adaptReal(m) {
+export function adaptReal(m) {
   // PostgREST may embed reports as an array (to-many) or a single object (to-one,
   // because reports.meeting_id is unique). Handle both so the report is never lost.
   const r = (Array.isArray(m.reports) ? m.reports[0] : m.reports) || {};
@@ -731,7 +739,7 @@ function adaptReal(m) {
     scores: { overall, engagement, sentiment, balance, clarity, charisma: sc.charisma || 0 },
     sentimentLabel: r.sentiment_label || "Neutral",
     sentimentTimeline: (Array.isArray(r.sentiment_timeline) && r.sentiment_timeline.length) ? r.sentiment_timeline : [],
-    summary: r.summary || (done ? "" : statusSummary(m.status)),
+    summary: r.summary || (done ? "" : statusSummary(m.status, m.capture_mode)),
     topics: r.topics || [],
     keyQuestions: kq.map((k) => k.q),
     keyQA: kq,
@@ -748,8 +756,8 @@ function adaptReal(m) {
     transcript: r.transcript ? parseTranscript(r.transcript) : [],
     subtitles: (r.subtitles && typeof r.subtitles === "object") ? r.subtitles : {},
     dubs: (m.dubs && typeof m.dubs === "object") ? m.dubs : {},
-    video: (done && m.capture_mode === "inhouse_bot" && m.recording_url) ? m.recording_url
-      : ((done && (m.source === "Recall") && m.bot_id) ? `/api/recall/media?botId=${encodeURIComponent(m.bot_id)}` : null),
+    video: recordingPlaybackUrl(m),
+    captureMode: m.capture_mode || null,
     savedRecording: savedRecordingUrl(m.recording_url),
     // Owner's Link Access choice; legacy rows with a minted token default to public (their
     // links were already out in the wild), token-less rows default to restricted.
@@ -937,8 +945,11 @@ const STATUS_META = {
   processing: { label: tr("badgeProcessing"), cls: "bg-violet-100 text-violet-700", spin: true },
   error: { label: tr("badgeFailed"), cls: "bg-rose-100 text-rose-700", dot: "bg-rose-500" },
 };
-function StatusBadge({ status }) {
-  const m = STATUS_META[status];
+function StatusBadge({ status, captureMode }) {
+  const displayStatus = captureDisplayStatus(status, captureMode);
+  const m = displayStatus === "awaiting_authorization"
+    ? { label: zoomAuthorizationLabel(CUR_LANG), cls: "bg-amber-100 text-amber-700", dot: "bg-amber-500" }
+    : STATUS_META[displayStatus];
   if (!m) return null;
   return (
     <span className={"inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold " + m.cls}>
@@ -1141,7 +1152,7 @@ function SharedReportView({ token }) {
 
 export default function App() {
   const [meetings, setMeetings] = useState(null);
-  const [view, setView] = useState("reports");
+  const [view, setView] = useState(() => typeof window !== "undefined" && zoomReturn(window.location.search) ? "integrations" : "reports");
   const [activeId, setActiveId] = useState(null);
   const [askSeed, setAskSeed] = useState("");
   const [lang, setLangState] = useState("en");
@@ -1149,13 +1160,14 @@ export default function App() {
   const [authed, setAuthed] = useState(null);
   const [user, setUser] = useState(null);
   const [realMeetings, setRealMeetings] = useState([]);
+  const [pendingDeletions, setPendingDeletions] = useState([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [folderFilter, setFolderFilter] = useState(null);
 
   const loadReal = useCallback(async () => {
     try {
       const mr = await fetch("/api/meetings", { cache: "no-store" });
-      if (mr.ok) { const md = await mr.json(); setRealMeetings((md.meetings || []).map(adaptReal)); }
+      if (mr.ok) { const md = await mr.json(); setRealMeetings((md.meetings || []).map(adaptReal)); setPendingDeletions(pendingDeletionItems(md.pendingDeletions)); }
     } catch (e) { /* not connected */ }
   }, []);
 
@@ -1233,7 +1245,7 @@ export default function App() {
       .catch(() => {})
       .then(() => fetch("/api/calendar/arm-all", { method: "POST" }))
       .then((r) => (r && r.ok ? r.json() : null))
-      .then((d) => { if (!stopped && d && d.armed > 0) { if (announce) toast(`OctoMeet will auto-join ${d.armed} upcoming meeting${d.armed > 1 ? "s" : ""} 🗓️`); loadReal(); } })
+      .then((d) => { if (!stopped && d && d.armed > 0) { if (announce) toast(`OctoMeet prepared ${d.armed} upcoming meeting${d.armed > 1 ? "s" : ""} 🗓️`); loadReal(); } })
       .catch(() => {});
     run(true);
     const id = setInterval(() => run(false), 150000);
@@ -1270,8 +1282,16 @@ export default function App() {
     if (m.real) { try { await fetch("/api/meeting-rename", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: m.id, title }) }); } catch (e) { /* ignore */ } }
   };
   const deleteMeeting = async (m) => {
-    persist(allMeetings.filter((x) => x.id !== m.id));
-    if (m.real) { try { await fetch("/api/meeting-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingId: m.id }) }); } catch (e) { /* ignore */ } }
+    try {
+      const result = m.real ? await requestDeletion("/api/meeting-delete", { meetingId: m.id }) : { pending: false };
+      setPendingDeletions(previous => result.pending ? pendingDeletionItems([...previous, { id: m.id }]) : previous.filter(item => item.id !== m.id));
+      await persist(allMeetings.filter((x) => x.id !== m.id));
+      toast(deletionMessage(result, { lang }));
+      return true;
+    } catch {
+      toast(lang === "es" ? "No se pudo confirmar la eliminación. Reintentá." : "Deletion could not be confirmed. Try again.");
+      return false;
+    }
   };
   const goAsk = (q) => { setAskSeed(q || ""); setView("ask"); };
   const handleUploadSave = useCallback(async (m) => {
@@ -1315,8 +1335,8 @@ export default function App() {
             <button onClick={() => setGmailNudge(false)} className="text-amber-500 transition hover:text-amber-700"><X size={16} /></button>
           </div>
         )}
-        {view === "reports" && <ReportsList meetings={allMeetings} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} user={user} onRename={renameMeeting} onDelete={deleteMeeting} />}
-        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} onRename={renameMeeting} onDelete={(m) => { deleteMeeting(m); setView("reports"); }} user={user} />}
+        {view === "reports" && <ReportsList meetings={allMeetings} pendingDeletions={pendingDeletions} onOpen={openMeeting} onUpload={() => setUploadOpen(true)} onAsk={goAsk} t={t} onRefresh={loadReal} folderFilter={folderFilter} onClearFolder={() => setFolderFilter(null)} user={user} onRename={renameMeeting} onDelete={deleteMeeting} />}
+        {view === "meeting" && active && <MeetingDetail meeting={active} onBack={() => setView("reports")} onUpdate={persist} meetings={allMeetings} initialShare={shareIntent} onRename={renameMeeting} onDelete={async (m) => { if (await deleteMeeting(m)) setView("reports"); }} user={user} />}
         {view === "ask" && <ChatView meetings={allMeetings} onOpen={openMeeting} seed={askSeed} />}
         {view === "add-people" && <CreateWorkspace onCancel={() => setView("reports")} onDone={() => setView("reports")} />}
         {view === "plans" && <PlansView onBack={() => setView("plan-billing")} plan={user?.plan} />}
@@ -1487,12 +1507,12 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user, pinned
                     try { url = parseMeetingUrl(liveUrl).url; }
                     catch (error) { toast(botStartError({ error: error.code })); return; }
                     setLiveBusy(true);
-                    toast(tr("sendingBotToMeeting"));
+                    toast(CUR_LANG === "es" ? "Preparando OctoMeet para la reunión…" : "Preparing OctoMeet for the meeting…");
                     try {
                       const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, botName: notetakerName() }) });
                       const d = await r.json();
-                      if (!r.ok || d.error || d.ok === false) toast(botStartError(d));
-                      else { setLiveOpen(false); setLiveUrl(""); toast(tr("botJoiningMeeting")); }
+                      if (!dispatchAccepted(r, d)) toast(botStartError(d));
+                      else { setLiveOpen(false); setLiveUrl(""); toast(captureDispatchMessage(d, { lang: CUR_LANG })); }
                     } catch (er) { toast(botStartError({ error: "bot_backend_unavailable" })); }
                     finally { setLiveBusy(false); }
                   }
@@ -2021,7 +2041,7 @@ function ParticipantsCell({ meeting, emailBook }) {
   );
 }
 
-export function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder, user, onRename, onDelete }) {
+export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder, user, onRename, onDelete }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
   const [tab, setTab] = useState("reports");
@@ -2030,6 +2050,7 @@ export function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, f
   const [renaming, setRenaming] = useState(null);   // meeting being renamed
   const [renameVal, setRenameVal] = useState("");
   const [deleting, setDeleting] = useState(null);    // meeting pending delete confirm
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [fOwner, setFOwner] = useState("all");
   const [fDate, setFDate] = useState("all");
   const [fRange, setFRange] = useState(null); // {start,end} YYYY-MM-DD when fDate === "custom"
@@ -2094,7 +2115,11 @@ export function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, f
     setTimeout(() => URL.revokeObjectURL(url), 2000); toast("Downloaded");
   };
   const submitRename = () => { if (renaming && renameVal.trim()) { onRename && onRename(renaming, renameVal.trim()); toast("Renamed"); } setRenaming(null); };
-  const confirmDelete = () => { if (deleting) { onDelete && onDelete(deleting); toast("Report deleted"); } setDeleting(null); };
+  const confirmDelete = async () => {
+    if (!deleting || deleteBusy || !onDelete) return;
+    setDeleteBusy(true);
+    try { if (await onDelete(deleting)) setDeleting(null); } finally { setDeleteBusy(false); }
+  };
 
   // Failed captures stay in their own activity list, never among completed reports.
   const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing"];
@@ -2209,6 +2234,7 @@ export function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, f
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
+          <PendingDeletions items={pendingDeletions} lang={CUR_LANG} onComplete={onDelete ? id => onDelete({ id, real: true }) : null} />
           <>
             {(live.length > 0 || proc.length > 0) && (
               <div role="status" className={"mb-5 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 " + (live.length ? "border-rose-200 bg-rose-50" : "border-violet-200 bg-violet-50")}>
@@ -2328,7 +2354,7 @@ export function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, f
                           <div className="truncate text-sm font-semibold text-slate-800">{m.title}</div>
                           <div className="mt-1 flex items-center gap-2">
                             <PeoplePopover meeting={m} emailBook={emailBook} />
-                            {m.real && m.status && m.status !== "done" ? <StatusBadge status={m.status} /> : (
+                            {m.real && m.status && m.status !== "done" ? <StatusBadge status={m.status} captureMode={m.captureMode} /> : (
                               <>
                                 <ScoreChip value={m.scores.overall} />
                                 <MeetingDuration meeting={m} />
@@ -2381,13 +2407,13 @@ export function ReportsList({ meetings, onOpen, onUpload, onAsk, t, onRefresh, f
         </div>
       )}
       {deleting && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setDeleting(null)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => { if (!deleteBusy) setDeleting(null); }}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center gap-2"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-50 text-rose-600"><Trash2 size={18} /></span><h3 className="text-base font-bold text-slate-900">Delete Report</h3></div>
             <p className="text-[13px] leading-relaxed text-slate-500">{tf("deleteReportConfirm", { title: deleting.title })}</p>
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setDeleting(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-              <button onClick={confirmDelete} className="rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-rose-500">Delete Report</button>
+              <button disabled={deleteBusy} onClick={() => setDeleting(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">Cancel</button>
+              <button disabled={deleteBusy} onClick={confirmDelete} className="rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-rose-500 disabled:opacity-60">{deleteBusy ? (CUR_LANG === "es" ? "Solicitando…" : "Requesting…") : tr("deleteReport")}</button>
             </div>
           </div>
         </div>
@@ -2632,6 +2658,8 @@ function FoldersView({ onAsk, meetings, onOpenFolder, user }) {
 
 /* ============================ CALENDAR ============================ */
 function calendarBotUnavailable(reason) {
+  const zoomMessage = zoomCaptureErrorMessage(reason, CUR_LANG);
+  if (zoomMessage) return zoomMessage;
   return ({ platform_disabled: "Bot not enabled for this platform", no_meeting_link: "No meeting link", invalid_meeting_url: "Meeting link not supported", bot_backend_unavailable: "Bot service unavailable", event_unavailable: "Invitation unavailable" })[reason] || "Bot availability not confirmed";
 }
 // Google-Calendar-style month grid. Each day cell shows its meetings as colored chips: a recorded
@@ -2653,7 +2681,7 @@ function MonthCalendar({ cursor, setCursor, byDay, onPick }) {
   const chipStyle = (ev) => {
     const m = ev.mtg;
     if (m && m.status === "done") return { bg: scoreColor(m.scores.engagement || m.scores.overall), fg: "#fff" };
-    if (m && (m.status === "recording" || m.status === "in_call")) return { bg: "#F43F5E", fg: "#fff" };
+    if (m && (m.status === "recording" || (m.status === "in_call" && m.captureMode !== "zoom_rtms"))) return { bg: "#F43F5E", fg: "#fff" };
     if (m && m.status === "processing") return { bg: "#F59E0B", fg: "#fff" };
     if (m && (m.status === "skipped" || m.status === "error")) return { bg: "#EEF0F4", fg: "#6B7280" };
     return { bg: "#EDE9FE", fg: "#6D28D9" }; // scheduled / upcoming
@@ -2705,12 +2733,15 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   const [eventsError, setEventsError] = useState(false);
   const [autoJoin, setAutoJoin] = useState(true);
   const [recallConnected, setRecallConnected] = useState(false);
+  const calendarLoadId = useRef(0);
   const loadEvents = async () => {
+    const requestId = ++calendarLoadId.current;
     try {
       const r = await fetch("/api/calendar/events"); const d = await r.json();
       if (!r.ok || !Array.isArray(d.events)) throw new Error("calendar_unavailable");
+      if (requestId !== calendarLoadId.current) return;
       setRealEvents(d.events); setEventsError(false);
-    } catch { setEventsError(true); }
+    } catch { if (requestId === calendarLoadId.current) setEventsError(true); }
   };
   useEffect(() => {
     (async () => {
@@ -2723,6 +2754,13 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
       }
     })();
   }, []);
+  useEffect(() => {
+    // Zoom grants and stream reception arrive after preparation; keep the visible state current.
+    const timer = setInterval(() => {
+      if (!document.hidden && !Object.values(arming).some(Boolean)) loadEvents();
+    }, 15000);
+    return () => { clearInterval(timer); calendarLoadId.current++; };
+  }, [arming]);
   // Cross-reference: calendar event id -> the processed meeting (status, score, report).
   const byEvent = {};
   (meetings || []).forEach((m) => { if (m.calendarEventId) byEvent[m.calendarEventId] = m; });
@@ -2732,19 +2770,20 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
     try { url = parseMeetingUrl(url).url; }
     catch (error) { toast(botStartError({ error: error.code })); return false; }
     const future = joinAt && new Date(joinAt).getTime() > Date.now() + 30 * 1000;
-    toast(future ? "Scheduling OctoMeet…" : "Sending OctoMeet to the meeting…");
+    toast(future ? "Scheduling OctoMeet…" : "Preparing OctoMeet for the meeting…");
     try {
       const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, title, joinAt, calendarEventId, botName: notetakerName() }) });
       const d = await r.json();
-      const accepted = r.ok && !d.error && (d.ok === true || d.already === true);
-      toast(accepted ? (d.already ? "OctoMeet is already set for this meeting ✓" : future ? "OctoMeet will join automatically at the start time 🗓️" : "OctoMeet is joining 🎥") : botStartError(d));
-      return accepted;
+      const accepted = dispatchAccepted(r, d);
+      toast(accepted ? captureDispatchMessage(d, { future, lang: CUR_LANG }) : botStartError(d));
+      return accepted ? d : false;
     } catch (e) { toast(botStartError({ error: "bot_backend_unavailable" })); return false; }
   };
   const arm = async (e, key, val) => {
     if (arming[key] || (val && e.botAvailable !== true)) return;
     setArming(s => ({ ...s, [key]: true }));
     try {
+      let result;
       if (e.eventId) {
         const r = await fetch("/api/event-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: e.eventId, enable: val }) });
         const d = await r.json();
@@ -2752,10 +2791,20 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
           toast(val ? botStartError({ error: d.detail || d.error }) : "Could not turn off OctoMeet. Try again.");
           return;
         }
-      } else if (!val || !(await startBot(e.url, e.name, e.startIso, e.eventId))) return;
+        result = d;
+        calendarLoadId.current++;
+        // The server acknowledgement confirms preparation, not the receipt of media.
+        setRealEvents(events => events && events.map(event => event.id !== e.eventId ? event : {
+          ...event, botEnabled: val, botStatus: val ? (d.status || "scheduled") : "skipped",
+          captureMode: d.mode === "zoom_rtms" ? d.mode : (d.captureMode || event.captureMode),
+          awaitingAuthorization: val && d.awaitingAuthorization === true,
+        }));
+      } else {
+        if (!val || !(result = await startBot(e.url, e.name, e.startIso, e.eventId))) return;
+        setArmed(s => ({ ...s, [key]: val }));
+      }
       // Only an acknowledged operation changes the toggle; stale browser storage is not bot state.
-      setArmed(s => ({ ...s, [key]: val }));
-      toast(val ? "OctoMeet is scheduled for this meeting 🗓️" : "OctoMeet won't join this one.");
+      toast(val ? (meetingCaptureMode(result) === "zoom_rtms" ? captureDispatchMessage(result, { lang: CUR_LANG }) : "OctoMeet is scheduled for this meeting 🗓️") : (CUR_LANG === "es" ? "OctoMeet quedó desactivado para esta reunión." : "OctoMeet is off for this meeting."));
     } catch { toast(val ? botStartError({ error: "bot_backend_unavailable" }) : "Could not turn off OctoMeet. Try again."); }
     finally { setArming(s => ({ ...s, [key]: false })); }
   };
@@ -2764,7 +2813,7 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
     try { await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto_join: val }) }); } catch (e) { /* ignore */ }
     if (val) {
       toast("Auto-join ON - arming your meetings…");
-      fetch("/api/calendar/arm-all", { method: "POST" }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.armed > 0) toast(`OctoMeet will join ${d.armed} meeting${d.armed > 1 ? "s" : ""} 🗓️`); }).catch(() => {});
+      fetch("/api/calendar/arm-all", { method: "POST" }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.armed > 0) { toast(`OctoMeet prepared ${d.armed} meeting${d.armed > 1 ? "s" : ""} 🗓️`); loadEvents(); } }).catch(() => {});
     } else toast("Auto-join OFF - toggle meetings individually.");
   };
   const links = [{ m: 15 }, { m: 30 }, { m: 60 }, { m: 90 }];
@@ -2788,7 +2837,8 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
     const available = !eventsError && e?.botAvailable === true;
     const enabled = available && (armed[key] ?? e?.botEnabled === true);
     const pending = available && armed[key] == null && e?.autoJoinEligible && autoJoin && !["skipped", "error", "done", "processing"].includes(e?.botStatus);
-    return { available, enabled, label: arming[key] ? "Updating…" : !available ? calendarBotUnavailable(eventsError ? null : e?.botUnavailableReason) : enabled ? "Bot scheduled" : pending ? "Pending auto-join" : "Off" };
+    const isRtms = meetingCaptureMode(e) === "zoom_rtms";
+    return { available, enabled, label: arming[key] ? "Updating…" : !available ? calendarBotUnavailable(eventsError ? null : e?.botUnavailableReason) : enabled ? (isRtms ? zoomAuthorizationLabel(CUR_LANG) : "Bot scheduled") : pending ? (isRtms ? (CUR_LANG === "es" ? "Pendiente de preparación" : "Pending preparation") : "Pending auto-join") : "Off" };
   };
 
   // Unified event list for the month grid: recorded meetings (past + scheduled, with scores) merged
@@ -2815,6 +2865,7 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   const pickEvent = pick && (display.find(e => e.eventId === pick.eventId) || {});
   const pickState = botState(pickEvent, pickKey);
   const pickStatus = pickEvent?.botStatus || pickMtg?.status;
+  const pickCaptureMode = pickEvent?.captureMode || pickMtg?.captureMode;
 
   return (
     <>
@@ -2869,7 +2920,8 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
               const mtg = e.eventId ? byEvent[e.eventId] : null;
               const state = botState(e, key);
               const status = e.botStatus || mtg?.status;
-              const locked = ["done", "processing", "in_call", "recording"].includes(status);
+              const captureMode = e.captureMode || mtg?.captureMode;
+              const locked = ["done", "processing", "recording"].includes(status) || (status === "in_call" && captureMode !== "zoom_rtms");
               const tt = e.startIso ? totalTime(e.startIso, e.endIso, e.ppl) : null;
               return (
                 <div key={i} data-calendar-event={e.eventId} className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[1.7fr_1fr_1.2fr_90px] gap-3 sm:gap-0 items-center border-b border-slate-100 px-3 py-3.5">
@@ -2888,7 +2940,7 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
                         <span className="text-[12px] font-semibold text-violet-600 hover:text-violet-800">View report ↗</span>
                       </button>
                     ) : status && ["joining", "in_call", "recording", "processing", "done"].includes(status) && (state.available || locked) ? (
-                      <StatusBadge status={status} />
+                      <StatusBadge status={status} captureMode={captureMode} />
                     ) : (
                       <span role="status" className={"text-[12px] " + (state.enabled ? "font-medium text-emerald-600" : "text-slate-500")}>{state.label}</span>
                     )}
@@ -2944,14 +2996,15 @@ export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
                 <span className="flex items-center gap-2"><span className="flex h-7 items-center rounded-md px-2 text-[12px] font-bold text-white" style={{ background: scoreColor(pickMtg.scores.overall || pickMtg.scores.engagement) }}>{pickMtg.scores.overall || pickMtg.scores.engagement}</span><span className="text-[13px] font-semibold text-slate-700">Octo Score</span></span>
                 <span className="text-[13px] font-semibold text-violet-600">View report ↗</span>
               </button>
-            ) : ["recording", "in_call", "processing", "joining", "done"].includes(pickStatus) ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><StatusBadge status={pickStatus} /></div>
+            ) : ["recording", "in_call", "processing", "joining", "done"].includes(pickStatus) && captureDisplayStatus(pickStatus, pickCaptureMode) !== "awaiting_authorization" ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><StatusBadge status={pickStatus} captureMode={pickCaptureMode} /></div>
             ) : (
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
                   <span role="status" className="text-[13px] font-medium text-slate-700">{pickState.label}</span>
                   <CalToggle controlled on={pickState.enabled} disabled={!!arming[pickKey] || !pickState.available} label={`OctoMeet for ${pick.title}`} onChange={(val) => arm(pickEvent, pickKey, val)} />
                 </div>
+                {pickCaptureMode === "zoom_rtms" && pickState.enabled && <p className="text-[12px] leading-relaxed text-slate-500">{zoomAuthorizationSummary(CUR_LANG)}</p>}
                 {pick.url && <a href={pick.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Video size={15} /> Join with {platformLabel(pick.url) || "meeting"}</a>}
               </div>
             )}
@@ -3754,8 +3807,8 @@ function IntegrationsView({ onAsk }) {
             { name: "Google Calendar", icon: <BrandIcon name="googleCalendar" />, oauth: true },
             { name: "Google Meet", icon: <BrandIcon name="googleMeet" />, oauth: true },
             { name: "Outlook Calendar", icon: <BrandIcon name="outlook" />, desc: "Connect your calendar", soon: true },
-            { name: "Zoom", icon: <BrandIcon name="zoom" />, desc: "Auto-join Zoom calls", soon: true },
           ]} />
+          <ZoomConnection lang={CUR_LANG} icon={<BrandIcon name="zoom" />} />
           <Group title="Apps" desc="Push your reports + action items into the tools you use. Free via incoming webhooks / Notion token." items={[
             { name: "Octomeet Web Extension", icon: <BrandIcon name="extension" />, oauth: true },
             { name: "Slack", icon: <BrandIcon name="slack" />, key: "slack", kind: "slack", desc: "Push reports to a channel" },
@@ -4269,25 +4322,28 @@ function EditableField({ label, value, onSave, placeholder }) {
 // GDPR "delete everything" control. Requires typing the exact account email, then calls
 // /api/account/delete (which erases all rows across every table + revokes the Google token) and
 // bounces to the logged-out home.
-function DangerZone({ email }) {
+export function DangerZone({ email }) {
   const [confirming, setConfirming] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deletionPending, setDeletionPending] = useState(false);
   const match = !!email && input.trim().toLowerCase() === String(email).toLowerCase();
   const del = async () => {
     if (!match || busy) return;
     setBusy(true);
     try {
-      const r = await fetch("/api/account/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmEmail: input.trim() }) });
-      if (!r.ok) throw new Error("delete failed");
-      toast("Your account and all data were deleted");
+      const result = await requestDeletion("/api/account/delete", { confirmEmail: input.trim() });
+      setDeletionPending(result.pending);
+      toast(deletionMessage(result, { lang: CUR_LANG, account: true }));
+      if (result.pending) { setBusy(false); return; }
       setTimeout(() => { window.location.href = "/"; }, 800);
-    } catch (e) { toast("Could not delete the account - try again"); setBusy(false); }
+    } catch (e) { toast(CUR_LANG === "es" ? "No se pudo confirmar la eliminación de la cuenta. Reintentá." : "Account deletion could not be confirmed. Try again."); setBusy(false); }
   };
   return (
     <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-5">
       <div className="flex items-center gap-2 text-sm font-bold text-rose-700"><AlertTriangle size={16} /> Danger zone</div>
       <p className="mt-1 text-[13px] text-slate-600">Permanently delete your account and <b>all</b> your data - meetings, recordings, transcripts, AI documents and settings. This cannot be undone.</p>
+      {deletionPending && <p role="status" className="mt-3 text-sm text-slate-700">{deletionMessage({ pending: true }, { lang: CUR_LANG, account: true })}</p>}
       {!confirming ? (
         <button onClick={() => setConfirming(true)} className="mt-3 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Delete my account</button>
       ) : (
@@ -4295,8 +4351,8 @@ function DangerZone({ email }) {
           <p className="text-[13px] text-slate-600">Type your email <span className="font-mono font-semibold text-slate-800">{email}</span> to confirm:</p>
           <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={email} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-rose-400" />
           <div className="flex gap-2">
-            <button onClick={del} disabled={!match || busy} className={"rounded-lg px-4 py-2 text-sm font-semibold text-white " + (match && !busy ? "bg-rose-600 hover:bg-rose-500" : "cursor-not-allowed bg-rose-300")}>{busy ? "Deleting..." : "Permanently delete"}</button>
-            <button onClick={() => { setConfirming(false); setInput(""); }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button onClick={del} disabled={!match || busy} className={"rounded-lg px-4 py-2 text-sm font-semibold text-white " + (match && !busy ? "bg-rose-600 hover:bg-rose-500" : "cursor-not-allowed bg-rose-300")}>{busy ? "Requesting..." : deletionPending ? (CUR_LANG === "es" ? "Comprobar y completar eliminación" : "Check and complete deletion") : "Permanently delete"}</button>
+            {!deletionPending && <button disabled={busy} onClick={() => { setConfirming(false); setInput(""); }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>}
           </div>
         </div>
       )}
@@ -4411,8 +4467,8 @@ function AccountSettings({ onBack, lang, setLang, user }) {
                   <IntegRow name="Google Calendar" brand="googleCalendar" connectedAs="nicolas@octomeet.ai" />
                   <IntegRow name="Google Meet" brand="googleMeet" connectedAs="nicolas@octomeet.ai" />
                   <IntegRow name="Outlook Calendar" brand="outlook" />
-                  <IntegRow name="Zoom Calendar" brand="zoom" />
                 </div>
+                <div className="mt-3"><ZoomConnection lang={lang} icon={<BrandIcon name="zoom" />} /></div>
               </div>
               <div>
                 <div className="mb-2 text-sm font-bold text-slate-800">Apps</div>
@@ -6151,8 +6207,8 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
         <div className={"flex items-center gap-3 border-b px-6 py-3 " + (["recording", "error"].includes(meeting.status) ? "border-rose-200 bg-rose-50" : "border-violet-200 bg-violet-50")}>
           {meeting.status === "recording"
             ? <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" /></span>
-            : <StatusBadge status={meeting.status} />}
-          <span className="text-sm font-medium text-slate-700">{statusSummary(meeting.status)}</span>
+            : <StatusBadge status={meeting.status} captureMode={meeting.captureMode} />}
+          <span className="text-sm font-medium text-slate-700">{statusSummary(meeting.status, meeting.captureMode)}</span>
         </div>
       )}
 
@@ -6163,7 +6219,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
-            <div className="px-6">{meeting.status && meeting.status !== "done" ? <span className="inline-flex items-center gap-2"><StatusBadge status={meeting.status} /> {statusSummary(meeting.status)}</span> : <><Video size={28} className="mx-auto mb-2 text-violet-300" />Recording will appear here once processed.</>}</div>
+            <div className="px-6">{meeting.status && meeting.status !== "done" ? <span className="inline-flex items-center gap-2"><StatusBadge status={meeting.status} captureMode={meeting.captureMode} /> {statusSummary(meeting.status, meeting.captureMode)}</span> : <><Video size={28} className="mx-auto mb-2 text-violet-300" />Recording will appear here once processed.</>}</div>
           </div>
         )}
 

@@ -6,6 +6,7 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { reanalyzeStored, ANALYSIS_VERSION } from "./lib/process.js";
+import { isRtmsDeleting } from "./lib/share.js";
 
 export const config = { maxDuration: 60 };
 
@@ -20,8 +21,9 @@ export default async function handler(req, res) {
 
     // attendees included: reanalyzeStored uses the calendar invitees as real-name hints
     // for the Speaker A/B -> person mapping.
-    const rows = await sb(`meetings?user_id=eq.${uid}&status=eq.done&select=id,title,attendees,reports(report_version)&order=created_at.desc`);
+    const rows = await sb(`meetings?user_id=eq.${uid}&status=eq.done&select=id,title,attendees,capture_mode,stage_info,reports(report_version)&order=created_at.desc`);
     const stale = rows.filter((m) => {
+      if (isRtmsDeleting(m)) return false;
       const rep = Array.isArray(m.reports) ? m.reports[0] : m.reports;
       return rep && (rep.report_version || 0) < ANALYSIS_VERSION;
     });

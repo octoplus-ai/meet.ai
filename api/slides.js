@@ -3,7 +3,7 @@
 // attached images (Claude vision) and attached text files to inform/improve the deck.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
 import { extractJson } from "./lib/aijson.js";
 import { noDashes } from "./lib/nodash.js";
@@ -112,7 +112,7 @@ export default async function handler(req, res) {
     // Resolve session -> owner id ONCE and reuse it (was queried twice, serially).
     const ownerId = await sessionUser(req);
     const mtgs = await loadMeetings(req, body, ownerId);
-    if (!mtgs.length) return res.status(401).json({ error: "not authorized" });
+    if (!mtgs.length || mtgs.some(isRtmsDeleting)) return res.status(401).json({ error: "not authorized" });
     const multi = mtgs.length > 1;
     const m = mtgs[0];
 

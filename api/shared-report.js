@@ -2,7 +2,8 @@
 // the access grant (anyone-with-the-link). Returns ONLY the one meeting it points to.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
+import { serializeRtmsMedia, validRtmsShareProof } from './lib/rtms-media.js';
 
 const maskEmail = (e) => { const [u, d] = String(e || "").split("@"); return (u ? u[0] + "•••" : "•••") + "@" + (d || ""); };
 
@@ -28,18 +29,21 @@ export default async function handler(req, res) {
     //    (verified cookie) before returning the report, unless this browser already verified.
     const r = await resolveShareToken(token);
     if (r) {
-      if (r.email && parseCookies(req)["om_v_" + token] !== "1") {
+      if (isRtmsDeleting(r.meeting)) return res.status(404).json({ error: "not found" });
+      const proof = parseCookies(req)['om_v_' + token];
+      if (r.email && (r.meeting.capture_mode === 'zoom_rtms' ? !validRtmsShareProof(proof, token, r.email) : proof !== '1')) {
         return res.status(403).json({ needOtp: true, emailHint: maskEmail(r.email) });
       }
-      return res.status(200).json({ meeting: sanitizeShared(r.meeting), role: r.role, email: r.email });
+      return res.status(200).json({ meeting: serializeRtmsMedia(sanitizeShared(r.meeting), token), role: r.role, email: r.email });
     }
     // 2) Meeting-level "anyone with the link" token -> Viewer only. Honors the owner's Link
     //    Access setting: while restricted, the public token is disabled (per-person tokens
     //    above keep working) and starts working again the moment the owner flips it public.
     const rows = await sb(`meetings?share_token=eq.${encodeURIComponent(token)}&select=*,reports(*)`);
     if (rows.length) {
+      if (isRtmsDeleting(rows[0])) return res.status(404).json({ error: "not found" });
       if (rows[0].link_access === "restricted") return res.status(403).json({ error: "link restricted" });
-      return res.status(200).json({ meeting: sanitizeShared(rows[0]), role: "Viewer" });
+      return res.status(200).json({ meeting: serializeRtmsMedia(sanitizeShared(rows[0]), token), role: "Viewer" });
     }
     return res.status(404).json({ error: "not found" });
   } catch (e) {

@@ -3,7 +3,7 @@
 // role link (?share=<token>). Authorized for the Owner (session) or an Editor (share token).
 import { sb } from "./lib/supa.js";
 import { parseCookies, randomToken } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
 import { reportEmail, sendViaGmail, getBotSender } from "./lib/email.js";
 import { getValidToken } from "./lib/google.js";
 
@@ -21,7 +21,7 @@ async function authMeeting(req, meetingId, shareToken) {
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (s.length) {
       const m = await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${s[0].user_id}&select=*,reports(*)`);
-      if (m.length) { const o = await ownerInfo(s[0].user_id); return { meeting: m[0], ownerId: s[0].user_id, ownerEmail: o.email, sharer: o.name || o.email || "Someone" }; }
+      if (m.length && !isRtmsDeleting(m[0])) { const o = await ownerInfo(s[0].user_id); return { meeting: m[0], ownerId: s[0].user_id, ownerEmail: o.email, sharer: o.name || o.email || "Someone" }; }
     }
   }
   if (shareToken) {
@@ -69,7 +69,7 @@ export default async function handler(req, res) {
     for (const email of to) {
       const e = entryFor(email);
       const viewUrl = APP + "?share=" + e.token;
-      const coverUrl = m.cover_url || (m.bot_id && m.capture_mode !== "inhouse_bot" ? APP + "api/recall/thumb?botId=" + encodeURIComponent(m.bot_id) + "&share=" + e.token : "");
+      const coverUrl = m.capture_mode === 'zoom_rtms' ? '' : m.cover_url || (m.bot_id && m.capture_mode !== "inhouse_bot" ? APP + "api/recall/thumb?botId=" + encodeURIComponent(m.bot_id) + "&share=" + e.token : "");
       const { subject, html, text } = reportEmail({
         title, whenText, summary: rep.summary || "", chapters: rep.chapters || [], actionItems: rep.action_items || [],
         viewUrl, coverUrl, sharerName: a.sharer, kind: "share", message: body.message || "",

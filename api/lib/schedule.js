@@ -5,6 +5,8 @@ import { recordingGate } from "./plan.js";
 import { listUpcomingEvents, annotateEvent } from "./google.js";
 import { stopOrchestratorJob } from "./orch.js";
 import { parseMeetingUrl, enabledPlatforms, meetingLimitMinutes } from "../../shared/meeting-platform.js";
+import { resolveZoomCaptureRoute, scheduleRtmsMeeting, expireRtmsIntents } from './zoom-routing.js';
+import { disableRtmsMeeting } from './zoom-rtms.js';
 
 // Compatibility entry point for old calendar connections: do not create paid-provider bots.
 export async function syncRecallCalendar() {
@@ -58,6 +60,8 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, endAt, ca
   catch (error) { return { error: error.code === "unsupported_platform" ? error.code : "invalid_meeting_url", status: 400 }; }
   meetingUrl = parsed.url;
   if (!enabledPlatforms(process.env).has(parsed.platform)) return { error: "platform_disabled", status: 409, platform: parsed.platform };
+  const captureRoute = await resolveZoomCaptureRoute(userId, parsed.platform);
+  if (captureRoute.mode === 'rtms') return scheduleRtmsMeeting(userId, { meetingUrl, title, joinAt, endAt, calendarEventId, botName, manualRetry }, captureRoute);
   const OWN = process.env.BOT_ORCHESTRATOR_URL;
   if (!OWN) return { error: "bot_backend_unavailable", status: 503 };
   if (joinAt && !Number.isFinite(new Date(joinAt).getTime())) return { error: "invalid_join_at", status: 400 };
@@ -184,6 +188,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, endAt, ca
 export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
   const { events, error, truncated, fetchedAt } = await listUpcomingEvents(userId, { days });
   if (error) return { error, armed: 0 };
+  if (process.env.ZOOM_RTMS_ROUTING === 'true') await expireRtmsIntents(userId);
   let armed = 0, already = 0, skipped = 0;
   for (const e of events) {
     if (!e.meetingUrl || e.selfDeclined || e.status === "cancelled") { skipped++; continue; }
@@ -206,15 +211,19 @@ export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
     const base = fetchedAt || Date.now();
     const winStart = new Date(Math.max(base, Date.now())).toISOString(); // strictly future, even after a slow fetch
     const winEnd = new Date(base + days * 86400000 - 10 * 60000).toISOString(); // 10 min inside timeMax
-    const armedRows = await sb(`meetings?user_id=eq.${userId}&status=in.(scheduled,joining)&calendar_event_id=not.is.null&start_time=gt.${encodeURIComponent(winStart)}&start_time=lte.${encodeURIComponent(winEnd)}&select=id,calendar_event_id,meeting_url,start_time`);
+    const armedRows = await sb(`meetings?user_id=eq.${userId}&status=in.(scheduled,joining)&calendar_event_id=not.is.null&start_time=gt.${encodeURIComponent(winStart)}&start_time=lte.${encodeURIComponent(winEnd)}&select=id,calendar_event_id,meeting_url,start_time,capture_mode,status`);
     const liveEvents = new Map(events.map((e) => [e.id, e]));
     for (const row of armedRows) {
       // Recheck after the DB request/previous rows: a meeting may have started meanwhile.
       if (!row.meeting_url || !(new Date(row.start_time).getTime() > Date.now())) continue;
       const ev = liveEvents.get(row.calendar_event_id);
       if (ev && !ev.selfDeclined && ev.status !== "cancelled") continue;
-      await sb(`meetings?id=eq.${row.id}`, { method: "PATCH", body: { status: "skipped", error: "event cancelled or declined", status_synced_at: new Date().toISOString() } });
-      await stopOrchestratorJob(row.id);
+      if (row.capture_mode === 'zoom_rtms') await disableRtmsMeeting(userId, row.id);
+      else {
+        const changed = await sb(`meetings?id=eq.${row.id}&status=in.(scheduled,joining)`, { method: "PATCH", prefer: 'return=representation', body: { status: "skipped", error: "event cancelled or declined", status_synced_at: new Date().toISOString() } });
+        if (!changed?.length) continue;
+        await stopOrchestratorJob(row.id);
+      }
       disarmed++;
     }
   }

@@ -6,6 +6,8 @@ import { parseCookies } from "./lib/session.js";
 import { getBot, latestCode, mapStatus } from "./lib/recall.js";
 import { processMeeting, reanalyzeStored } from "./lib/process.js";
 import { getEventAttendees } from "./lib/google.js";
+import { serializeRtmsMedia } from './lib/rtms-media.js';
+import { isRtmsDeleting } from './lib/share.js';
 
 // This endpoint self-heals: it can run up to 2 full Claude re-analyses (~15-25s each) plus
 // Recall syncs inside a single request. Without the raised limit it would time out mid-heal
@@ -71,8 +73,10 @@ export default async function handler(req, res) {
     const t = parseCookies(req).om_session;
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t || "")}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (!s.length) return res.status(401).json({ meetings: [], error: "not authenticated" });
-    // status=neq.skipped: per-event "disable notetaker" placeholders (calendar extension) never show in the app.
-    const m = await sb(`meetings?user_id=eq.${s[0].user_id}&status=neq.skipped&select=*,reports(*)&order=created_at.desc`);
+    // Disabled placeholders stay hidden; a deletion tombstone still needs an owner completion handle.
+    const allRows = await sb(`meetings?user_id=eq.${s[0].user_id}&select=*,reports(*)&order=created_at.desc`);
+    const pendingDeletions = allRows.filter(isRtmsDeleting).map(row => ({ id: row.id }));
+    const m = allRows.filter(row => row.status !== 'skipped' && !isRtmsDeleting(row));
     // PostgREST embeds `reports` as a single OBJECT (reports.meeting_id is unique → to-one),
     // not an array. Normalize to an array so the client (m.reports[0]) and the checks below work.
     for (const x of m) x.reports = x.reports ? (Array.isArray(x.reports) ? x.reports : [x.reports]) : [];
@@ -138,7 +142,7 @@ export default async function handler(req, res) {
       }));
     }
 
-    res.status(200).json({ meetings: m });
+    res.status(200).json({ meetings: m.filter(row => !isRtmsDeleting(row)).map(row => serializeRtmsMedia(row)), pendingDeletions });
   } catch (e) {
     console.error("meetings error:", e && (e.message || e));
     res.status(500).json({ meetings: [], error: "failed to load meetings" });

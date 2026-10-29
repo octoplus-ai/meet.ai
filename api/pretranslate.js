@@ -3,7 +3,7 @@
 // POST { meetingId, lang, texts:[...], shareToken? }. Owner (session) or any valid share token.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
 
 export const config = { maxDuration: 60 }; // DeepL/Haiku translation of many subtitle lines
 
@@ -56,13 +56,13 @@ async function canAccess(req, meetingId, shareToken) {
   const t = parseCookies(req).om_session;
   if (t) {
     const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
-    if (s.length) { const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${s[0].user_id}&select=id`); if (m.length) return true; }
+    if (s.length) { const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${s[0].user_id}&select=id,capture_mode,stage_info`); if (m.length && !isRtmsDeleting(m[0])) return true; }
   }
   if (shareToken) {
     const r = await resolveShareToken(shareToken);
     if (r && r.meeting.id === meetingId) return true;
-    const m = await sb(`meetings?share_token=eq.${enc(shareToken)}&id=eq.${enc(meetingId)}&select=id`);
-    if (m.length) return true;
+    const m = await sb(`meetings?share_token=eq.${enc(shareToken)}&id=eq.${enc(meetingId)}&select=id,capture_mode,stage_info`);
+    if (m.length && !isRtmsDeleting(m[0])) return true;
   }
   return false;
 }

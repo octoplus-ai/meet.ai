@@ -6,6 +6,7 @@ import { sb } from "./lib/supa.js";
 import { resolveShareToken } from "./lib/share.js";
 import { getValidToken } from "./lib/google.js";
 import { sendViaGmail, getBotSender } from "./lib/email.js";
+import { rtmsShareProof } from './lib/rtms-media.js';
 
 const enc = encodeURIComponent;
 const maskEmail = (e) => { const [u, d] = String(e).split("@"); return (u ? u[0] + "•••" : "•••") + "@" + (d || ""); };
@@ -48,7 +49,8 @@ export default async function handler(req, res) {
       if ((row.attempts || 0) >= 6) return res.status(429).json({ error: "too_many" });
       if (row.code !== code) { await sb(`share_otps?id=eq.${row.id}`, { method: "PATCH", body: { attempts: (row.attempts || 0) + 1 } }); return res.status(401).json({ error: "wrong_code" }); }
       await sb(`share_otps?id=eq.${row.id}`, { method: "PATCH", body: { consumed: true } });
-      res.setHeader("Set-Cookie", `om_v_${token}=1; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
+      const proof = r.meeting.capture_mode === 'zoom_rtms' ? rtmsShareProof(token, email) : '1';
+      res.setHeader("Set-Cookie", `om_v_${token}=${proof}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`);
       return res.status(200).json({ ok: true });
     }
     res.status(400).json({ error: "bad action" });

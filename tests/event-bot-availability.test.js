@@ -32,8 +32,8 @@ const invite = (id, meetingUrl, extra = {}) => ({
   location: meetingUrl, ...extra,
 });
 
-function fixture({ events = [event()], rows = [], autoJoin = true, env = {}, scheduleResult = { ok: true }, calendarItems } = {}) {
-  const stored = rows.map(item => ({ ...item })), queries = [], mutations = [], schedules = [], http = [], errors = [];
+function fixture({ events = [event()], rows = [], autoJoin = true, env = {}, scheduleResult = { ok: true }, calendarItems, zoomRoute = { mode: 'browser' } } = {}) {
+  const stored = rows.map(item => ({ ...item })), queries = [], mutations = [], schedules = [], http = [], errors = [], nativeDisables = [];
   const context = vm.createContext({
     Date, URL, URLSearchParams, encodeURIComponent, parseMeetingUrl, enabledPlatforms, extractMeetingUrl,
     process: { env: { BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test', BOT_ENABLED_PLATFORMS: 'google_meet,zoom,teams', ...env } },
@@ -42,6 +42,9 @@ function fixture({ events = [event()], rows = [], autoJoin = true, env = {}, sch
     listUpcomingEvents: async uid => { assert.equal(uid, 'member'); return { events }; },
     ensureShareToken: async () => 'fixture-share',
     stopOrchestratorJob: async () => {},
+    expireRtmsIntents: async uid => { assert.equal(uid,'member');return []; },
+    disableRtmsMeeting: async(uid,id)=>{nativeDisables.push({uid,id});const row=stored.find(x=>x.id===id);if(row.stage_info?.rtmsSessionId)row.status='processing';else row.status='skipped';return {ok:true,enabled:false,stopping:!!row.stage_info?.rtmsSessionId};},
+    resolveZoomCaptureRoute: async (uid, platform) => { assert.equal(uid, 'member'); return platform === 'zoom' ? zoomRoute : { mode: 'browser' }; },
     scheduleBot: async (uid, options) => {
       assert.equal(uid, 'member'); schedules.push({ uid, options, rowsAtDispatch: stored.map(item => ({ ...item })) });
       return scheduleResult;
@@ -90,7 +93,7 @@ function fixture({ events = [event()], rows = [], autoJoin = true, env = {}, sch
     },
   });
   return {
-    stored, queries, mutations, schedules, http, errors,
+    stored, queries, mutations, schedules, http, errors, nativeDisables,
     async call(name = 'event-bot.js', { method = 'GET', eventId = 'event-1', enable = true } = {}) {
       vm.runInContext(source(name), context);
       const res = response();
@@ -105,6 +108,14 @@ function assertAvailability(body, available, reason, eligible) {
   assert.equal(body.botUnavailableReason, reason);
   assert.equal(body.autoJoinEligible, eligible);
 }
+test('disabling an active native Zoom capture calls durable stop and preserves the recording row',async()=>{
+  const f=fixture({events:[event('event-1',urls.zoom)],rows:[row('recording',{meeting_url:urls.zoom,capture_mode:'zoom_rtms',stage_info:{rtmsSessionId:'stream'},recording_url:'saved-video'})],zoomRoute:{mode:'rtms',ready:true}});
+  const res=await f.call('event-bot.js',{method:'POST',enable:false});assert.equal(res.code,200);assert.equal(res.body.stopping,true);assert.deepEqual(f.nativeDisables,[{uid:'member',id:'meeting-1'}]);assert.equal(f.stored[0].status,'processing');assert.equal(f.stored[0].recording_url,'saved-video');assert.equal(f.mutations.length,0);
+});
+test('native enable preserves a skipped row until the scheduler safely rearms or creates a new attempt',async()=>{
+  const f=fixture({events:[event('event-1',urls.zoom)],rows:[row('skipped',{meeting_url:urls.zoom,capture_mode:'zoom_rtms',stage_info:{rtmsSessionId:'old-stream'}})],zoomRoute:{mode:'rtms',ready:true},scheduleResult:{ok:true,mode:'zoom_rtms',awaitingAuthorization:true}});
+  const res=await f.call('event-bot.js',{method:'POST',enable:true});assert.equal(res.body.ok,true);assert.equal(res.body.awaitingAuthorization,true);assert.equal(f.mutations.length,0);assert.equal(f.schedules[0].options.manualRetry,true);assert.equal(f.schedules[0].rowsAtDispatch[0].stage_info.rtmsSessionId,'old-stream');
+});
 
 test('an unlinked event is never enabled merely because auto-join is on or default-on', async () => {
   for (const autoJoin of [true, null, false]) {

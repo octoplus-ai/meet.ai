@@ -47,6 +47,7 @@ function fixture({ rows = [meeting()], beforePatch, onStop } = {}) {
       Date, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, sb,
       process: { env: { BOT_INGEST_SECRET: 'fixture-secret', BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test', BOT_ENABLED_PLATFORMS: 'google_meet,zoom,teams' } },
       console: { error() {} }, parseCookies: () => ({ om_session: 'fixture-session' }),
+      resolveZoomCaptureRoute: async () => ({ mode: 'browser' }),
       listUpcomingEvents: async () => ({ events: [{ id: 'event-1', title: 'Zoom test', meetingUrl: 'https://zoom.us/j/12345678901', start: '2026-10-29T14:50:00Z' }] }),
       ensureShareToken: async () => { throw new Error('Unexpected share token request'); },
       stopOrchestratorJob: async id => { if (onStop) await onStop(id, api); },

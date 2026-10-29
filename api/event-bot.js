@@ -9,22 +9,28 @@ import { scheduleBot } from "./lib/schedule.js";
 import { ensureShareToken } from "./lib/share.js";
 import { stopOrchestratorJob } from "./lib/orch.js";
 import { parseMeetingUrl, enabledPlatforms } from "../shared/meeting-platform.js";
+import { resolveZoomCaptureRoute, expireRtmsIntents } from './lib/zoom-routing.js';
+import { disableRtmsMeeting } from './lib/zoom-rtms.js';
 
 const enc = encodeURIComponent;
 const APP = (process.env.APP_URL || "https://meet.octoplusteam.com").replace(/\/+$/, "");
 const TOGGLABLE = new Set(["scheduled", "joining", "skipped", "error"]); // done/processing = already recorded, leave alone
 const ARMED = new Set(["scheduled", "joining", "in_call", "recording"]);
 
-function availability(meetingUrl, event) {
-  let reason = null;
+async function availability(userId, meetingUrl, event) {
+  let reason = null, captureMode = 'inhouse_bot', platform = null;
   if (event && (event.status === "cancelled" || event.selfDeclined)) reason = "event_unavailable";
   else if (!meetingUrl) reason = "no_meeting_link";
   else {
-    try { if (!enabledPlatforms(process.env).has(parseMeetingUrl(meetingUrl).platform)) reason = "platform_disabled"; }
+    try { platform = parseMeetingUrl(meetingUrl).platform; if (!enabledPlatforms(process.env).has(platform)) reason = "platform_disabled"; }
     catch { reason = "invalid_meeting_url"; }
-    if (!reason && !process.env.BOT_ORCHESTRATOR_URL) reason = "bot_backend_unavailable";
+    if (!reason) {
+      const route = await resolveZoomCaptureRoute(userId, platform);
+      if (route.mode === 'rtms') { captureMode = 'zoom_rtms'; if (!route.ready) reason = route.error; }
+      else if (!process.env.BOT_ORCHESTRATOR_URL) reason = 'bot_backend_unavailable';
+    }
   }
-  return { botAvailable: !reason, botUnavailableReason: reason };
+  return { botAvailable: !reason, botUnavailableReason: reason, captureMode };
 }
 
 async function sessionUser(req, body) {
@@ -38,7 +44,7 @@ async function sessionUser(req, body) {
 
 // Latest meetings row linked to this calendar event (the DB enforces one per event, but be safe).
 async function rowFor(uid, eventId) {
-  const rows = await sb(`meetings?user_id=eq.${uid}&calendar_event_id=eq.${enc(eventId)}&select=id,status,start_time,end_time,title,meeting_url,bot_id,attendees,duration_min&order=created_at.desc&limit=1`);
+  const rows = await sb(`meetings?user_id=eq.${uid}&calendar_event_id=eq.${enc(eventId)}&select=id,status,start_time,end_time,title,meeting_url,bot_id,attendees,duration_min,capture_mode,stage_info,status_synced_at,recording_url&order=created_at.desc&limit=1`);
   return rows[0] || null;
 }
 
@@ -55,6 +61,7 @@ export default async function handler(req, res) {
     if (req.method === "POST") { try { body = typeof req.body === "object" && req.body ? req.body : JSON.parse(req.body || "{}"); } catch (e) {} }
     const uid = await sessionUser(req, body);
     if (!uid) return res.status(401).json({ error: "not authenticated" });
+    if (process.env.ZOOM_RTMS_ROUTING === 'true') await expireRtmsIntents(uid);
 
     const url = new URL(req.url, "http://x");
 
@@ -86,11 +93,11 @@ export default async function handler(req, res) {
       else if (m && m.duration_min) durationMin = m.duration_min;
       const guestCount = (ev && ev.attendees > 0) ? ev.attendees
         : (m && Array.isArray(m.attendees) && m.attendees.length ? m.attendees.length : null);
-      const state = availability(ev ? ev.meetingUrl : m?.meeting_url, ev);
+      const state = await availability(uid, ev ? ev.meetingUrl : m?.meeting_url, ev);
       const u = await sb(`app_users?id=eq.${uid}&select=auto_join`).catch(() => []);
       const autoJoinEligible = !m && state.botAvailable && !!u[0] && u[0].auto_join !== false;
       if (!m) return res.status(200).json({ linked: false, enabled: false, ...state, autoJoinEligible, durationMin, guestCount });
-      const out = { linked: true, status: m.status, enabled: state.botAvailable && ARMED.has(m.status), ...state, autoJoinEligible, durationMin, guestCount };
+      const out = { linked: true, status: m.status, enabled: state.botAvailable && ARMED.has(m.status), ...state, captureMode: m.capture_mode || state.captureMode, awaitingAuthorization: m.capture_mode === 'zoom_rtms' && ['scheduled', 'joining'].includes(m.status), autoJoinEligible, durationMin, guestCount };
       if (m.status === "done") {
         const rep = await sb(`reports?meeting_id=eq.${enc(m.id)}&select=read_score`).catch(() => []);
         out.score = rep && rep.length ? rep[0].read_score : null;
@@ -101,12 +108,14 @@ export default async function handler(req, res) {
 
     if (req.method !== "POST") return res.status(405).json({ error: "method not allowed" });
     const m = await rowFor(uid, eventId);
+    if (body.enable === false && m?.capture_mode === 'zoom_rtms') return res.status(200).json(await disableRtmsMeeting(uid, m.id));
     if (m && !TOGGLABLE.has(m.status)) return res.status(200).json({ ok: false, status: m.status, error: "meeting already recorded or in progress" });
 
     if (body.enable === false) {
       if (m) {
         if (m.status !== "skipped") {
-          await sb(`meetings?id=eq.${m.id}`, { method: "PATCH", body: { status: "skipped", status_synced_at: new Date().toISOString() } });
+          const updated = await sb(`meetings?id=eq.${m.id}&user_id=eq.${uid}&status=eq.${m.status}`, { method: "PATCH", prefer: 'return=representation', body: { status: "skipped", status_synced_at: new Date().toISOString() } });
+          if (!updated?.length) return res.status(409).json({ error: 'meeting_state_changed' });
           await stopOrchestratorJob(m.id);
         }
         return res.status(200).json({ ok: true, enabled: false });
@@ -130,16 +139,16 @@ export default async function handler(req, res) {
     // enable === true -> (re)arm this event.
     const ev = await findEvent(uid, eventId);
     const meetingUrl = ev ? ev.meetingUrl : m?.meeting_url;
-    const state = availability(meetingUrl, ev);
+    const state = await availability(uid, meetingUrl, ev);
     if (!state.botAvailable) {
       const status = state.botUnavailableReason === "bot_backend_unavailable" ? 503
-        : ["platform_disabled", "event_unavailable"].includes(state.botUnavailableReason) ? 409 : 400;
+        : ["platform_disabled", "event_unavailable", "zoom_not_connected", "zoom_rtms_not_ready", "zoom_configuration_unavailable"].includes(state.botUnavailableReason) ? 409 : 400;
       return res.status(status).json({ ok: false, enabled: false, ...state, error: state.botUnavailableReason });
     }
-    if (m && m.status === "skipped") {
+    if (m && m.status === "skipped" && state.captureMode !== 'zoom_rtms') {
       // A skipped row never produced a report; drop it and let scheduleBot recreate + arm cleanly.
       await sb(`meetings?id=eq.${m.id}`, { method: "DELETE" });
-    } else if (m && m.status !== "error") {
+    } else if (m && m.status !== "error" && state.captureMode !== 'zoom_rtms') {
       return res.status(200).json({ ok: true, enabled: true, status: m.status }); // already armed
     }
     const users = await sb(`app_users?id=eq.${uid}&select=notetaker_name`).catch(() => []);
@@ -152,9 +161,8 @@ export default async function handler(req, res) {
     });
     const accepted = r.ok === true || r.already === true;
     const status = accepted ? 200 : r.limit ? 429 : (Number.isInteger(r.status) && r.status >= 400 && r.status <= 599 ? r.status : 503);
-    return res.status(status).json({ ok: accepted, enabled: accepted, ...state, error: accepted ? undefined : r.error || "bot_backend_unavailable" });
+    return res.status(status).json({ ok: accepted, enabled: accepted, ...state, mode: r.mode, awaitingAuthorization: r.awaitingAuthorization === true, error: accepted ? undefined : r.error || "bot_backend_unavailable" });
   } catch (e) {
-    console.error("event-bot error:", e && (e.stack || e.message));
-    res.status(500).json({ error: String(e.message || e) });
+    res.status(500).json({ error: 'event_bot_failed' });
   }
 }

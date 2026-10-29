@@ -3,6 +3,7 @@
 import { sb } from "../lib/supa.js";
 import { armUserCalendar } from "../lib/schedule.js";
 import { ensureWatch } from "../lib/calendar-watch.js";
+import { sweepRtmsDeletions } from '../lib/rtms-cleanup.js';
 
 export const config = { maxDuration: 60 };
 
@@ -18,6 +19,10 @@ export default async function handler(req, res) {
       || (process.env.BOT_INGEST_SECRET && bearer === process.env.BOT_INGEST_SECRET)
       || (process.env.RECALL_WEBHOOK_SECRET && key === process.env.RECALL_WEBHOOK_SECRET);
     if (!isCron) return res.status(401).json({ error: "unauthorized" });
+
+    // A bounded, durable RTMS media cleanup retry. It cannot delete accounts and
+    // a temporarily unavailable cleanup service must not block other calendars.
+    await sweepRtmsDeletions({ limit: 1 }).catch(() => {});
 
     if (!process.env.BOT_ORCHESTRATOR_URL) return res.status(503).json({ error: "bot_backend_unavailable" });
     // Match settings/arm-all: null is the enabled default; only explicit false opts out.

@@ -28,6 +28,7 @@ const invite = (id, platform, responseStatus = 'accepted', extra = {}) => ({
 function calendar(pages, { ui = false } = {}) {
   const calls = [];
   const context = vm.createContext({ Date, URL, URLSearchParams, encodeURIComponent, extractMeetingUrl, parseMeetingUrl, enabledPlatforms,
+    resolveZoomCaptureRoute: async () => ({ mode: 'browser' }),
     process: { env: { BOT_ENABLED_PLATFORMS: 'google_meet,zoom,teams', BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test' } },
     parseCookies: () => ({ om_session: 'fixture-session' }),
     sb: async query => query.startsWith('sessions?') ? [{ user_id: 'member' }] : [{ access_token: 'fixture-token', expiry: '2099-01-01' }],
@@ -53,6 +54,7 @@ function scheduler(events, prior = [], { truncated = false, error, fetchedAt = n
   const context = vm.createContext({ Date: FixtureDate, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes, AbortSignal,
     process: { env: { BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test', BOT_ENABLED_PLATFORMS: 'google_meet,zoom,teams' } },
     recordingGate: async () => ({ allow: true, maxMeetingMin: 120 }),
+    resolveZoomCaptureRoute: async () => ({ mode: 'browser' }),
     listUpcomingEvents: async () => ({ events, error, truncated, fetchedAt }),
     annotateEvent: async () => false, // External organizers need not grant editing rights.
     stopOrchestratorJob: async id => { stopped.push(id); },
@@ -307,7 +309,7 @@ test('arm-all rejects missing sessions and missing backend, and honors the membe
 });
 
 test('autonomous sweep includes default-on members and legacy calendar members while excluding explicit opt-outs', async () => {
-  const armed = [], watched = [], queries = [];
+  const armed = [], watched = [], queries = [], cleanups = [];
   const context = vm.createContext({ Date, URL,
     process: { env: { BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test', CRON_SECRET: 'fixture-cron' } },
     sb: async query => { queries.push(query); return [
@@ -315,6 +317,7 @@ test('autonomous sweep includes default-on members and legacy calendar members w
     ]; },
     armUserCalendar: async id => { armed.push(id); return { armed: 1 }; },
     ensureWatch: async id => { watched.push(id); return { fresh: true }; },
+    sweepRtmsDeletions: async options => { cleanups.push(options); return {}; },
   });
   vm.runInContext(source('cron/auto-join.js'), context);
   const res = response();
@@ -322,4 +325,5 @@ test('autonomous sweep includes default-on members and legacy calendar members w
   assert.equal(res.code, 200);
   assert.ok(queries[0].includes('auto_join.is.null'), 'DB query must include default-on null values');
   assert.deepEqual(armed, ['enabled', 'default']); assert.deepEqual(watched, ['enabled', 'default']);
+  assert.equal(cleanups.length, 1); assert.equal(cleanups[0].limit, 1);
 });

@@ -5,6 +5,7 @@ import { parseCookies } from "./lib/session.js";
 import { getValidToken } from "./lib/google.js";
 import { sendViaGmail, getBotSender } from "./lib/email.js";
 import { stripDashes } from "./lib/nodash.js";
+import { isRtmsDeleting } from "./lib/share.js";
 
 export const config = { maxDuration: 60 }; // Claude draft call needs headroom past the default timeout
 
@@ -18,7 +19,7 @@ async function ownerMeeting(req, meetingId) {
   const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
   if (!s.length) return null;
   const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${s[0].user_id}&select=*,reports(*)`);
-  return m.length ? { meeting: m[0], ownerId: s[0].user_id } : null;
+  return m.length && !isRtmsDeleting(m[0]) ? { meeting: m[0], ownerId: s[0].user_id } : null;
 }
 
 export default async function handler(req, res) {
