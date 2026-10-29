@@ -7,6 +7,7 @@ import { notifyMeetingParticipants } from "./notifications.js";
 
 
 import { preserveCameraMetadata } from "./speaker-media.js";
+import { partialCaptureSummary } from "./capture-integrity.js";
 
 const APP_URL = "https://meet.octoplusteam.com/"; // branded domain (same deployment; better email deliverability)
 const arr = (x) => (Array.isArray(x) ? x : []);
@@ -231,6 +232,7 @@ export async function processMeeting(meeting, { force = false } = {}) {
     return { skipped: "analysis empty - will retry" };
   }
   assignTimestamps(ai, tr.turns); // accurate per-item timestamps from the transcript
+  ai.summary = partialCaptureSummary(ai.summary, meeting.stage_info);
   const participants = mergeParticipants(tr.stats, ai.participants);
   const sc = ai.scores || {};
   const previousCameraReport = force ? (await sb(`reports?meeting_id=eq.${meeting.id}&select=coaching`))?.[0] : null;
@@ -289,7 +291,7 @@ export async function reanalyzeStored(meeting) {
   const rep = rows[0];
   const text = rep && rep.transcript ? String(rep.transcript) : "";
   if (!rep || text.trim().length < 40) {
-    if (rep) await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION } }); // bump so we don't loop
+    if (rep) await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION, summary: partialCaptureSummary(rep.summary || '', meeting.stage_info) } }); // bump so we don't loop
     return { skipped: "no transcript" };
   }
   // Name hints for the speaker-identification pass: existing report participants + the real
@@ -302,7 +304,7 @@ export async function reanalyzeStored(meeting) {
   // If the analysis came back empty, keep the existing report but still bump the version
   // so we don't re-try in a loop every poll.
   if (!(ai.summary && ai.summary.trim())) {
-    await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION } });
+    await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION, summary: partialCaptureSummary(rep.summary || '', meeting.stage_info) } });
     return { skipped: "analysis empty" };
   }
   assignTimestamps(ai, parseStoredTurns(text)); // accurate per-item timestamps from the stored transcript
@@ -313,7 +315,7 @@ export async function reanalyzeStored(meeting) {
   const spkMap = sanitizeSpeakerMap(ai.speakerMap);
   const newText = normalizeStoredTranscript(text, spkMap);
   const patch = {
-    summary: ai.summary || rep.summary || "",
+    summary: partialCaptureSummary(ai.summary || rep.summary || "", meeting.stage_info),
     topics: ai.topics || [], key_questions: ai.keyQuestions || [], action_items: ai.actionItems || [],
     next_steps: ai.nextSteps || [], chapters: ai.chapters || [], highlights: ai.highlights || [],
     coaching: { ...(ai.coaching || {}), pitch: ai.pitchAnalysis || null, ...preserveCameraMetadata(rep.coaching), ...preserveCameraMetadata(meeting.stage_info?.presenterMedia) }, sentiment_timeline: ai.sentimentTimeline || [], sentiment_label: ai.sentimentLabel || "Neutral",

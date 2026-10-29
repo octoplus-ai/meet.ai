@@ -5,6 +5,7 @@
 import { sb } from "../lib/supa.js";
 import { analyzeTranscript, ANALYSIS_VERSION, sanitizeSpeakerMap, notifyParticipants } from "../lib/process.js";
 import { cameraMetadata, preserveCameraMetadata } from "../lib/speaker-media.js";
+import { partialCaptureSummary } from "../lib/capture-integrity.js";
 
 const enc = encodeURIComponent;
 export const config = { maxDuration: 300 };
@@ -40,6 +41,8 @@ export default async function handler(req, res) {
       ["pipUrl", "pipStatus", "pipIntervals", "pipTimeline", "shareIntervals"].some((key) => Object.hasOwn(body, key));
     const presenterMedia = hasCameraDelivery || !Object.keys(priorCamera).length ? cameraMetadata(body) : priorCamera;
     const stageInfo = { ...(meeting.stage_info || {}), ...(body.stage && typeof body.stage === "object" && !Array.isArray(body.stage) ? body.stage : {}), presenterMedia };
+    // ASR language comes from this authenticated recorder callback, not from the AI summary.
+    if (typeof body.languageCode === 'string' && /^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*$/i.test(body.languageCode)) stageInfo.languageCode = body.languageCode;
     const mediaPatch = { stage_info: stageInfo };
     if (body.recordingUrl) mediaPatch.recording_url = body.recordingUrl;
     if (body.coverUrl) mediaPatch.cover_url = body.coverUrl;
@@ -82,6 +85,7 @@ export default async function handler(req, res) {
       await sb(`meetings?id=eq.${enc(meeting.id)}`, { method: "PATCH", body: { status: "processing", status_synced_at: new Date().toISOString() } });
       return res.status(200).json({ ok: false, skipped: "analysis empty - retry" });
     }
+    ai.summary = partialCaptureSummary(ai.summary, stageInfo);
 
     // Swap diarization labels for the real names the analysis identified, and persist the RENAMED
     // dialog - so the transcript view, subtitles and every analysis show real people.

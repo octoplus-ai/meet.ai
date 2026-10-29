@@ -2,6 +2,7 @@ import test, {before,after,beforeEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {createMeetingNotifier} from '../api/lib/notifications.js';
+import {PARTIAL_CAPTURE_NOTICES} from '../api/lib/capture-integrity.js';
 import {notificationDatabase,notificationRest,seedNotifications,ids} from './helpers/notification-db.mjs';
 let db,rest;
 before(async()=>{db=await notificationDatabase();rest=notificationRest(db);});after(async()=>{await db?.close();});beforeEach(async()=>seedNotifications(db));
@@ -61,4 +62,16 @@ test('delivery table and RPCs are inaccessible to browser roles',async()=>{
     const privileges=await db.query("select has_table_privilege($1,'meeting_notification_deliveries','select') t,has_function_privilege($1,'enqueue_meeting_notifications(uuid,uuid,jsonb)','execute') enqueue,has_function_privilege($1,'claim_meeting_notification(uuid,uuid)','execute') claim,has_function_privilege($1,'finish_meeting_notification(uuid,uuid,text,text,text)','execute') finish",[role]);
     assert.deepEqual(privileges.rows[0],{t:false,enqueue:false,claim:false,finish:false});
   }
+});
+
+test('recap automatically includes the partial-capture notice from persisted metadata',async()=>{
+  await db.query('update meetings set stage_info=$1 where id=$2',[{captureInterrupted:true,recovery:{fullMeetingRecovered:false},languageCode:'es'},ids.meeting]);
+  const summaries=[];
+  const notifier=createMeetingNotifier({database:rest,ownerToken:async()=> 'owner-token',botSender:async()=>null,
+    token:()=>randomUUID().replaceAll('-',''),logger:{log(){},error(){}},
+    render:content=>{summaries.push(content.summary);return{subject:'Fixture',text:content.summary,html:content.summary};},
+    send:async()=>({ok:true,status:200,id:'fixture-message'}),
+  });
+  await notifier.notify(meeting);
+  assert.deepEqual(summaries,[PARTIAL_CAPTURE_NOTICES.es+'\n\nActual captured discussion']);
 });

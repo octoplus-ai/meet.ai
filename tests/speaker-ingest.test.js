@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { cameraMetadata, preserveCameraMetadata } from "../api/lib/speaker-media.js";
+import { partialCaptureSummary, PARTIAL_CAPTURE_NOTICES } from '../api/lib/capture-integrity.js';
 const source = fs.readFileSync(new URL("../api/bot/ingest.js", import.meta.url), "utf8")
   .replace(/^import .*;\r?\n/gm, "").replace('export const config', 'const config').replace("export default async function handler", "async function handler");
 const payload = { secret: "mock", meetingId: "m", pipUrl: "https://media.example.test/m/pip.mp4", shareIntervals: [[0, 60]], durationMin: 1,
@@ -12,7 +13,7 @@ async function run({ body = payload, status = "processing", failAI = false, prio
   let report = prior ? { coaching: { ...prior, strengths: ["Existing"] } } : null;
   let aiCalls = 0, writes = 0;
   const context = vm.createContext({ Date, encodeURIComponent, console: { error() {}, log() {} },
-    process: { env: { BOT_INGEST_SECRET: "mock" } }, cameraMetadata, preserveCameraMetadata, ANALYSIS_VERSION: 13,
+    process: { env: { BOT_INGEST_SECRET: "mock" } }, cameraMetadata, preserveCameraMetadata, partialCaptureSummary, ANALYSIS_VERSION: 13,
     sanitizeSpeakerMap: () => ({}), notifyParticipants: async () => {},
     analyzeTranscript: async () => { aiCalls++; if (failAI) throw new Error("mock provider failure"); return { summary: "Synthetic summary", scores: {}, coaching: {} }; },
     sb: async (query, options = {}) => {
@@ -61,4 +62,16 @@ test("retry without camera fields preserves existing evidence instead of replaci
   const prior = cameraMetadata(payload);
   const result = await run({ prior, body: { secret: "mock", meetingId: "m" } });
   assert.deepEqual(JSON.parse(JSON.stringify(result.meeting.stage_info.presenterMedia)), prior);
+});
+
+test('authenticated partial recovery persists language and warning before recap delivery', async () => {
+  const result = await run({ body: { ...payload, languageCode: 'es', stage: { captureInterrupted: true, recovery: { fullMeetingRecovered: false } }, turns: [{ t: '00:00', speaker: 'Test', text: 'Synthetic captured words' }] } });
+  assert.equal(result.response.code, 200);
+  assert.equal(result.meeting.stage_info.languageCode, 'es');
+  assert.equal(result.report.summary, PARTIAL_CAPTURE_NOTICES.es + '\n\nSynthetic summary');
+});
+
+test('unauthenticated callback cannot forge capture integrity metadata or write a report', async () => {
+  const result = await run({ body: { ...payload, secret: 'invalid', languageCode: 'es', stage: { captureInterrupted: true } } });
+  assert.equal(result.response.code, 401); assert.equal(result.writes, 0); assert.equal(result.aiCalls, 0);
 });

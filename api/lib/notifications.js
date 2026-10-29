@@ -4,6 +4,7 @@ import { getValidToken } from './google.js';
 import { randomToken } from './session.js';
 import { getBotSender, sendViaGmail, reportEmail } from './email.js';
 import { deliverReport } from './deliver.js';
+import { partialCaptureSummary } from './capture-integrity.js';
 
 const APP_URL = 'https://meet.octoplusteam.com/';
 const list = value => Array.isArray(value) ? value : [];
@@ -38,6 +39,7 @@ export function createMeetingNotifier({ database = sb, ownerToken = getValidToke
       if (!available(meeting, claimed)) { await finish(job, lease, 'cancelled', 'meeting_unavailable'); return 'cancelled'; }
       const report = Array.isArray(meeting.reports) ? meeting.reports[0] : meeting.reports;
       if (!report?.summary?.trim() || report.user_id !== claimed.user_id) { await finish(job, lease, 'retry', 'report_unavailable'); return 'retry'; }
+      const summary = partialCaptureSummary(report.summary, meeting.stage_info);
       const owner = (await database(`app_users?id=eq.${enc(job.user_id)}&select=name,email,sharing_prefs,integrations`))?.[0];
       if (!owner?.email) { await finish(job, lease, 'retry', 'owner_unavailable'); return 'retry'; }
       const stillAvailable = async () => available((await database(`meetings?id=eq.${enc(job.meeting_id)}&user_id=eq.${enc(job.user_id)}&select=id,user_id,status,capture_mode,stage_info&limit=1`))?.[0], claimed);
@@ -48,7 +50,7 @@ export function createMeetingNotifier({ database = sb, ownerToken = getValidToke
         if (!(await stillAvailable())) { await finish(job, lease, 'cancelled', 'meeting_unavailable'); return 'cancelled'; }
         if (now() >= deadline) { await finish(job, lease, 'retry', 'time_budget'); return 'retry'; }
         attempted = true;
-        result = await push(claimed.recipient, cfg, { title: meeting.title || 'Meeting report', summary: report.summary,
+        result = await push(claimed.recipient, cfg, { title: meeting.title || 'Meeting report', summary,
           score: report.scores?.overall || 0, actionItems: report.action_items || [], nextSteps: report.next_steps || [], date: meeting.start_time, link: APP_URL }, { timeoutMs: remaining(10000) });
       } else {
         if (owner.sharing_prefs?.autoRecap === false && claimed.recipient !== owner.email.toLowerCase()) {
@@ -62,7 +64,7 @@ export function createMeetingNotifier({ database = sb, ownerToken = getValidToke
         let whenText = '';
         if (meeting.start_time) whenText = new Date(meeting.start_time).toLocaleString('en-US', { month: 'long', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' });
         const sharer = owner.name || owner.email;
-        const content = render({ title: meeting.title || 'Meeting report', whenText, summary: report.summary,
+        const content = render({ title: meeting.title || 'Meeting report', whenText, summary,
           chapters: report.chapters || [], actionItems: report.action_items || [], viewUrl: APP_URL + '?share=' + enc(claimed.share_token),
           coverUrl: recapCoverUrl(meeting, claimed.share_token), sharerName: sharer, kind: 'auto' });
         if (!(await stillAvailable())) { await finish(job, lease, 'cancelled', 'meeting_unavailable'); return 'cancelled'; }
