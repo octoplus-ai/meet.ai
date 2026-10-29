@@ -2,7 +2,7 @@
 // Refreshes the access token if expired.
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
-import { extractMeetingUrl } from "../../shared/meeting-platform.js";
+import { extractMeetingUrl, parseMeetingUrl, enabledPlatforms } from "../../shared/meeting-platform.js";
 
 async function getToken(userId) {
   const r = await sb(`oauth_tokens?user_id=eq.${userId}&provider=eq.google&select=*`);
@@ -46,8 +46,7 @@ export default async function handler(req, res) {
     const cal = await fetch(url, { headers: { Authorization: `Bearer ${tk.access_token}` } }).then((r) => r.json());
     if (cal.error) return res.status(401).json({ error: "calendar auth failed — please reconnect Google", detail: cal.error });
 
-    // The calendar UI defaults linked events to auto-join ON. Do not present a
-    // rejected/cancelled invitation as armed when the scheduler will exclude it.
+    // Keep availability separate from a bot that has actually been scheduled.
     const events = (cal.items || []).filter((e) => e.status !== "cancelled" &&
       !(e.attendees || []).some((a) => a.self && a.responseStatus === "declined")).map((e) => ({
       id: e.id,
@@ -60,6 +59,25 @@ export default async function handler(req, res) {
       organizer: e.organizer?.email || null,
     }));
 
+    const users = await sb(`app_users?id=eq.${userId}&select=auto_join`).catch(() => []);
+    const ids = events.map(e => encodeURIComponent(`"${String(e.id).replace(/"/g, "")}"`)).join(",");
+    const rows = ids ? await sb(`meetings?user_id=eq.${userId}&calendar_event_id=in.(${ids})&select=calendar_event_id,status&order=created_at.desc`) : [];
+    const byEvent = new Map();
+    for (const row of rows) if (!byEvent.has(row.calendar_event_id)) byEvent.set(row.calendar_event_id, row);
+    const platforms = enabledPlatforms(process.env);
+    for (const event of events) {
+      let reason = event.meetingUrl ? null : "no_meeting_link";
+      if (!reason) {
+        try { if (!platforms.has(parseMeetingUrl(event.meetingUrl).platform)) reason = "platform_disabled"; }
+        catch { reason = "invalid_meeting_url"; }
+        if (!reason && !process.env.BOT_ORCHESTRATOR_URL) reason = "bot_backend_unavailable";
+      }
+      event.botAvailable = !reason;
+      event.botUnavailableReason = reason;
+      event.botStatus = byEvent.get(event.id)?.status || null;
+      event.botEnabled = !reason && ["scheduled", "joining", "in_call", "recording"].includes(event.botStatus);
+      event.autoJoinEligible = !byEvent.has(event.id) && !reason && !!users[0] && users[0].auto_join !== false;
+    }
     res.status(200).json({ events });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });

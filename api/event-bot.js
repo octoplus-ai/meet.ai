@@ -8,10 +8,24 @@ import { listUpcomingEvents } from "./lib/google.js";
 import { scheduleBot } from "./lib/schedule.js";
 import { ensureShareToken } from "./lib/share.js";
 import { stopOrchestratorJob } from "./lib/orch.js";
+import { parseMeetingUrl, enabledPlatforms } from "../shared/meeting-platform.js";
 
 const enc = encodeURIComponent;
 const APP = (process.env.APP_URL || "https://meet.octoplusteam.com").replace(/\/+$/, "");
 const TOGGLABLE = new Set(["scheduled", "joining", "skipped", "error"]); // done/processing = already recorded, leave alone
+const ARMED = new Set(["scheduled", "joining", "in_call", "recording"]);
+
+function availability(meetingUrl, event) {
+  let reason = null;
+  if (event && (event.status === "cancelled" || event.selfDeclined)) reason = "event_unavailable";
+  else if (!meetingUrl) reason = "no_meeting_link";
+  else {
+    try { if (!enabledPlatforms(process.env).has(parseMeetingUrl(meetingUrl).platform)) reason = "platform_disabled"; }
+    catch { reason = "invalid_meeting_url"; }
+    if (!reason && !process.env.BOT_ORCHESTRATOR_URL) reason = "bot_backend_unavailable";
+  }
+  return { botAvailable: !reason, botUnavailableReason: reason };
+}
 
 async function sessionUser(req, body) {
   const auth = req.headers.authorization || "";
@@ -72,13 +86,11 @@ export default async function handler(req, res) {
       else if (m && m.duration_min) durationMin = m.duration_min;
       const guestCount = (ev && ev.attendees > 0) ? ev.attendees
         : (m && Array.isArray(m.attendees) && m.attendees.length ? m.attendees.length : null);
-      if (!m) {
-        // Unlinked event: "enabled" means "auto-join WILL arm it", which is only true when the
-        // user's auto_join pref is on - never hardcode it.
-        const u = await sb(`app_users?id=eq.${uid}&select=auto_join`).catch(() => []);
-        return res.status(200).json({ linked: false, enabled: (u[0] || {}).auto_join !== false, durationMin, guestCount });
-      }
-      const out = { linked: true, status: m.status, enabled: m.status !== "skipped" && m.status !== "error", durationMin, guestCount };
+      const state = availability(ev ? ev.meetingUrl : m?.meeting_url, ev);
+      const u = await sb(`app_users?id=eq.${uid}&select=auto_join`).catch(() => []);
+      const autoJoinEligible = !m && state.botAvailable && !!u[0] && u[0].auto_join !== false;
+      if (!m) return res.status(200).json({ linked: false, enabled: false, ...state, autoJoinEligible, durationMin, guestCount });
+      const out = { linked: true, status: m.status, enabled: state.botAvailable && ARMED.has(m.status), ...state, autoJoinEligible, durationMin, guestCount };
       if (m.status === "done") {
         const rep = await sb(`reports?meeting_id=eq.${enc(m.id)}&select=read_score`).catch(() => []);
         out.score = rep && rep.length ? rep[0].read_score : null;
@@ -117,14 +129,19 @@ export default async function handler(req, res) {
 
     // enable === true -> (re)arm this event.
     const ev = await findEvent(uid, eventId);
+    const meetingUrl = ev ? ev.meetingUrl : m?.meeting_url;
+    const state = availability(meetingUrl, ev);
+    if (!state.botAvailable) {
+      const status = state.botUnavailableReason === "bot_backend_unavailable" ? 503
+        : ["platform_disabled", "event_unavailable"].includes(state.botUnavailableReason) ? 409 : 400;
+      return res.status(status).json({ ok: false, enabled: false, ...state, error: state.botUnavailableReason });
+    }
     if (m && m.status === "skipped") {
       // A skipped row never produced a report; drop it and let scheduleBot recreate + arm cleanly.
       await sb(`meetings?id=eq.${m.id}`, { method: "DELETE" });
     } else if (m && m.status !== "error") {
       return res.status(200).json({ ok: true, enabled: true, status: m.status }); // already armed
     }
-    const meetingUrl = (ev && ev.meetingUrl) || (m && m.meeting_url);
-    if (!meetingUrl) return res.status(200).json({ ok: false, error: "no meeting link found for this event" });
     const users = await sb(`app_users?id=eq.${uid}&select=notetaker_name`).catch(() => []);
     const r = await scheduleBot(uid, {
       meetingUrl, title: (ev && ev.title) || (m && m.title) || "Meeting",
@@ -132,7 +149,9 @@ export default async function handler(req, res) {
       botName: (users[0] && users[0].notetaker_name) || "OctoMeet AI",
       manualRetry: true,
     });
-    return res.status(200).json({ ok: !!(r.ok || r.already), enabled: true, detail: r.error || undefined });
+    const accepted = r.ok === true || r.already === true;
+    const status = accepted ? 200 : r.limit ? 429 : (Number.isInteger(r.status) && r.status >= 400 && r.status <= 599 ? r.status : 503);
+    return res.status(status).json({ ok: accepted, enabled: accepted, ...state, error: accepted ? undefined : r.error || "bot_backend_unavailable" });
   } catch (e) {
     console.error("event-bot error:", e && (e.stack || e.message));
     res.status(500).json({ error: String(e.message || e) });

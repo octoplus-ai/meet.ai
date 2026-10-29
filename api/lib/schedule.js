@@ -180,19 +180,20 @@ export async function armUserCalendar(userId, { botName, days = 7 } = {}) {
 
   // DISARM pass: armed rows whose calendar event vanished (cancelled/deleted) or was declined
   // must not send a bot into a dead room. Skipped entirely when the fetch was TRUNCATED (cap
-  // hit with pages pending) - an incomplete list must never mass-skip meetings. The window is
-  // anchored to the FEED's own clock (fetchedAt) and shrunk on both ends: Google's timeMin
-  // filters on event END (imminent/started meetings can drop off the feed while still valid)
-  // and timeMax on event START, so only comfortably-inside-the-window FUTURE rows are judged.
+  // hit with pages pending) - an incomplete list must never mass-skip meetings.
+  // Google's timeMin filters on event END: absence is safe to act on only for events that
+  // have not started. Include the final minute, but never infer cancellation after start.
+  // Keep the far edge inside the feed's timeMax, which filters on event START.
   let disarmed = 0;
   if (!truncated) {
     const base = fetchedAt || Date.now();
-    const winStart = new Date(base + 60000).toISOString();               // future events only
+    const winStart = new Date(Math.max(base, Date.now())).toISOString(); // strictly future, even after a slow fetch
     const winEnd = new Date(base + days * 86400000 - 10 * 60000).toISOString(); // 10 min inside timeMax
-    const armedRows = await sb(`meetings?user_id=eq.${userId}&status=in.(scheduled,joining)&calendar_event_id=not.is.null&start_time=gte.${encodeURIComponent(winStart)}&start_time=lte.${encodeURIComponent(winEnd)}&select=id,calendar_event_id,meeting_url`);
+    const armedRows = await sb(`meetings?user_id=eq.${userId}&status=in.(scheduled,joining)&calendar_event_id=not.is.null&start_time=gt.${encodeURIComponent(winStart)}&start_time=lte.${encodeURIComponent(winEnd)}&select=id,calendar_event_id,meeting_url,start_time`);
     const liveEvents = new Map(events.map((e) => [e.id, e]));
     for (const row of armedRows) {
-      if (!row.meeting_url) continue;
+      // Recheck after the DB request/previous rows: a meeting may have started meanwhile.
+      if (!row.meeting_url || !(new Date(row.start_time).getTime() > Date.now())) continue;
       const ev = liveEvents.get(row.calendar_event_id);
       if (ev && !ev.selfDeclined && ev.status !== "cancelled") continue;
       await sb(`meetings?id=eq.${row.id}`, { method: "PATCH", body: { status: "skipped", error: "event cancelled or declined", status_synced_at: new Date().toISOString() } });

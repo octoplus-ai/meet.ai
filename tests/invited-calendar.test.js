@@ -27,7 +27,8 @@ const invite = (id, platform, responseStatus = 'accepted', extra = {}) => ({
 
 function calendar(pages, { ui = false } = {}) {
   const calls = [];
-  const context = vm.createContext({ Date, URL, URLSearchParams, encodeURIComponent, extractMeetingUrl,
+  const context = vm.createContext({ Date, URL, URLSearchParams, encodeURIComponent, extractMeetingUrl, parseMeetingUrl, enabledPlatforms,
+    process: { env: { BOT_ENABLED_PLATFORMS: 'google_meet,zoom,teams', BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test' } },
     parseCookies: () => ({ om_session: 'fixture-session' }),
     sb: async query => query.startsWith('sessions?') ? [{ user_id: 'member' }] : [{ access_token: 'fixture-token', expiry: '2099-01-01' }],
     fetch: async (input, options = {}) => {
@@ -43,12 +44,16 @@ function calendar(pages, { ui = false } = {}) {
   return { context, calls };
 }
 
-function scheduler(events, prior = []) {
-  const rows = prior.map(row => ({ ...row })), dispatched = [], stopped = [];
-  const context = vm.createContext({ Date, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes, AbortSignal,
+function scheduler(events, prior = [], { truncated = false, error, fetchedAt = now, clock = () => now } = {}) {
+  const rows = prior.map(row => ({ user_id: 'member', ...row })), dispatched = [], stopped = [];
+  class FixtureDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [clock()])); }
+    static now() { return clock(); }
+  }
+  const context = vm.createContext({ Date: FixtureDate, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes, AbortSignal,
     process: { env: { BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test', BOT_ENABLED_PLATFORMS: 'google_meet,zoom,teams' } },
     recordingGate: async () => ({ allow: true, maxMeetingMin: 120 }),
-    listUpcomingEvents: async () => ({ events, truncated: false, fetchedAt: now }),
+    listUpcomingEvents: async () => ({ events, error, truncated, fetchedAt }),
     annotateEvent: async () => false, // External organizers need not grant editing rights.
     stopOrchestratorJob: async id => { stopped.push(id); },
     sb: async (query, request = {}) => {
@@ -61,7 +66,17 @@ function scheduler(events, prior = []) {
         const row = rows.find(item => item.id === equal('id')); assert.ok(row, 'PATCH must target an existing row');
         Object.assign(row, request.body); return [row];
       }
-      if (params.get('calendar_event_id') === 'not.is.null') return rows.filter(row => ['scheduled', 'joining'].includes(row.status));
+      if (params.get('calendar_event_id') === 'not.is.null') {
+        const statuses = params.get('status').slice(4, -1).split(',');
+        const comparisons = { gt: (a, b) => a > b, gte: (a, b) => a >= b, lt: (a, b) => a < b, lte: (a, b) => a <= b };
+        return rows.filter(row => row.user_id === equal('user_id') && row.calendar_event_id != null && statuses.includes(row.status) &&
+          params.getAll('start_time').every(filter => {
+            const dot = filter.indexOf('.');
+            const compare = comparisons[filter.slice(0, dot)];
+            assert.ok(compare, `Unsupported fixture time filter: ${filter}`);
+            return compare(new Date(row.start_time).getTime(), new Date(filter.slice(dot + 1)).getTime());
+          }));
+      }
       if (params.has('calendar_event_id')) return rows.filter(row => row.calendar_event_id === equal('calendar_event_id'));
       if (params.has('meeting_url')) return rows.filter(row => row.meeting_url === equal('meeting_url') && ['scheduled', 'joining', 'in_call', 'recording', 'processing'].includes(row.status));
       throw new Error(`Unexpected fixture DB query: ${query}`);
@@ -137,6 +152,88 @@ test('declined and cancelled invitations never dispatch and stop already schedul
   assert.equal(result.armed, 0); assert.equal(fixture.dispatched.length, 0); assert.equal(result.disarmed, 2);
   assert.deepEqual(fixture.stopped.sort(), ['row-cancelled', 'row-declined']);
   assert.ok(fixture.rows.every(row => row.status === 'skipped'));
+});
+
+for (const state of ['cancelled', 'declined', 'missing']) {
+  test(`an invitation ${state} 30 seconds before its start stops its scheduled or joining bot`, async () => {
+    const imminent = new Date(now + 30000).toISOString();
+    const events = state === 'missing' ? [] : [{ id: 'imminent', meetingUrl: urls.zoom, start: imminent,
+      status: state === 'cancelled' ? 'cancelled' : 'confirmed', selfDeclined: state === 'declined' }];
+    for (const status of ['scheduled', 'joining']) {
+      const fixture = scheduler(events, [{ id: 'imminent-bot', calendar_event_id: 'imminent',
+        status, meeting_url: urls.zoom, start_time: imminent }]);
+      const result = await fixture.context.armUserCalendar('member');
+      assert.equal(result.armed, 0); assert.equal(fixture.dispatched.length, 0);
+      assert.equal(result.disarmed, 1, `${state}/${status}`);
+      assert.equal(fixture.rows[0].status, 'skipped');
+      assert.deepEqual(fixture.stopped, ['imminent-bot']);
+    }
+  });
+}
+
+test('absence never stops a meeting that has started or a bot already recording', async () => {
+  const prior = [
+    { id: 'at-start', status: 'scheduled', start_time: new Date(now).toISOString() },
+    { id: 'started', status: 'joining', start_time: new Date(now - 1000).toISOString() },
+    { id: 'in-call', status: 'in_call', start_time: new Date(now + 30000).toISOString() },
+    { id: 'recording', status: 'recording', start_time: new Date(now + 30000).toISOString() },
+  ].map(row => ({ calendar_event_id: row.id, meeting_url: urls.zoom, ...row }));
+  const fixture = scheduler([], prior);
+  const result = await fixture.context.armUserCalendar('member');
+  assert.equal(result.disarmed, 0); assert.deepEqual(fixture.stopped, []);
+  assert.deepEqual(fixture.rows.map(row => row.status), prior.map(row => row.status));
+});
+
+test('a slow calendar sweep cannot disarm an absent meeting that started after the feed was fetched', async () => {
+  const fixture = scheduler([], [{ id: 'started-during-fetch', calendar_event_id: 'live', status: 'joining',
+    meeting_url: urls.zoom, start_time: new Date(now + 30000).toISOString() }], { clock: () => now + 45000 });
+  const result = await fixture.context.armUserCalendar('member');
+  assert.equal(result.disarmed, 0); assert.deepEqual(fixture.stopped, []);
+  assert.equal(fixture.rows[0].status, 'joining');
+});
+
+test('a meeting that starts while the disarm query is running remains untouched', async () => {
+  let clock = now;
+  const fixture = scheduler([], [{ id: 'started-during-query', calendar_event_id: 'live', status: 'joining',
+    meeting_url: urls.zoom, start_time: new Date(now + 30000).toISOString() }], { clock: () => clock });
+  const query = fixture.context.sb;
+  fixture.context.sb = async (...args) => {
+    const result = await query(...args);
+    if (args[0].includes('calendar_event_id=not.is.null')) clock = now + 45000;
+    return result;
+  };
+  const result = await fixture.context.armUserCalendar('member');
+  assert.equal(result.disarmed, 0); assert.deepEqual(fixture.stopped, []);
+  assert.equal(fixture.rows[0].status, 'joining');
+});
+
+test('truncated and failed calendar feeds never disarm an imminent missing invitation', async () => {
+  for (const options of [{ truncated: true }, { error: 'calendar auth failed' }]) {
+    const fixture = scheduler([], [{ id: 'still-scheduled', calendar_event_id: 'imminent', status: 'scheduled',
+      meeting_url: urls.zoom, start_time: new Date(now + 30000).toISOString() }], options);
+    await fixture.context.armUserCalendar('member');
+    assert.deepEqual(fixture.stopped, []); assert.equal(fixture.rows[0].status, 'scheduled');
+  }
+});
+
+test('the far edge of the calendar fetch window stays protected from absence-based disarming', async () => {
+  const fixture = scheduler([], [{ id: 'far-edge', calendar_event_id: 'future', status: 'scheduled',
+    meeting_url: urls.zoom, start_time: new Date(now + 7 * 86400000 - 5 * 60000).toISOString() }]);
+  const result = await fixture.context.armUserCalendar('member');
+  assert.equal(result.disarmed, 0); assert.deepEqual(fixture.stopped, []);
+  assert.equal(fixture.rows[0].status, 'scheduled');
+});
+
+test('an unanswered external invitation in the last minute remains eligible and is not disarmed', async () => {
+  const feed = calendar([{ items: [invite('external-imminent', 'zoom', 'needsAction', {
+    start: { dateTime: new Date(now + 30000).toISOString() },
+  })] }]);
+  const { events } = await feed.context.listUpcomingEvents('member');
+  const fixture = scheduler(events);
+  const result = await fixture.context.armUserCalendar('member');
+  assert.equal(result.armed, 1); assert.equal(result.disarmed, 0);
+  assert.equal(fixture.dispatched.length, 1); assert.deepEqual(fixture.stopped, []);
+  assert.equal(fixture.rows[0].calendar_event_id, 'external-imminent');
 });
 
 test('an invited meeting disabled manually stays disabled during automatic sweeps', async () => {

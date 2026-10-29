@@ -2604,7 +2604,9 @@ function FoldersView({ onAsk, meetings, onOpenFolder, user }) {
 }
 
 /* ============================ CALENDAR ============================ */
-const CAL_ARMED_KEY = "octomeet:calendar-armed:v1";
+function calendarBotUnavailable(reason) {
+  return ({ platform_disabled: "Bot not enabled for this platform", no_meeting_link: "No meeting link", invalid_meeting_url: "Meeting link not supported", bot_backend_unavailable: "Bot service unavailable", event_unavailable: "Invitation unavailable" })[reason] || "Bot availability not confirmed";
+}
 // Google-Calendar-style month grid. Each day cell shows its meetings as colored chips: a recorded
 // meeting shows its score (colored by value), a scheduled one shows violet, live=red, processing=amber.
 // Clicking a chip bubbles the event up for the detail popover (toggle / view report / join).
@@ -2666,21 +2668,26 @@ function MonthCalendar({ cursor, setCursor, byDay, onPick }) {
     </div>
   );
 }
-function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
+export function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
   const [tab, setTab] = useState(initialTab || "month");
   const [cursor, setCursor] = useState(() => new Date()); // viewed month
   const [pick, setPick] = useState(null); // event clicked in the grid -> detail popover
   const [realEvents, setRealEvents] = useState(null);
   const [armed, setArmed] = useState({});
+  const [arming, setArming] = useState({});
+  const [eventsError, setEventsError] = useState(false);
   const [autoJoin, setAutoJoin] = useState(true);
   const [recallConnected, setRecallConnected] = useState(false);
   const loadEvents = async () => {
-    try { const r = await fetch("/api/calendar/events"); if (r.ok) { const d = await r.json(); if (Array.isArray(d.events)) setRealEvents(d.events); } } catch (e) { /* not connected */ }
+    try {
+      const r = await fetch("/api/calendar/events"); const d = await r.json();
+      if (!r.ok || !Array.isArray(d.events)) throw new Error("calendar_unavailable");
+      setRealEvents(d.events); setEventsError(false);
+    } catch { setEventsError(true); }
   };
   useEffect(() => {
     (async () => {
       await loadEvents();
-      setArmed((await store.get(CAL_ARMED_KEY, {})) || {});
       let on = true;
       try { const s = await fetch("/api/settings"); if (s.ok) { const sd = await s.json(); on = sd.auto_join !== false; setAutoJoin(on); setRecallConnected(!!sd.recall_connected); } } catch (e) { /* default on */ }
       // Opening the Calendar immediately arms any new meetings (real-time auto-join).
@@ -2702,28 +2709,28 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
     try {
       const r = await fetch("/api/recall/start-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meetingUrl: url, title, joinAt, calendarEventId, botName: notetakerName() }) });
       const d = await r.json();
-      const accepted = r.ok && !d.error && d.ok !== false;
+      const accepted = r.ok && !d.error && (d.ok === true || d.already === true);
       toast(accepted ? (d.already ? "OctoMeet is already set for this meeting ✓" : future ? "OctoMeet will join automatically at the start time 🗓️" : "OctoMeet is joining 🎥") : botStartError(d));
       return accepted;
     } catch (e) { toast(botStartError({ error: "bot_backend_unavailable" })); return false; }
   };
-  const arm = (e, key, val) => {
-    const previous = !!armed[key];
-    const remember = (value) => setArmed((s) => { const next = { ...s, [key]: value }; store.set(CAL_ARMED_KEY, next); return next; });
-    remember(val);
-    if (val && e.eventId) {
-      // Re-enable through the per-event endpoint: it also revives a previously skipped row.
-      fetch("/api/event-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: e.eventId, enable: true }) })
-        .then(async (r) => { const d = await r.json(); if (!r.ok || !d.ok) { remember(previous); toast(botStartError({ error: d.detail || d.error })); } else toast("OctoMeet will join this meeting 🗓️"); })
-        .catch(() => { remember(previous); toast(botStartError({ error: "bot_backend_unavailable" })); });
-    } else if (val) startBot(e.url, e.name, e.startIso, e.eventId).then((accepted) => { if (!accepted) remember(previous); });
-    else if (e.eventId) {
-      // Server-side disarm: marks the meeting skipped AND cancels the orchestrator job -
-      // the localStorage flag alone never stopped an already-armed bot.
-      fetch("/api/event-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: e.eventId, enable: false }) })
-        .then((r) => r.json()).then((d) => toast(d && d.ok ? "OctoMeet won't join this one." : "Couldn't disarm: " + (d.error || "failed")))
-        .catch(() => toast("Network error"));
-    } else toast("OctoMeet won't join this one.");
+  const arm = async (e, key, val) => {
+    if (arming[key] || (val && e.botAvailable !== true)) return;
+    setArming(s => ({ ...s, [key]: true }));
+    try {
+      if (e.eventId) {
+        const r = await fetch("/api/event-bot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: e.eventId, enable: val }) });
+        const d = await r.json();
+        if (!r.ok || d.ok !== true || d.enabled !== val) {
+          toast(val ? botStartError({ error: d.detail || d.error }) : "Could not turn off OctoMeet. Try again.");
+          return;
+        }
+      } else if (!val || !(await startBot(e.url, e.name, e.startIso, e.eventId))) return;
+      // Only an acknowledged operation changes the toggle; stale browser storage is not bot state.
+      setArmed(s => ({ ...s, [key]: val }));
+      toast(val ? "OctoMeet is scheduled for this meeting 🗓️" : "OctoMeet won't join this one.");
+    } catch { toast(val ? botStartError({ error: "bot_backend_unavailable" }) : "Could not turn off OctoMeet. Try again."); }
+    finally { setArming(s => ({ ...s, [key]: false })); }
   };
   const toggleAutoJoin = async (val) => {
     setAutoJoin(val);
@@ -2733,12 +2740,6 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
       fetch("/api/calendar/arm-all", { method: "POST" }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.armed > 0) toast(`OctoMeet will join ${d.armed} meeting${d.armed > 1 ? "s" : ""} 🗓️`); }).catch(() => {});
     } else toast("Auto-join OFF - toggle meetings individually.");
   };
-  const events = [
-    { name: "Morning Meeting", ppl: 39, date: "Sun, Jun 28", time: "3:30 AM - 4:30 AM", add: false, role: null },
-    { name: "Acme Corp - Sync", ppl: 6, date: "Mon, Jun 29", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
-    { name: "Northwind - Demo", ppl: 3, date: "Tue, Jun 30", time: "10:00 AM - 11:00 AM", add: true, role: "Report Owner" },
-    { name: "Vertex - 2nd Meeting", ppl: 4, date: "Fri, Jul 3", time: "12:00 PM - 1:00 PM", add: true, role: "Report Owner" },
-  ];
   const links = [{ m: 15 }, { m: 30 }, { m: 60 }, { m: 90 }];
   const fmtEv = (iso) => {
     try { const d = new Date(iso); return { date: d.toLocaleDateString(LOC(), { weekday: "short", month: "short", day: "numeric" }), time: d.toLocaleTimeString(LOC(), { hour: "numeric", minute: "2-digit" }) }; }
@@ -2755,9 +2756,13 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
       return `${each} × ${g} guest${g > 1 ? "s" : ""} = ${tot} total time`;
     } catch { return null; }
   };
-  const display = realEvents && realEvents.length
-    ? realEvents.map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, add: false, role: null, url: e.meetingUrl, startIso: e.start, endIso: e.end, eventId: e.id }; })
-    : events;
+  const display = (realEvents || []).map((e) => { const s = fmtEv(e.start); const en = fmtEv(e.end); return { ...e, name: e.title, ppl: e.attendees, date: s.date, time: `${s.time} - ${en.time}`, url: e.meetingUrl, startIso: e.start, endIso: e.end, eventId: e.id }; });
+  const botState = (e, key) => {
+    const available = !eventsError && e?.botAvailable === true;
+    const enabled = available && (armed[key] ?? e?.botEnabled === true);
+    const pending = available && armed[key] == null && e?.autoJoinEligible && autoJoin && !["skipped", "error", "done", "processing"].includes(e?.botStatus);
+    return { available, enabled, label: arming[key] ? "Updating…" : !available ? calendarBotUnavailable(eventsError ? null : e?.botUnavailableReason) : enabled ? "Bot scheduled" : pending ? "Pending auto-join" : "Off" };
+  };
 
   // Unified event list for the month grid: recorded meetings (past + scheduled, with scores) merged
   // with upcoming Google Calendar events (which carry the join URL). Deduped by calendar event id.
@@ -2779,7 +2784,10 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
 
   // The detail popover reads live status from byEvent (fresh) and computes the armed state.
   const pickMtg = pick && pick.eventId ? (byEvent[pick.eventId] || pick.mtg) : (pick && pick.mtg);
-  const pickArmed = pickMtg ? !["error", "skipped"].includes(pickMtg.status) : (pick ? (armed[pick.eventId || (pick.title + "|" + pick.timeLabel)] ?? (autoJoin && !!pick.url)) : false);
+  const pickKey = pick && (pick.eventId || (pick.title + "|" + pick.timeLabel));
+  const pickEvent = pick && (display.find(e => e.eventId === pick.eventId) || {});
+  const pickState = botState(pickEvent, pickKey);
+  const pickStatus = pickEvent?.botStatus || pickMtg?.status;
 
   return (
     <>
@@ -2791,19 +2799,22 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
           ))}
         </div>
 
+        {(tab === "month" || tab === "upcoming") && eventsError && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-slate-700">Could not load your calendar or confirm bot status. <button className="font-semibold underline" onClick={loadEvents}>Retry</button></div>}
+        {(tab === "month" || tab === "upcoming") && realEvents === null && !eventsError && <div role="status" className="mb-4 text-sm text-slate-500">Loading your calendar…</div>}
+
         {tab === "month" ? (
           <>
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3">
               <OctoLogo size={22} />
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">Auto-join your meetings {recallConnected && autoJoin && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Calendar connected</span>}</div>
-                <div className="text-[12px] text-slate-500">Your meetings appear on the calendar below. Recorded ones show their score - click any to open the report or toggle OctoMeet.</div>
+                <div className="text-[12px] text-slate-500">Automatically schedule OctoMeet for supported meetings you organize or are invited to in your connected Google Calendar.</div>
               </div>
               <CalToggle on={autoJoin} onChange={toggleAutoJoin} />
             </div>
             <MonthCalendar cursor={cursor} setCursor={setCursor} byDay={byDay} onPick={setPick} />
             <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] text-slate-400">
-              <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#EDE9FE" }} /> Scheduled</span>
+              <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#EDE9FE" }} /> Upcoming · click to check bot status</span>
               <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#16A34A" }} /> Recorded (shows score)</span>
               <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#F43F5E" }} /> Recording now</span>
               <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded" style={{ background: "#F59E0B" }} /> Processing</span>
@@ -2815,25 +2826,27 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
               <OctoLogo size={22} />
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">Auto-join your meetings {recallConnected && autoJoin && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Calendar connected</span>}</div>
-                <div className="text-[12px] text-slate-500">{recallConnected ? "Your Google Calendar is synced with OctoMeet - every meeting is recorded & analyzed automatically, in real time, even with the app closed." : "When on, OctoMeet automatically joins, records and analyzes every meeting on your calendar - you don't have to do anything."}</div>
+                <div className="text-[12px] text-slate-500">Automatically schedule OctoMeet for supported meetings you organize or are invited to in your connected Google Calendar.</div>
               </div>
               <CalToggle on={autoJoin} onChange={toggleAutoJoin} />
             </div>
             <div className="mb-3 flex items-center justify-between">
               <div className="flex gap-2"><FilterBtn label="Has video conferencing" /></div>
-              <span className="flex items-center gap-2 text-[13px] text-slate-400"><RefreshCw size={13} /> {display.length} event{display.length === 1 ? "" : "s"}{realEvents && realEvents.length ? " · your Google Calendar" : " · demo"}</span>
+              <span className="flex items-center gap-2 text-[13px] text-slate-400"><RefreshCw size={13} /> {display.length} event{display.length === 1 ? "" : "s"} · your Google Calendar</span>
             </div>
-            <div className="grid grid-cols-[1.7fr_1fr_1.2fr_90px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
+            <div className="hidden sm:grid grid-cols-[1.7fr_1fr_1.2fr_90px] items-center border-b border-slate-200 px-3 pb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400">
               <div>Meeting</div><div>Date &amp; Time</div><div>OctoMeet</div><div>Join</div>
             </div>
             {display.map((e, i) => {
               const key = e.eventId || (e.name + "|" + e.date);
               const mtg = e.eventId ? byEvent[e.eventId] : null;
-              const isArmed = mtg ? !["error", "skipped"].includes(mtg.status) : (armed[key] ?? (autoJoin && !!e.url));
+              const state = botState(e, key);
+              const status = e.botStatus || mtg?.status;
+              const locked = ["done", "processing", "in_call", "recording"].includes(status);
               const tt = e.startIso ? totalTime(e.startIso, e.endIso, e.ppl) : null;
               return (
-                <div key={i} className="grid grid-cols-[1.7fr_1fr_1.2fr_90px] items-center border-b border-slate-100 px-3 py-3.5">
-                  <div className="flex items-center gap-3">
+                <div key={i} data-calendar-event={e.eventId} className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[1.7fr_1fr_1.2fr_90px] gap-3 sm:gap-0 items-center border-b border-slate-100 px-3 py-3.5">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white shadow-sm"><Video size={18} className="text-emerald-500" /></div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-slate-800">{e.name}</div>
@@ -2847,19 +2860,17 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
                         <span className="flex h-7 items-center rounded-md px-2 text-[12px] font-bold text-white" style={{ background: scoreColor(mtg.scores.engagement || mtg.scores.overall) }}>{mtg.scores.engagement || mtg.scores.overall}</span>
                         <span className="text-[12px] font-semibold text-violet-600 hover:text-violet-800">View report ↗</span>
                       </button>
-                    ) : mtg && mtg.status && mtg.status !== "scheduled" ? (
-                      <StatusBadge status={mtg.status} />
-                    ) : isArmed ? (
-                      <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-600"><CalendarCheck size={13} /> Will auto-join</span>
+                    ) : status && ["joining", "in_call", "recording", "processing", "done"].includes(status) && (state.available || locked) ? (
+                      <StatusBadge status={status} />
                     ) : (
-                      <span className="text-[12px] text-slate-400">Off</span>
+                      <span role="status" className={"text-[12px] " + (state.enabled ? "font-medium text-emerald-600" : "text-slate-500")}>{state.label}</span>
                     )}
                   </div>
-                  <div><CalToggle on={isArmed} onChange={(val) => arm(e, key, val)} /></div>
+                  <div><CalToggle controlled on={state.enabled} disabled={!!arming[key] || !state.available || locked} label={`OctoMeet for ${e.name}`} onChange={(val) => arm(e, key, val)} /></div>
                 </div>
               );
             })}
-            {!display.length && <div className="py-16 text-center text-sm text-slate-400">No upcoming meetings on your calendar.</div>}
+            {realEvents !== null && !eventsError && !display.length && <div className="py-16 text-center text-sm text-slate-400">No upcoming meetings on your calendar.</div>}
           </>
         ) : tab === "schedule" ? (
           <ScheduleMeeting onCreated={loadEvents} />
@@ -2891,14 +2902,14 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
       {/* Event detail popover (from a month-grid chip): report link / status / arm toggle + join. */}
       {pick && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4" onClick={() => setPick(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-label={pick.title} aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50"><Video size={18} className="text-violet-600" /></div>
               <div className="min-w-0 flex-1">
                 <div className="text-base font-bold text-slate-900">{pick.title}</div>
                 <div className="mt-0.5 text-[13px] text-slate-500">{pick.mtg && pick.mtg.date ? fmtDateFull(pick.mtg.date) : (pick.startIso ? fmtEv(pick.startIso).date : "")}{pick.timeLabel ? " · " + pick.timeLabel : ""}</div>
               </div>
-              <button onClick={() => setPick(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+              <button aria-label="Close event details" onClick={() => setPick(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="mb-4 flex items-center gap-1.5 text-[13px] text-slate-500"><Users size={14} className="text-slate-400" /> {(pick.startIso && pick.endIso && totalTime(pick.startIso, pick.endIso, pick.ppl)) || `${pick.ppl || 0} guest${pick.ppl === 1 ? "" : "s"}`}</div>
             {pickMtg && pickMtg.status === "done" ? (
@@ -2906,15 +2917,15 @@ function CalendarView({ onAsk, initialTab, meetings, onOpen }) {
                 <span className="flex items-center gap-2"><span className="flex h-7 items-center rounded-md px-2 text-[12px] font-bold text-white" style={{ background: scoreColor(pickMtg.scores.overall || pickMtg.scores.engagement) }}>{pickMtg.scores.overall || pickMtg.scores.engagement}</span><span className="text-[13px] font-semibold text-slate-700">Octo Score</span></span>
                 <span className="text-[13px] font-semibold text-violet-600">View report ↗</span>
               </button>
-            ) : pickMtg && ["recording", "in_call", "processing", "joining"].includes(pickMtg.status) ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><StatusBadge status={pickMtg.status} /></div>
+            ) : ["recording", "in_call", "processing", "joining", "done"].includes(pickStatus) ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><StatusBadge status={pickStatus} /></div>
             ) : (
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
-                  <span className="text-[13px] font-medium text-slate-700">{pickArmed ? "OctoMeet will join & record" : "OctoMeet is off for this meeting"}</span>
-                  <CalToggle on={pickArmed} onChange={(val) => { arm({ eventId: pick.eventId, url: pick.url, name: pick.title, startIso: pick.startIso }, pick.eventId || (pick.title + "|" + pick.timeLabel), val); setPick(null); }} />
+                  <span role="status" className="text-[13px] font-medium text-slate-700">{pickState.label}</span>
+                  <CalToggle controlled on={pickState.enabled} disabled={!!arming[pickKey] || !pickState.available} label={`OctoMeet for ${pick.title}`} onChange={(val) => arm(pickEvent, pickKey, val)} />
                 </div>
-                {pick.url && <a href={pick.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Video size={15} /> Join with Google Meet</a>}
+                {pick.url && <a href={pick.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Video size={15} /> Join with {platformLabel(pick.url) || "meeting"}</a>}
               </div>
             )}
           </div>
@@ -3015,11 +3026,12 @@ function ScheduleMeeting({ onCreated }) {
     </div>
   );
 }
-function CalToggle({ on, onChange }) {
+function CalToggle({ on, onChange, controlled = false, disabled = false, label = "Auto-join meetings" }) {
   const [v, setV] = useState(on);
   useEffect(() => { setV(on); }, [on]);
-  const toggle = () => { const n = !v; setV(n); if (onChange) onChange(n); };
-  return <button onClick={toggle} className={"relative h-6 w-11 shrink-0 rounded-full transition " + (v ? "bg-emerald-500" : "bg-slate-200")}><span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (v ? "left-[22px]" : "left-0.5")} /></button>;
+  const value = controlled ? !!on : v;
+  const toggle = () => { const n = !value; if (!controlled) setV(n); if (onChange) onChange(n); };
+  return <button type="button" role="switch" aria-checked={!!value} aria-label={label} disabled={disabled} onClick={toggle} className="relative flex h-11 w-11 shrink-0 items-center rounded-lg disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600"><span className={"relative block h-6 w-11 rounded-full transition " + (value ? "bg-emerald-500" : "bg-slate-200")}><span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " + (value ? "left-[22px]" : "left-0.5")} /></span></button>;
 }
 
 /* ============================ ANALYTICS ============================= */

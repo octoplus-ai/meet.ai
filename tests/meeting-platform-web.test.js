@@ -193,9 +193,12 @@ test("auto-join calendar helper extracts all three platforms with the shared par
   assert.ok(events.every((event) => event.meetingUrl));
 });
 test("calendar UI endpoint extracts the same links as auto-join, never a phone entry", async () => {
-  const context = vm.createContext({ Date, URLSearchParams, encodeURIComponent, extractMeetingUrl,
+  const context = vm.createContext({ Date, URLSearchParams, encodeURIComponent, extractMeetingUrl, parseMeetingUrl, enabledPlatforms,
+    process: { env: { BOT_ENABLED_PLATFORMS: "google_meet,zoom,teams", BOT_ORCHESTRATOR_URL: "https://orchestrator.example.test" } },
     parseCookies: () => ({ om_session: "synthetic" }),
-    sb: async (query) => query.startsWith("sessions?") ? [{ user_id: "u" }] : [{ access_token: "synthetic", expiry: "2099-01-01" }],
+    sb: async (query) => query.startsWith("sessions?") ? [{ user_id: "u" }]
+      : query.startsWith("meetings?") ? [] : query.startsWith("app_users?") ? [{ auto_join: true }]
+      : [{ access_token: "synthetic", expiry: "2099-01-01" }],
     fetch: async (url) => { assert.ok(String(url).startsWith("https://www.googleapis.com/calendar/")); return { json: async () => ({ items: calendarItems }) }; },
   });
   vm.runInContext(source("../api/calendar/events.js"), context);
@@ -218,7 +221,8 @@ test("manual API preserves disabled/dispatch HTTP statuses and rejects malformed
 test("authenticated per-event enable explicitly opts into a manual retry", async () => {
   let scheduled;
   const start = new Date(Date.now() - 5 * 60000).toISOString();
-  const context = vm.createContext({ Date, URL, encodeURIComponent, process: { env: {} },
+  const context = vm.createContext({ Date, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms,
+    process: { env: { BOT_ORCHESTRATOR_URL: "https://orchestrator.example.test" } },
     parseCookies: () => ({ om_session: "synthetic" }),
     listUpcomingEvents: async () => ({ events: [{ id: "event", meetingUrl: urls.google_meet, start }] }),
     sb: async query => query.startsWith("sessions?") ? [{ user_id: "u" }] : query.startsWith("app_users?") ? [{ notetaker_name: "Test bot" }] : [{ id: "old", status: "error", meeting_url: urls.google_meet, start_time: start }],
