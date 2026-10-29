@@ -45,6 +45,8 @@ test('delivery admits only this session private recording and sanitizes metadata
   const session={user_id:'u',meeting_id:'m',id:'s',max_meeting_min:120};
   const good=rtmsMedia({recordingUrl:'r2:private/u/m/recording.mp4',durationMin:2,stage:{rtmsSessionId:'evil',token:'secret'}},session);
   assert.equal(good.stage_info.rtmsSessionId,'s');assert.equal(good.stage_info.token,undefined);
+  const short=rtmsMedia({durationMin:0.25625,stage:{recordingDurationSec:999999}},session);
+  assert.equal(short.duration_min,0);assert.equal(short.stage_info.recordingDurationSec,15.375);
   for(const recordingUrl of ['https://evil.test/video','r2:private/other/m/recording.mp4','r2:private/u/other/recording.mp4','r2:private/u/m/../recording.mp4','r2:private/u/m/recording.mp4?key=secret']) assert.throws(()=>rtmsMedia({recordingUrl},session),/invalid_media/);
   assert.throws(()=>rtmsMedia({durationMin:122},session),/invalid_duration/);assert.equal(safeRtmsError('token=secret error'),'RTMS_PROCESSING_FAILED');
   assert.throws(()=>rtmsTurns({turns:[{text:'actual speech',t:'javascript:bad'}]}),/invalid_transcript/);assert.deepEqual(rtmsTurns({turns:[{text:'   '}]}),[]);

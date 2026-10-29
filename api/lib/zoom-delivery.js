@@ -12,10 +12,12 @@ export function rtmsMedia(body, session) {
   }
   if (body.durationMin != null) {
     if (!Number.isFinite(body.durationMin) || body.durationMin < 0 || body.durationMin > session.max_meeting_min + 1) throw zoomError('invalid_duration', 400);
-    media.duration_min = body.durationMin;
+    // The production column is INTEGER; keep the measured sub-minute duration below.
+    media.duration_min = Math.round(body.durationMin);
   }
   // Do not accept arbitrary stage JSON (session identity, access flags, URLs or credentials).
   media.stage_info = { platform: 'zoom', capture: 'rtms', rtmsSessionId: session.id };
+  if (body.durationMin != null) media.stage_info.recordingDurationSec = Math.round(body.durationMin * 60000) / 1000;
   if (['audio_only_source','audio_video'].includes(body.stage?.mediaAvailability)) media.stage_info.mediaAvailability = body.stage.mediaAvailability;
   if (body.stage?.mediaCounts && ['audio','video','share'].every(key => Number.isSafeInteger(body.stage.mediaCounts[key]) && body.stage.mediaCounts[key] >= 0)) media.stage_info.mediaCounts = Object.fromEntries(['audio','video','share'].map(key => [key,body.stage.mediaCounts[key]]));
   return media;
@@ -49,7 +51,8 @@ export function rtmsReport(ai, turns, roster, speakerMap, version) {
   const scores = Object.fromEntries(['overall','engagement','sentiment','balance','clarity','charisma'].map(key => [key, Number.isFinite(ai.scores?.[key]) ? Math.max(0, Math.min(100, ai.scores[key])) : 0]));
   return { summary: ai.summary, action_items: array(ai.actionItems), next_steps: array(ai.nextSteps), key_questions: array(ai.keyQuestions), topics: array(ai.topics), chapters: array(ai.chapters), highlights: array(ai.highlights),
     coaching: { ...(ai.coaching && typeof ai.coaching === 'object' && !Array.isArray(ai.coaching) ? ai.coaching : {}), pitch: ai.pitchAnalysis || null }, participants,
-    sentiment_timeline: array(ai.sentimentTimeline), sentiment_label: ai.sentimentLabel || 'Neutral', transcript: rtmsTranscript(mapped), scores, read_score: scores.overall, category: ai.category || null, report_version: version };
+    // JSONB stores this as a scalar string, matching the existing transcript consumers.
+    sentiment_timeline: array(ai.sentimentTimeline), sentiment_label: ai.sentimentLabel || 'Neutral', transcript: rtmsTranscript(mapped), scores, read_score: Math.round(scores.overall), category: ai.category || null, report_version: version };
 }
 const errorCodes = new Set(['RTMS_CONNECTION_FAILED','RTMS_MEDIA_UNAVAILABLE','RTMS_RECORDING_FAILED','RTMS_UPLOAD_FAILED','RTMS_TRANSCRIPTION_FAILED','RTMS_PROCESSING_FAILED','RTMS_NO_SPEECH']);
 export const safeRtmsError = value => errorCodes.has(value) ? value : 'RTMS_PROCESSING_FAILED';

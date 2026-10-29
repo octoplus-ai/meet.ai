@@ -146,6 +146,28 @@ test('callback token cannot cross meeting, user or session; media is stored befo
   assert.equal(res.code,503);assert.equal(res.body.error,'zoom_ingest_retry');assert.equal(calls,1);assert.equal((await db.query('select count(*) from reports')).rows[0].count,0);
   assert.equal((await db.query('select ingest_lease from zoom_rtms_sessions')).rows[0].ingest_lease,null);
 });
+test('production JSONB transcript and INTEGER columns preserve real delivery without changing the legacy string contract',async()=>{
+  const dispatch=await start(),recordingUrl=`r2:private/${ids.user}/${dispatch.meetingId}/recording.mp4`;
+  const turns=[{speaker:'Speaker A',text:'Revisamos el envío "uno" y acordamos avanzar.',t:'0:01'},{speaker:'Mario',text:'Confirmado: lo probamos mañana.',t:'1:12'}];
+  const scores={overall:88.6,engagement:74,sentiment:90,balance:60.25,clarity:87,charisma:70};
+  let notified=0;
+  const ingest=createRtmsIngest({database,analyze:async(text)=>{
+    assert.equal(typeof text,'string');assert.match(text,/\[0:01\] Speaker A:/);
+    return{summary:'Se acordó probar el envío mañana.',speakerMap:{'Speaker A':'Santiago'},scores,participants:[{name:'Santiago',role:'Owner'}]};
+  },notify:async(meeting,ai,report)=>{notified++;assert.equal(meeting.duration_min,2);assert.equal(typeof report.transcript,'string');}});
+  const body={recordingUrl,durationMin:1.75625,turns,stage:{mediaAvailability:'audio_video',mediaCounts:{audio:20,video:10,share:4}}};
+  const early=response();await ingest(callback({...body,mediaOnly:true},dispatch),early);assert.equal(early.body.mediaSaved,true);
+  let meeting=(await db.query('select duration_min,stage_info from meetings where id=$1',[dispatch.meetingId])).rows[0];
+  assert.equal(meeting.duration_min,2);assert.equal(meeting.stage_info.recordingDurationSec,105.375);
+  const delivered=response();await ingest(callback(body,dispatch),delivered);assert.equal(delivered.code,200);assert.equal(delivered.body.ok,true);
+  const stored=(await db.query('select transcript,jsonb_typeof(transcript) as transcript_kind,scores,read_score,participants from reports where meeting_id=$1',[dispatch.meetingId])).rows[0];
+  assert.equal(stored.transcript_kind,'string');
+  assert.equal(stored.transcript,'[0:01] Santiago: Revisamos el envío "uno" y acordamos avanzar.\n[1:12] Mario: Confirmado: lo probamos mañana.');
+  assert.deepEqual(stored.scores,scores);assert.equal(stored.read_score,89);assert.equal(stored.participants[0].name,'Santiago');
+  meeting=(await db.query('select status,duration_min,stage_info from meetings where id=$1',[dispatch.meetingId])).rows[0];
+  assert.equal(meeting.status,'done');assert.equal(meeting.duration_min,2);assert.equal(meeting.stage_info.recordingDurationSec,105.375);
+  assert.deepEqual(meeting.stage_info.mediaCounts,{audio:20,video:10,share:4});assert.equal(notified,1);
+});
 test('revoked session stops new media but can finalize captured video and one real report; empty capture is never a report',async()=>{
   const dispatch=await start(),url=`r2:private/${ids.user}/${dispatch.meetingId}/recording.mp4`;
   await rtms.disconnectRtmsUser(ids.user);const heartbeat=response();await status(callback({status:'recording'},dispatch),heartbeat);assert.equal(heartbeat.body.stop,true);

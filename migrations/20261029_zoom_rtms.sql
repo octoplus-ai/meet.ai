@@ -190,7 +190,7 @@ begin
       when p_status='recording' and m.status in ('processing','error') then m.status else p_status end,
     error=case when p_status='error' then p_error when m.status='error' and p_status in ('joining','recording') then m.error else null end,
     status_synced_at=now(),recording_url=coalesce(p_media->>'recording_url',recording_url),cover_url=coalesce(p_media->>'cover_url',cover_url),
-    duration_min=coalesce((p_media->>'duration_min')::numeric,duration_min),
+    duration_min=coalesce(round((p_media->>'duration_min')::numeric)::integer,duration_min),
     stage_info=coalesce(stage_info,'{}'::jsonb)||coalesce(p_media->'stage_info','{}'::jsonb)
     where id=m.id;
   update zoom_rtms_sessions set state=case when stop_capture then 'stopping' else p_status end,updated_at=now() where id=s.id;
@@ -283,12 +283,12 @@ begin
   select * into m from meetings where id=s.meeting_id and user_id=s.user_id and capture_mode='zoom_rtms' for update;
   if not found or m.status in ('skipped','done') or m.stage_info->>'rtmsSessionId' is distinct from s.id::text or m.stage_info->>'deletion' is not null then return false; end if;
   insert into reports(meeting_id,user_id,summary,action_items,next_steps,key_questions,topics,chapters,highlights,coaching,participants,sentiment_timeline,sentiment_label,transcript,scores,read_score,category,report_version)
-    select s.meeting_id,s.user_id,r.summary,r.action_items,r.next_steps,r.key_questions,r.topics,r.chapters,r.highlights,r.coaching,r.participants,r.sentiment_timeline,r.sentiment_label,r.transcript,r.scores,r.read_score,r.category,r.report_version
+    select s.meeting_id,s.user_id,r.summary,r.action_items,r.next_steps,r.key_questions,r.topics,r.chapters,r.highlights,r.coaching,r.participants,r.sentiment_timeline,r.sentiment_label,p_report->'transcript',r.scores,r.read_score,r.category,r.report_version
     from jsonb_populate_record(null::reports,p_report) r
     on conflict(meeting_id) do nothing;
   update meetings set status='done',error=null,end_time=now(),status_synced_at=now(),
     recording_url=coalesce(p_media->>'recording_url',recording_url),cover_url=coalesce(p_media->>'cover_url',cover_url),
-    duration_min=coalesce((p_media->>'duration_min')::numeric,duration_min),
+    duration_min=coalesce(round((p_media->>'duration_min')::numeric)::integer,duration_min),
     stage_info=coalesce(stage_info,'{}'::jsonb)||coalesce(p_media->'stage_info','{}'::jsonb)
     where id=s.meeting_id;
   update zoom_rtms_sessions set delivered_at=now(),state='completed',ingest_lease=null,ingest_lease_until=null,updated_at=now() where id=s.id;

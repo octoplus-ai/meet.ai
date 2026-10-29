@@ -5,8 +5,9 @@ export async function zoomDatabase() {
   const db = new PGlite();
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create table app_users(id uuid primary key,email text,plan text,auto_join boolean default true);
-    create table meetings(id uuid primary key default gen_random_uuid(),user_id uuid references app_users(id),title text,source text,meeting_url text,status text,capture_mode text,start_time timestamptz,end_time timestamptz,stage_info jsonb,error text,status_synced_at timestamptz,recording_url text,cover_url text,duration_min numeric,attendees jsonb,participants jsonb,calendar_event_id text,created_at timestamptz default now());
-    create table reports(id uuid primary key default gen_random_uuid(),meeting_id uuid unique references meetings(id),user_id uuid,summary text,action_items jsonb,next_steps jsonb,key_questions jsonb,topics jsonb,chapters jsonb,highlights jsonb,coaching jsonb,participants jsonb,sentiment_timeline jsonb,sentiment_label text,transcript text,scores jsonb,read_score numeric,category text,report_version integer);
+    create table meetings(id uuid primary key default gen_random_uuid(),user_id uuid references app_users(id),title text,source text,meeting_url text,status text,capture_mode text,start_time timestamptz,end_time timestamptz,stage_info jsonb,error text,status_synced_at timestamptz,recording_url text,cover_url text,duration_min integer,attendees jsonb,participants jsonb,calendar_event_id text,created_at timestamptz default now());
+    create unique index meetings_user_calendar_event on meetings(user_id,calendar_event_id) where calendar_event_id is not null;
+    create table reports(id uuid primary key default gen_random_uuid(),meeting_id uuid unique references meetings(id),user_id uuid,summary text,action_items jsonb,next_steps jsonb,key_questions jsonb,topics jsonb,chapters jsonb,highlights jsonb,coaching jsonb,participants jsonb,sentiment_timeline jsonb,sentiment_label text,transcript jsonb,scores jsonb,read_score integer,category text,report_version integer);
     create table sessions(token text primary key,user_id uuid,expires_at timestamptz);`);
   await db.exec(await readFile(new URL('../../migrations/20261029_zoom_rtms.sql', import.meta.url), 'utf8'));
   return db;
