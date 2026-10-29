@@ -5,7 +5,7 @@
 import { sb } from "../lib/supa.js";
 import { analyzeTranscript, ANALYSIS_VERSION, sanitizeSpeakerMap, notifyParticipants } from "../lib/process.js";
 import { cameraMetadata, preserveCameraMetadata } from "../lib/speaker-media.js";
-import { partialCaptureSummary } from "../lib/capture-integrity.js";
+import { partialCaptureSummary, captureWindow } from "../lib/capture-integrity.js";
 
 const enc = encodeURIComponent;
 export const config = { maxDuration: 300 };
@@ -41,9 +41,15 @@ export default async function handler(req, res) {
       ["pipUrl", "pipStatus", "pipIntervals", "pipTimeline", "shareIntervals"].some((key) => Object.hasOwn(body, key));
     const presenterMedia = hasCameraDelivery || !Object.keys(priorCamera).length ? cameraMetadata(body) : priorCamera;
     const stageInfo = { ...(meeting.stage_info || {}), ...(body.stage && typeof body.stage === "object" && !Array.isArray(body.stage) ? body.stage : {}), presenterMedia };
+    const capture = captureWindow(stageInfo);
+    delete stageInfo.captureStartedAt; delete stageInfo.captureEndedAt;
+    if (capture) Object.assign(stageInfo, capture);
     // ASR language comes from this authenticated recorder callback, not from the AI summary.
     if (typeof body.languageCode === 'string' && /^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*$/i.test(body.languageCode)) stageInfo.languageCode = body.languageCode;
     const mediaPatch = { stage_info: stageInfo };
+    // Keep the scheduled start unchanged. End time comes from capture evidence,
+    // never from the later upload, transcription or report completion.
+    if (capture) mediaPatch.end_time = capture.captureEndedAt;
     if (body.recordingUrl) mediaPatch.recording_url = body.recordingUrl;
     if (body.coverUrl) mediaPatch.cover_url = body.coverUrl;
     if (Number.isFinite(body.durationMin) && body.durationMin > 0) mediaPatch.duration_min = body.durationMin;
@@ -172,7 +178,8 @@ export default async function handler(req, res) {
     // Unique meeting_id dedupes concurrent deliveries (worker retry + poll): losing the race is fine.
     try { await sb("reports", { method: "POST", body: reportRow }); }
     catch (e) { if (!/23505|duplicate/i.test(String(e.message || ""))) throw e; }
-    const patch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString(), participants: participants.map((p) => p.name), capture_mode: "inhouse_bot" };
+    const patch = { status: "done", status_synced_at: new Date().toISOString(), participants: participants.map((p) => p.name), capture_mode: "inhouse_bot" };
+    if (capture) patch.end_time = capture.captureEndedAt;
     // Queryable stage verification from the worker ({spotlight: true/false}): confirms the
     // active-speaker layout was applied for THIS recording without digging through fly logs.
     patch.stage_info = stageInfo;

@@ -6,6 +6,21 @@ export const PARTIAL_CAPTURE_NOTICES = Object.freeze({
 });
 const interruptedReasons = new Set(['renderer_unresponsive', 'renderer_crashed', 'renderer_disconnected']);
 
+// Recorder timestamps are UTC ISO strings. A calendar slot or ingestion time is
+// not evidence of capture timing. Allow two minutes for end detection/flush only.
+export function captureWindow(stage, now = Date.now()) {
+  const parse = value => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)) return null;
+    const ms = Date.parse(value);
+    if (!Number.isFinite(ms)) return null;
+    const canonical = value.replace(/(?:\.(\d{1,3}))?Z$/, (_, fraction = '') => '.' + fraction.padEnd(3, '0') + 'Z');
+    return new Date(ms).toISOString() === canonical ? ms : null;
+  };
+  const start = parse(stage?.captureStartedAt), end = parse(stage?.captureEndedAt);
+  if (start == null || end == null || !Number.isFinite(now) || end <= start || end > now || end - start > 122 * 60000) return null;
+  return { captureStartedAt: new Date(start).toISOString(), captureEndedAt: new Date(end).toISOString() };
+}
+
 export function partialCaptureSummary(summary, stage) {
   if (typeof summary !== 'string' || !summary.trim()) return summary;
   if (!stage || typeof stage !== 'object' || Array.isArray(stage)) return summary;
