@@ -8,6 +8,8 @@ import { notifyMeetingParticipants } from "./notifications.js";
 
 import { preserveCameraMetadata } from "./speaker-media.js";
 import { partialCaptureSummary } from "./capture-integrity.js";
+import { usesRecall } from './processing-state.js';
+import { createHash } from 'node:crypto';
 
 const APP_URL = "https://meet.octoplusteam.com/"; // branded domain (same deployment; better email deliverability)
 const arr = (x) => (Array.isArray(x) ? x : []);
@@ -112,7 +114,7 @@ function noDashes(v) {
 }
 
 // Rich analysis prompt — mirrors Read.ai's report surface.
-export async function analyzeTranscript(text, title, participantNames) {
+export async function analyzeTranscript(text, title, participantNames, { timeoutMs = 180000 } = {}) {
   const sys =
     "You are a meeting-intelligence analyst (like Read.ai). Read the transcript and return ONLY a JSON object (no markdown, no prose) with EXACTLY this shape:\n" +
     "GLOBAL RULE: refer to every person by their NAME only. NEVER output an email address in ANY field (summary, chapters, highlights, participants, action items, anywhere). If the only identifier you have for someone is an email, use the part before the @ as their name (e.g. 'delfinaamelgarejo@gmail.com' -> 'Delfina') or just say 'a participant' - never print the raw email.\n" +
@@ -146,6 +148,7 @@ export async function analyzeTranscript(text, title, participantNames) {
   const known = cleanNames.length ? `Known participants: ${cleanNames.join(", ")}.\n\n` : "";
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
+    signal: AbortSignal.timeout(Math.max(1, Math.min(180000, Number(timeoutMs) || 180000))),
     headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
@@ -164,6 +167,7 @@ export async function analyzeTranscript(text, title, participantNames) {
       messages: [{ role: "user", content: `Title: ${title}\n\n${known}Transcript:\n${(text || "(no speech captured)").slice(0, 600000)}` }],
     }),
   });
+  if (!r.ok) throw Object.assign(new Error('ANALYSIS_PROVIDER_UNAVAILABLE'), { code: 'ANALYSIS_PROVIDER_UNAVAILABLE', status: r.status });
   const d = await r.json();
   if (d && d.stop_reason === "max_tokens") console.warn("analyzeTranscript: response hit max_tokens — JSON may be truncated");
   let out = (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
@@ -171,7 +175,7 @@ export async function analyzeTranscript(text, title, participantNames) {
   const a = out.indexOf("{"), b = out.lastIndexOf("}");
   if (a >= 0 && b >= 0) out = out.slice(a, b + 1);
   try { return noDashes(JSON.parse(out)); } catch (e) {
-    console.error("analyzeTranscript: JSON parse failed (", String(e.message || e), ") - first 200 chars:", out.slice(0, 200));
+    console.error("analyzeTranscript: invalid provider JSON");
     return { summary: "", topics: [], keyQuestions: [], actionItems: [], chapters: [], highlights: [], participants: [], coaching: {}, scores: {}, sentimentLabel: "Neutral", sentimentTimeline: [] };
   }
 }
@@ -205,12 +209,15 @@ function mergeParticipants(stats, aiParts) {
 
 // Process one meeting end-to-end. force=true regenerates even if already done.
 export async function processMeeting(meeting, { force = false } = {}) {
+  if (!usesRecall(meeting)) return { skipped: 'not a Recall capture' };
   if (!force && meeting.status === "done") {
     const existing = await sb(`reports?meeting_id=eq.${meeting.id}&select=id`);
     if (existing.length) { await notifyParticipants(meeting); return { skipped: "already done" }; }
   }
 
   const bot = await getBot(meeting.bot_id);
+  if (!bot) return { skipped: 'Recall bot unavailable' };
+  if (!bot.recordings?.[0]?.media_shortcuts?.transcript?.data?.download_url) return { skipped: 'transcript not ready' };
   const tr = bot ? await getTranscript(bot) : { text: "", participants: [], stats: [], turns: [] };
   const dur = bot ? durationMin(bot) : null;
 
@@ -258,14 +265,15 @@ export async function processMeeting(meeting, { force = false } = {}) {
   };
 
   // Upsert: replace existing report on force, else insert (unique meeting_id dedupes races).
-  if (force) await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "DELETE" });
   try {
-    await sb("reports", { method: "POST", body: reportRow });
+    await sb(force ? 'reports?on_conflict=meeting_id' : 'reports', { method: "POST", body: reportRow, ...(force ? { prefer: 'resolution=merge-duplicates' } : {}) });
   } catch (e) {
     if (!/23505|duplicate/i.test(String(e.message || ""))) throw e;
   }
 
-  const mpatch = { status: "done", end_time: new Date().toISOString(), status_synced_at: new Date().toISOString() };
+  const mpatch = { status: "done", status_synced_at: new Date().toISOString() };
+  const capturedStart = Date.parse(bot.recordings?.[0]?.started_at || ''), capturedEnd = Date.parse(bot.recordings?.[0]?.completed_at || '');
+  if (Number.isFinite(capturedStart) && capturedEnd > capturedStart && capturedEnd <= Date.now()) mpatch.end_time = new Date(capturedEnd).toISOString();
   if (participants.length) mpatch.participants = participants.map((p) => p.name);
   if (dur) mpatch.duration_min = dur;
   if (bot && bot.recordings && bot.recordings[0]) mpatch.recording_id = bot.recordings[0].id;
@@ -286,12 +294,17 @@ export async function processMeeting(meeting, { force = false } = {}) {
 // Re-run analysis on a meeting's ALREADY-STORED transcript (no Recall call) so older reports
 // pick up prompt/field improvements (timestamps, chapter points, charisma, language, term
 // fixes…). Preserves per-speaker talk-time; refreshes the AI fields + bumps report_version.
-export async function reanalyzeStored(meeting) {
+export async function reanalyzeStored(meeting, { timeoutMs = 180000, beforeSave } = {}) {
   const rows = await sb(`reports?meeting_id=eq.${meeting.id}&select=*`);
   const rep = rows[0];
+  // Keep private transcript text out of URL filters/logs. Detect source changes
+  // in memory; SQL still guards report id/version. This is not an atomic lock
+  // against a manual edit occurring between the final read and PATCH.
+  const revision = value => createHash('sha256').update(JSON.stringify(value || null)).digest('hex');
+  const originalRevision = revision(rep);
   const text = rep && rep.transcript ? String(rep.transcript) : "";
   if (!rep || text.trim().length < 40) {
-    if (rep) await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION, summary: partialCaptureSummary(rep.summary || '', meeting.stage_info) } }); // bump so we don't loop
+    if (rep && !beforeSave) await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { summary: partialCaptureSummary(rep.summary || '', meeting.stage_info) } });
     return { skipped: "no transcript" };
   }
   // Name hints for the speaker-identification pass: existing report participants + the real
@@ -300,11 +313,11 @@ export async function reanalyzeStored(meeting) {
     ...(Array.isArray(rep.participants) ? rep.participants.map((p) => p && p.name).filter(Boolean) : []),
     ...(Array.isArray(meeting.attendees) ? meeting.attendees.map((a) => a && (a.name || a.email)).filter(Boolean) : []),
   ])];
-  const ai = await analyzeTranscript(text, meeting.title, names);
-  // If the analysis came back empty, keep the existing report but still bump the version
-  // so we don't re-try in a loop every poll.
+  const ai = await analyzeTranscript(text, meeting.title, names, { timeoutMs });
+  // A failed refresh must retain the old report/version; the caller applies a
+  // durable cooldown and bounded attempts instead of falsely marking it upgraded.
   if (!(ai.summary && ai.summary.trim())) {
-    await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { report_version: ANALYSIS_VERSION, summary: partialCaptureSummary(rep.summary || '', meeting.stage_info) } });
+    if (!beforeSave) await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: { summary: partialCaptureSummary(rep.summary || '', meeting.stage_info) } });
     return { skipped: "analysis empty" };
   }
   assignTimestamps(ai, parseStoredTurns(text)); // accurate per-item timestamps from the stored transcript
@@ -324,11 +337,17 @@ export async function reanalyzeStored(meeting) {
     category: ai.category || rep.category || null,
     report_version: ANALYSIS_VERSION,
   };
+  if (beforeSave) {
+    if (!(await beforeSave())) return { skipped: 'analysis lease changed' };
+    const current = (await sb(`reports?meeting_id=eq.${meeting.id}&select=*`))?.[0];
+    if (revision(current) !== originalRevision) return { skipped: 'report changed' };
+  }
   // Rewriting the transcript changes turn boundaries/names -> the cached per-turn subtitle
   // translations no longer line up. Clear them so the next viewing re-translates cleanly.
   if (newText !== text) { patch.transcript = newText; patch.subtitles = {}; }
   // Keep existing per-speaker talk-time; refresh name (via speakerMap) + role/sentiment from the
   // new analysis. Match AI participants by the RENAMED name first (the AI answers in real names).
+  let renamedParticipants;
   if (Array.isArray(rep.participants) && rep.participants.length) {
     const aiP = {}; (ai.participants || []).forEach((p) => { if (p && p.name) aiP[p.name.toLowerCase()] = p; });
     patch.participants = rep.participants.map((p) => {
@@ -337,10 +356,14 @@ export async function reanalyzeStored(meeting) {
       return { ...p, name, role: x.role || p.role, sentiment: x.sentiment || p.sentiment };
     });
     // Meeting card shows meetings.participants (names array) - keep it in sync with the renames.
-    if (Object.keys(spkMap).length) {
-      sb(`meetings?id=eq.${meeting.id}`, { method: "PATCH", body: { participants: patch.participants.map((p) => p.name) } }).catch(() => {});
-    }
+    if (Object.keys(spkMap).length) renamedParticipants = patch.participants.map((p) => p.name);
   }
-  await sb(`reports?meeting_id=eq.${meeting.id}`, { method: "PATCH", body: patch });
+  const guard = beforeSave ? `${rep.id ? `&id=eq.${encodeURIComponent(rep.id)}` : ''}`
+    + (rep.report_version == null ? '&report_version=is.null' : `&report_version=eq.${encodeURIComponent(rep.report_version)}`) : '';
+  const saved = await sb(`reports?meeting_id=eq.${meeting.id}${guard}`, { method: "PATCH", body: patch, ...(beforeSave ? { prefer: 'return=representation' } : {}) });
+  if (beforeSave && !saved?.length) return { skipped: 'report changed' };
+  if (renamedParticipants && (!beforeSave || await beforeSave())) {
+    sb(`meetings?id=eq.${meeting.id}&status=eq.done`, { method: 'PATCH', body: { participants: renamedParticipants } }).catch(() => {});
+  }
   return { ok: true, version: ANALYSIS_VERSION };
 }

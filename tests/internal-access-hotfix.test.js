@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+import { createGoogleOAuthState, consumeGoogleOAuthState, clearGoogleOAuthCookie, googleRedirectUri } from '../api/lib/google-oauth-state.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const source = file => fs.readFileSync(path.join(root, file), 'utf8')
@@ -99,6 +100,7 @@ async function oauth(storedPlan, verified, concurrent = false) {
     ? { id: 'u', email: 'santiago@octoplusteam.com', plan: storedPlan, usage, stripe_customer_id: 'customer' } : null;
   const calls = [];
   const callback = vm.createContext({ URL, URLSearchParams, Date, encodeURIComponent,
+    consumeGoogleOAuthState, clearGoogleOAuthCookie, googleRedirectUri,
     process: { env: { GOOGLE_CLIENT_SECRET: 'mock', SUPABASE_SERVICE_ROLE_KEY: 'mock' } },
     console: { log() {}, error() {} }, randomToken: () => 'mock-session',
     fetch: async url => ({ json: async () => url.includes('/token') ? { access_token: 'mock-token' }
@@ -121,7 +123,8 @@ async function oauth(storedPlan, verified, concurrent = false) {
   });
   vm.runInContext(source('api/auth/google/callback.js'), callback);
   let location;
-  await callback.handler({ url: '/api/auth/google/callback?code=mock-code' }, {
+  const oauthState = createGoogleOAuthState({ mode: 'normal' });
+  await callback.handler({ method: 'GET', headers: { host: new URL(googleRedirectUri()).host, cookie: oauthState.cookie.split(';')[0] }, url: '/api/auth/google/callback?code=mock-code&state=' + oauthState.state }, {
     setHeader() {}, writeHead(status, headers) { assert.equal(status, 302); location = headers.Location; }, end() {},
   });
   if (verified !== true) {

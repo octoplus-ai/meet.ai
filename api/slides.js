@@ -3,7 +3,7 @@
 // attached images (Claude vision) and attached text files to inform/improve the deck.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
+import { authorizedShare, isRtmsDeleting } from "./lib/share.js";
 import { artifactKey, getArtifact, saveArtifact, consumeQuota } from "./lib/limits.js";
 import { extractJson } from "./lib/aijson.js";
 import { noDashes } from "./lib/nodash.js";
@@ -67,7 +67,7 @@ async function loadMeeting(req, body, ownerId) {
     if (m.length) return m[0];
   }
   if (body.shareToken) {
-    const r = await resolveShareToken(body.shareToken);
+    const r = await authorizedShare(req, body.shareToken, { meetingId: body.meetingId });
     if (r && r.meeting) {
       const m = await sb(`meetings?id=eq.${enc(r.meeting.id)}&select=*,reports(*)`);
       if (m.length) return m[0];

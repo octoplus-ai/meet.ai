@@ -3,7 +3,7 @@
 // Never throws - returns {doc:false, deck:false} on any problem.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { authorizedShare } from "./lib/share.js";
 import { artifactKey } from "./lib/limits.js";
 
 const enc = encodeURIComponent;
@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     }
     // Shared viewer: artifacts belong to the report OWNER, keyed by the meeting id.
     if (!userId && body.shareToken) {
-      const r = await resolveShareToken(body.shareToken);
+      const r = await authorizedShare(req, body.shareToken, { meetingId });
       if (r && r.meeting) { meetingId = r.meeting.id; userId = r.meeting.user_id; }
     }
     if (!userId || !meetingId) return res.status(200).json({ doc: false, deck: false });

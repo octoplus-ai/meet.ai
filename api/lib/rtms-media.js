@@ -1,9 +1,10 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { sb } from './supa.js';
 import { parseCookies } from './session.js';
-import { resolveShareToken } from './share.js';
+import { authorizedShare, resolveShareToken } from './share.js';
+export { shareProof as rtmsShareProof, validShareProof as validRtmsShareProof } from './share-proof.js';
 
 const enc = encodeURIComponent;
 const ID = /^[a-f0-9-]{36}$/i;
@@ -23,26 +24,6 @@ export function serializeRtmsMedia(meeting, share) {
   const local = kind => rtmsMediaReference(meeting, kind) ? `/api/zoom/media?meetingId=${enc(meeting.id)}&kind=${kind}${share ? `&share=${enc(share)}` : ''}` : null;
   return { ...meeting, recording_url: local('recording'), cover_url: local('cover') };
 }
-function shareKey(env) {
-  const key = Buffer.from(env.ZOOM_TOKEN_ENCRYPTION_KEY || '', 'base64');
-  if (key.length !== 32) throw failure(503, 'zoom_not_configured');
-  return key;
-}
-// Existing legacy cookies contain the literal "1". RTMS media never trusts that value.
-export function rtmsShareProof(token, email, { env = process.env, now = Date.now() } = {}) {
-  const expiry = Math.floor(now / 1000) + 86400;
-  const mac = createHmac('sha256', shareKey(env)).update(`rtms-share\0${token}\0${String(email).toLowerCase()}\0${expiry}`).digest('base64url');
-  return `${expiry}.${mac}`;
-}
-export function validRtmsShareProof(value, token, email, { env = process.env, now = Date.now() } = {}) {
-  if (typeof value !== 'string' || !/^\d{10}\.[A-Za-z0-9_-]{43}$/.test(value)) return false;
-  const [expiry, signature] = value.split('.');
-  if (Number(expiry) <= now / 1000 || Number(expiry) > now / 1000 + 86401) return false;
-  try {
-    const expected = createHmac('sha256', shareKey(env)).update(`rtms-share\0${token}\0${String(email).toLowerCase()}\0${expiry}`).digest();
-    const actual = Buffer.from(signature, 'base64url'); return expected.length === actual.length && timingSafeEqual(expected, actual);
-  } catch { return false; }
-}
 export async function authorizedRtmsMedia(req, meetingId, share, { database = sb, resolveShare = resolveShareToken } = {}) {
   if (!ID.test(meetingId || '') || (share && !/^[A-Za-z0-9_-]{24,128}$/.test(share))) return null;
   const cookies = parseCookies(req);
@@ -52,12 +33,7 @@ export async function authorizedRtmsMedia(req, meetingId, share, { database = sb
     if (sessions?.[0]) meeting = (await database(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${enc(sessions[0].user_id)}&capture_mode=eq.zoom_rtms&select=*&limit=1`))?.[0];
   }
   if (!meeting && share) {
-    const shared = await resolveShare(share);
-    if (shared?.meeting.id === meetingId && (!shared.email || validRtmsShareProof(cookies[`om_v_${share}`], share, shared.email))) meeting = shared.meeting;
-    if (!meeting && !shared) {
-      const rows = await database(`meetings?id=eq.${enc(meetingId)}&share_token=eq.${enc(share)}&capture_mode=eq.zoom_rtms&select=*&limit=1`);
-      if (rows?.[0] && rows[0].link_access !== 'restricted') meeting = rows[0];
-    }
+    meeting = (await authorizedShare(req, share, { meetingId, database, resolveShare }))?.meeting;
   }
   return meeting?.capture_mode === 'zoom_rtms' && meeting.status !== 'skipped' && !meeting.stage_info?.deletion ? meeting : null;
 }

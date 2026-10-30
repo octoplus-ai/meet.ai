@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Writable } from 'node:stream';
 import { authorizedLegacyMedia, legacyMediaKey, serializeLegacyMedia, signedLegacyMediaUrl, streamLegacyMedia } from '../api/lib/legacy-media.js';
 import mediaHandler from '../api/media/access.js';
+import { shareProof } from '../api/lib/share-proof.js';
 
 const env = { R2_ACCOUNT_ID: 'a'.repeat(32), R2_BUCKET: 'legacy-recordings', R2_PRIVATE_BUCKET: 'private-rtms',
   R2_LEGACY_ACCESS_KEY_ID: 'legacy-fixture-access', R2_LEGACY_SECRET_ACCESS_KEY: 'legacy-fixture-secret',
@@ -81,7 +82,10 @@ test('media authorization requires an active owner session scoped to this meetin
   }
 });
 
-test('shared playback honors public/restricted and per-person verification, revocation and meeting identity', async () => {
+test('shared playback honors public/restricted and per-person verification, revocation and meeting identity', async (t) => {
+  const prior = process.env.BOT_INGEST_SECRET;
+  process.env.BOT_INGEST_SECRET = 'legacy-proof-fixture-secret'.repeat(2);
+  t.after(() => { if (prior === undefined) delete process.env.BOT_INGEST_SECRET; else process.env.BOT_INGEST_SECRET = prior; });
   const noShare = async () => null;
   const publicDatabase = async path => path.includes(`share_token=eq.${share}`) ? [meeting({ link_access: 'public' })] : [];
   assert.equal((await authorizedLegacyMedia(request(), id, share, { database: publicDatabase, resolveShare: noShare })).id, id);
@@ -89,7 +93,8 @@ test('shared playback honors public/restricted and per-person verification, revo
   const resolveShare = async () => ({ meeting: meeting(), email: 'viewer@example.invalid' });
   const database = async () => [];
   assert.equal(await authorizedLegacyMedia(request(), id, share, { database, resolveShare }), null);
-  const verified = request({ headers: { cookie: `om_v_${share}=1` } });
+  assert.equal(await authorizedLegacyMedia(request({ headers: { cookie: `om_v_${share}=1` } }), id, share, { database, resolveShare }), null);
+  const verified = request({ headers: { cookie: `om_v_${share}=${shareProof(share, 'viewer@example.invalid')}` } });
   assert.equal((await authorizedLegacyMedia(verified, id, share, { database, resolveShare })).id, id);
   assert.equal(await authorizedLegacyMedia(verified, id, share, { database, resolveShare: noShare }), null);
   assert.equal(await authorizedLegacyMedia(verified, other, share, { database, resolveShare }), null);

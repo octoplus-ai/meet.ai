@@ -3,6 +3,8 @@
 // Merged into TR at load; any missing key falls back to EN via t()/tr().
 export const EXTRA_LANGS = {
   "pt": {
+    "failedCapturesTitle": "Reuniões que não puderam ser concluídas",
+    "noFailedCapturesMatch": "Nenhuma reunião com falha corresponde aos filtros selecionados.",
     "audioTranslation": "Tradução de áudio",
     "translatingAudio": "Traduzindo áudio para",
     "dubKeepsVoices": "Vozes de IA, mantém cada participante",
@@ -306,6 +308,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Cor de destaque"
   },
   "fr": {
+    "failedCapturesTitle": "Réunions qui n’ont pas pu être terminées",
+    "noFailedCapturesMatch": "Aucune réunion ayant échoué ne correspond aux filtres sélectionnés.",
     "audioTranslation": "Traduction audio",
     "translatingAudio": "Traduction de l'audio vers",
     "dubKeepsVoices": "Voix IA, conserve chaque intervenant",
@@ -609,6 +613,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Couleur d'accent"
   },
   "hi": {
+    "failedCapturesTitle": "वे मीटिंग जो पूरी नहीं हो सकीं",
+    "noFailedCapturesMatch": "चुने गए फ़िल्टर से मेल खाने वाली कोई असफल मीटिंग नहीं है।",
     "audioTranslation": "ऑडियो अनुवाद",
     "translatingAudio": "ऑडियो का अनुवाद इसमें",
     "dubKeepsVoices": "AI आवाज़ें, हर वक्ता को बनाए रखती हैं",
@@ -912,6 +918,8 @@ export const EXTRA_LANGS = {
     "accentColor": "एक्सेंट रंग"
   },
   "it": {
+    "failedCapturesTitle": "Riunioni che non è stato possibile completare",
+    "noFailedCapturesMatch": "Nessuna riunione non riuscita corrisponde ai filtri selezionati.",
     "audioTranslation": "Traduzione audio",
     "translatingAudio": "Traduzione audio in",
     "dubKeepsVoices": "Voci AI, mantiene ogni interlocutore",
@@ -1215,6 +1223,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Colore d'accento"
   },
   "ru": {
+    "failedCapturesTitle": "Встречи, которые не удалось завершить",
+    "noFailedCapturesMatch": "Нет неудавшихся встреч, соответствующих выбранным фильтрам.",
     "audioTranslation": "Перевод аудио",
     "translatingAudio": "Перевод аудио на",
     "dubKeepsVoices": "ИИ-голоса, сохраняет голос каждого спикера",
@@ -1518,6 +1528,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Акцентный цвет"
   },
   "de": {
+    "failedCapturesTitle": "Besprechungen, die nicht abgeschlossen werden konnten",
+    "noFailedCapturesMatch": "Keine fehlgeschlagenen Besprechungen entsprechen den ausgewählten Filtern.",
     "audioTranslation": "Audioübersetzung",
     "translatingAudio": "Audio wird übersetzt nach",
     "dubKeepsVoices": "KI-Stimmen, behält jeden Sprecher bei",
@@ -1821,6 +1833,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Akzentfarbe"
   },
   "zh": {
+    "failedCapturesTitle": "未能完成的会议",
+    "noFailedCapturesMatch": "没有符合所选筛选条件的失败会议。",
     "audioTranslation": "音频翻译",
     "translatingAudio": "正在将音频翻译为",
     "dubKeepsVoices": "AI 配音,保留每位发言人",
@@ -2124,6 +2138,8 @@ export const EXTRA_LANGS = {
     "accentColor": "强调色"
   },
   "ja": {
+    "failedCapturesTitle": "完了できなかった会議",
+    "noFailedCapturesMatch": "選択したフィルターに一致する失敗した会議はありません。",
     "audioTranslation": "音声翻訳",
     "translatingAudio": "音声を次の言語に翻訳中",
     "dubKeepsVoices": "AI音声。各話者の声を維持します",
@@ -2427,6 +2443,8 @@ export const EXTRA_LANGS = {
     "accentColor": "アクセント色"
   },
   "nl": {
+    "failedCapturesTitle": "Vergaderingen die niet konden worden voltooid",
+    "noFailedCapturesMatch": "Geen mislukte vergaderingen komen overeen met de geselecteerde filters.",
     "audioTranslation": "Audiovertaling",
     "translatingAudio": "Audio vertalen naar",
     "dubKeepsVoices": "AI-stemmen, behoudt elke spreker",
@@ -2730,6 +2748,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Accentkleur"
   },
   "da": {
+    "failedCapturesTitle": "Møder, der ikke kunne gennemføres",
+    "noFailedCapturesMatch": "Ingen mislykkede møder matcher de valgte filtre.",
     "audioTranslation": "Lydoversættelse",
     "translatingAudio": "Oversætter lyd til",
     "dubKeepsVoices": "AI-stemmer, bevarer hver taler",
@@ -3033,6 +3053,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Accentfarve"
   },
   "fi": {
+    "failedCapturesTitle": "Kokoukset, joita ei voitu saattaa loppuun",
+    "noFailedCapturesMatch": "Yksikään epäonnistunut kokous ei vastaa valittuja suodattimia.",
     "audioTranslation": "Äänen käännös",
     "translatingAudio": "Käännetään ääntä kielelle",
     "dubKeepsVoices": "Tekoälyäänet, säilyttää jokaisen puhujan",
@@ -3336,6 +3358,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Korostusväri"
   },
   "sv": {
+    "failedCapturesTitle": "Möten som inte kunde slutföras",
+    "noFailedCapturesMatch": "Inga misslyckade möten matchar de valda filtren.",
     "audioTranslation": "Ljudöversättning",
     "translatingAudio": "Översätter ljud till",
     "dubKeepsVoices": "AI-röster, behåller varje talare",
@@ -3639,6 +3663,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Accentfärg"
   },
   "no": {
+    "failedCapturesTitle": "Møter som ikke kunne fullføres",
+    "noFailedCapturesMatch": "Ingen mislykkede møter samsvarer med de valgte filtrene.",
     "audioTranslation": "Lydoversettelse",
     "translatingAudio": "Oversetter lyd til",
     "dubKeepsVoices": "AI-stemmer, beholder hver taler",
@@ -3942,6 +3968,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Aksentfarge"
   },
   "ca": {
+    "failedCapturesTitle": "Reunions que no s’han pogut completar",
+    "noFailedCapturesMatch": "Cap reunió fallida coincideix amb els filtres seleccionats.",
     "audioTranslation": "Traducció d'àudio",
     "translatingAudio": "S'està traduint l'àudio a",
     "dubKeepsVoices": "Veus d'IA, mantenen cada parlant",
@@ -4245,6 +4273,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Color d'accent"
   },
   "ko": {
+    "failedCapturesTitle": "완료하지 못한 회의",
+    "noFailedCapturesMatch": "선택한 필터와 일치하는 실패한 회의가 없습니다.",
     "audioTranslation": "오디오 번역",
     "translatingAudio": "오디오 번역 대상 언어",
     "dubKeepsVoices": "AI 음성, 화자별 목소리 유지",
@@ -4548,6 +4578,8 @@ export const EXTRA_LANGS = {
     "accentColor": "강조색"
   },
   "pl": {
+    "failedCapturesTitle": "Spotkania, których nie udało się ukończyć",
+    "noFailedCapturesMatch": "Żadne nieudane spotkania nie pasują do wybranych filtrów.",
     "audioTranslation": "Tłumaczenie dźwięku",
     "translatingAudio": "Tłumaczenie dźwięku na",
     "dubKeepsVoices": "Głosy AI, zachowuje każdego mówcę",
@@ -4851,6 +4883,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Kolor akcentu"
   },
   "uk": {
+    "failedCapturesTitle": "Зустрічі, які не вдалося завершити",
+    "noFailedCapturesMatch": "Немає невдалих зустрічей, що відповідають вибраним фільтрам.",
     "audioTranslation": "Переклад аудіо",
     "translatingAudio": "Переклад аудіо на",
     "dubKeepsVoices": "Голоси ШІ, зберігає кожного мовця",
@@ -5154,6 +5188,8 @@ export const EXTRA_LANGS = {
     "accentColor": "Акцентний колір"
   },
   "he": {
+    "failedCapturesTitle": "פגישות שלא ניתן היה להשלים",
+    "noFailedCapturesMatch": "אין פגישות שנכשלו ותואמות למסננים שנבחרו.",
     "audioTranslation": "תרגום אודיו",
     "translatingAudio": "מתרגם אודיו ל",
     "dubKeepsVoices": "קולות AI, שומר על כל דובר",

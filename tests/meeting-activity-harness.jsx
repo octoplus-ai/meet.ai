@@ -12,18 +12,18 @@ const fixtures = [
   meeting("join-failed", "OctoMeet 11:50", "error", { error: "JOIN_REQUEST_NOT_REGISTERED" }),
   meeting("saved", "Recording saved without report", "error", { error: "RECORDING_FAILED", savedRecording: "/api/media/fixture.mp4" }),
   meeting("private", "Provider unavailable", "error", { error: "private-token-fixture https://fixture.invalid/?secret=fixture" }),
-  meeting("more", "Older failed meeting", "error", { at: now - 86400000, error: "ADMISSION_TIMEOUT" }),
+  meeting("more", "Older failed meeting", "error", { source: "Google Meet", at: now - 86400000, error: "ADMISSION_TIMEOUT" }),
   meeting("processing", "Processing meeting fixture", "processing", { savedRecording: "/api/media/processing-fixture.mp4" }),
   meeting("done", "Completed report fixture", "done"),
 ];
 window.activityOpened = [];
 window.activityRefreshes = 0;
 function Harness() {
-  const [meetings, setMeetings] = useState(fixtures);
+  const [meetings, setMeetings] = useState(() => new URLSearchParams(location.search).has("onlyFailures") ? fixtures.filter(meeting => meeting.status === "error") : fixtures);
   return <main className="calendar-fixture">
     <p className="fixture-note">Reports regression fixture · synthetic data · offline utility CSS, not production Tailwind</p>
     <button className="fixture-note" onClick={() => setMeetings(fixtures.map(m => m.status === "processing" ? { ...m, syncedAt: now - 31 * 60000 } : m))}>Load delayed fixture</button>
-    <ReportsList meetings={meetings} t={key => ({ reportsTab: "Reports", allReports: "All Reports", source: "Source", folder: "Folder", anytime: "Anytime", upload: "Upload", autoShareParticipants: "Auto-share with participants" }[key] || key)}
+    <ReportsList meetings={meetings} t={key => ({ reportsTab: "Reports", allReports: "All Reports", source: "Source", folder: "Folder", type: "Type", anytime: "Anytime", upload: "Upload", autoShareParticipants: "Auto-share with participants" }[key] || key)}
       onOpen={id => window.activityOpened.push(id)} onRefresh={() => window.activityRefreshes++} onAsk={() => {}} onUpload={() => {}} />
   </main>;
 }

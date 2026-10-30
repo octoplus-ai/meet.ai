@@ -2,7 +2,7 @@
 // Allowed for the Owner (session) OR an Editor (valid Editor share token). Viewers/none -> reject.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { authorizedShare } from "./lib/share.js";
 
 const ALLOWED = new Set(["summary", "next_steps", "topics", "action_items", "key_questions", "highlights", "chapters"]);
 
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
       }
     }
     if (!allowed && body.shareToken) {
-      const r = await resolveShareToken(body.shareToken);
+      const r = await authorizedShare(req, body.shareToken, { meetingId: body.meetingId, minRole: 'Editor' });
       if (r && r.role === "Editor" && r.meeting.id === body.meetingId) allowed = true;
     }
     if (!allowed) return res.status(403).json({ error: "not authorized" });

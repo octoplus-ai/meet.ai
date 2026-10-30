@@ -125,3 +125,11 @@ test("old processing is labeled delayed without turning it into a failed or comp
   assert.equal(delayedProcessingCount(rows, now), 1);
   assert.equal(rows[0].status, "processing");
 });
+
+test('stalled report processing explains the actual stage without claiming an admission failure', () => {
+  assert.match(captureFailureMessage('PROCESSING_STALLED'), /report did not finish processing/);
+  assert.match(captureFailureMessage('PROCESSING_STALLED', { lang: 'es' }), /informe no terminó de procesarse/);
+  assert.doesNotMatch(captureFailureMessage('PROCESSING_STALLED'), /permissions|admitted|waiting room/);
+  assert.match(captureFailureMessage('PROCESSING_STALLED', { hasRecording: true }), /recording is saved/);
+  assert.doesNotMatch(captureFailureMessage('PROCESSING_STALLED: private-diagnostic'), /private-diagnostic/);
+});

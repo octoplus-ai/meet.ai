@@ -2,6 +2,7 @@
 // app's <video> points here (?botId=...&kind=video) and we 302 to a fresh URL on each load.
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
+import { authorizedShare } from "../lib/share.js";
 import { getBot, videoUrl } from "../lib/recall.js";
 
 export default async function handler(req, res) {
@@ -23,21 +24,14 @@ export default async function handler(req, res) {
       }
     }
     if (!ok && share) {
-      // anyone-with-link token (meeting-level)...
-      let m = await sb(`meetings?bot_id=eq.${encodeURIComponent(botId)}&share_token=eq.${encodeURIComponent(share)}&select=id`);
-      if (m.length) ok = true;
-      else {
-        // ...or a per-person token inside the meeting's shares jsonb (the role links).
-        m = await sb(`meetings?bot_id=eq.${encodeURIComponent(botId)}&shares=cs.${encodeURIComponent(JSON.stringify([{ token: share }]))}&select=id`);
-        if (m.length) ok = true;
-      }
+      ok = !!(await authorizedShare(req, share, { botId }));
     }
     if (!ok) return res.status(401).json({ error: "not authenticated" });
 
     const bot = await getBot(botId);
     const url = bot ? videoUrl(bot) : null;
     if (!url) return res.status(404).json({ error: "no recording yet" });
-    res.setHeader("Cache-Control", "private, max-age=600");
+    res.setHeader("Cache-Control", "private, no-store");
     res.redirect(302, url);
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });

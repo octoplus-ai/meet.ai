@@ -1,9 +1,10 @@
 // Pre-translate subtitle lines for a report and cache them in reports.subtitles jsonb,
 // so subtitles are instant (already there) before the viewer turns them on.
-// POST { meetingId, lang, texts:[...], shareToken? }. Owner (session) or any valid share token.
+// POST { meetingId, lang, texts:[...], shareToken? }. Owner or authenticated shared recipient.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
+import { authorizedShare, isRtmsDeleting } from "./lib/share.js";
+import { subtitleTexts } from "./lib/subtitle-source.js";
 
 export const config = { maxDuration: 60 }; // DeepL/Haiku translation of many subtitle lines
 
@@ -52,28 +53,29 @@ async function haikuTranslate(texts, lang) {
   try { const lines = JSON.parse(outT.slice(outT.indexOf("["), outT.lastIndexOf("]") + 1)); return Array.isArray(lines) && lines.length ? lines.map((x) => String(x == null ? "" : x).replace(/[—–]/g, "-")) : null; } catch (e) { return null; }
 }
 
-async function canAccess(req, meetingId, shareToken) {
+async function accessibleMeeting(req, meetingId, shareToken) {
   const t = parseCookies(req).om_session;
   if (t) {
     const s = await sb(`sessions?token=eq.${enc(t)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);
-    if (s.length) { const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${s[0].user_id}&select=id,capture_mode,stage_info`); if (m.length && !isRtmsDeleting(m[0])) return true; }
+    if (s.length) { const m = await sb(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${s[0].user_id}&select=*,reports(*)`); if (m.length && !isRtmsDeleting(m[0])) return m[0]; }
   }
   if (shareToken) {
-    const r = await resolveShareToken(shareToken);
-    if (r && r.meeting.id === meetingId) return true;
-    const m = await sb(`meetings?share_token=eq.${enc(shareToken)}&id=eq.${enc(meetingId)}&select=id,capture_mode,stage_info`);
-    if (m.length && !isRtmsDeleting(m[0])) return true;
+    return (await authorizedShare(req, shareToken, { meetingId }))?.meeting || null;
   }
-  return false;
+  return null;
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const { meetingId, lang, texts } = body;
-    if (!meetingId || !lang || !Array.isArray(texts) || !texts.length) return res.status(400).json({ error: "bad request" });
-    if (!(await canAccess(req, meetingId, body.shareToken))) return res.status(403).json({ error: "not authorized" });
+    const { meetingId, lang } = body;
+    if (!meetingId || !Object.hasOwn(DEEPL_MAP, lang) || !Array.isArray(body.texts) || !body.texts.length || body.texts.length > 12000 || body.texts.some(text => typeof text !== 'string')) return res.status(400).json({ error: "bad request" });
+    const meeting = await accessibleMeeting(req, meetingId, body.shareToken);
+    if (!meeting) return res.status(403).json({ error: "not authorized" });
+    const report = (Array.isArray(meeting.reports) ? meeting.reports[0] : meeting.reports) || {};
+    const texts = subtitleTexts(report.transcript);
+    if (!texts.length || texts.length !== body.texts.length || texts.some((text, index) => text !== body.texts[index]) || JSON.stringify(texts).length > 120000) return res.status(400).json({ error: "transcript_mismatch" });
 
     const rep = await sb(`reports?meeting_id=eq.${enc(meetingId)}&select=subtitles`);
     const subs = (rep[0] && rep[0].subtitles && typeof rep[0].subtitles === "object") ? rep[0].subtitles : {};

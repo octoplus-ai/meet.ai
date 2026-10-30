@@ -2,6 +2,8 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 const originalFetch = globalThis.fetch, previousEnv = { ...process.env };
 process.env.ANTHROPIC_API_KEY = 'offline-fixture';
+process.env.APP_URL = 'https://app.example.test';
+process.env.ZOOM_APP_ORIGINS = 'https://app.example.test';
 const { default: pretranslate } = await import('../api/pretranslate.js');
 const { default: reprocess } = await import('../api/reprocess-stale.js');
 const { default: followup } = await import('../api/followup.js');
@@ -13,8 +15,8 @@ function fixture(mode) {
   const providerCalls = [], databaseCalls = [];
   const row = { id, user_id: owner, capture_mode: mode === 'legacy' ? 'inhouse_bot' : 'zoom_rtms',
     stage_info: mode === 'deleting' ? { deletion: 'requested' } : {}, status: 'done', title: 'Fixture meeting',
-    cover_url: `r2:private/${owner}/${id}/cover.jpg`, shares: [],
-    reports: { summary: 'Fixture discussion', report_version: mode === 'deleting' ? 0 : 99 } };
+    cover_url: `r2:private/${owner}/${id}/cover.jpg`, shares: [], link_access: 'public',
+    reports: { summary: 'Fixture discussion', transcript: 'Original', report_version: mode === 'deleting' ? 0 : 99 } };
   globalThis.fetch = async (url, options = {}) => {
     const address = String(url);
     if (address.includes('/rest/v1/')) {
@@ -22,7 +24,7 @@ function fixture(mode) {
       if (path.startsWith('sessions?')) return Response.json([{ user_id: owner }]);
       if (path.startsWith('meetings?shares=')) return Response.json([]);
       if (path.startsWith('meetings?')) return Response.json([row]);
-      if (path.startsWith('reports?')) return Response.json([{ subtitles: { es: ['Texto guardado'] } }]);
+      if (path.startsWith('reports?')) return Response.json([{ subtitles: { 'Español (Latinoamérica)': ['Texto guardado'] } }]);
       if (path.startsWith('app_users?email=')) return Response.json([]);
       if (path.startsWith('app_users?')) return Response.json([{ name: 'Fixture owner', email: 'owner@example.invalid', integrations: { webhook: { url: 'https://fixture.example.invalid/hook' } } }]);
       if (path.startsWith('oauth_tokens?')) return Response.json([{ access_token: 'fixture-token', expiry: new Date(Date.now() + 3600000).toISOString() }]);
@@ -41,7 +43,7 @@ const request = (body, cookie = 'om_session=owner') => ({ method: 'POST', header
 test('subtitle owner and public fallback deny deleting RTMS before cached content; active RTMS and legacy remain available', async () => {
   for (const mode of ['deleting', 'active', 'legacy']) for (const cookie of ['om_session=owner', '']) {
     const f = fixture(mode), res = response();
-    await pretranslate(request({ meetingId: id, shareToken: 'public-token', lang: 'es', texts: ['Original'] }, cookie), res);
+    await pretranslate(request({ meetingId: id, shareToken: 'public-token'.padEnd(48, 'x'), lang: 'Español (Latinoamérica)', texts: ['Original'] }, cookie), res);
     assert.equal(res.code, mode === 'deleting' ? 403 : 200);
     assert.equal(f.providerCalls.length, 0);
     if (mode === 'deleting') assert.equal(f.databaseCalls.some(x => x.path.startsWith('reports?')), false);
@@ -51,7 +53,7 @@ test('subtitle owner and public fallback deny deleting RTMS before cached conten
 
 test('automatic reprocessing excludes deletion tombstones before loading stored transcripts', async () => {
   for (const mode of ['deleting', 'active', 'legacy']) {
-    const f = fixture(mode), res = response(); await reprocess(request({}), res);
+    const f = fixture(mode), res = response(); await reprocess({ ...request({}), headers: { cookie: 'om_session=owner', origin: 'https://app.example.test', host: 'app.example.test' } }, res);
     assert.equal(res.code, 200); assert.equal(res.body.updated, 0); assert.equal(res.body.remaining, 0);
     assert.equal(f.providerCalls.length, 0); assert.equal(f.databaseCalls.some(x => x.path.startsWith('reports?')), false);
   }
