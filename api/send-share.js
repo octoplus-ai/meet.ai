@@ -3,7 +3,7 @@
 // role link (?share=<token>). Authorized for the Owner (session) or an Editor (share token).
 import { sb } from "./lib/supa.js";
 import { parseCookies, randomToken } from "./lib/session.js";
-import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
+import { authorizedShare, isRtmsDeleting } from "./lib/share.js";
 import { reportEmail, sendViaGmail, getBotSender } from "./lib/email.js";
 import { getValidToken } from "./lib/google.js";
 
@@ -21,11 +21,11 @@ async function authMeeting(req, meetingId, shareToken) {
     const s = await sb(`sessions?token=eq.${encodeURIComponent(t)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id`);
     if (s.length) {
       const m = await sb(`meetings?id=eq.${encodeURIComponent(meetingId)}&user_id=eq.${s[0].user_id}&select=*,reports(*)`);
-      if (m.length && !isRtmsDeleting(m[0])) { const o = await ownerInfo(s[0].user_id); return { meeting: m[0], ownerId: s[0].user_id, ownerEmail: o.email, sharer: o.name || o.email || "Someone" }; }
+      if (m.length && !isRtmsDeleting(m[0])) { const o = await ownerInfo(s[0].user_id); return { meeting: m[0], ownerId: s[0].user_id, ownerEmail: o.email, sharer: o.name || o.email || "Someone", isOwner: true }; }
     }
   }
   if (shareToken) {
-    const r = await resolveShareToken(shareToken);
+    const r = await authorizedShare(req, shareToken, { meetingId, minRole: 'Editor' });
     if (r && r.role === "Editor" && r.meeting.id === meetingId) { const o = await ownerInfo(r.meeting.user_id); return { meeting: r.meeting, ownerId: r.meeting.user_id, ownerEmail: o.email, sharer: r.email || o.name || "A teammate" }; }
   }
   return null;
@@ -53,11 +53,14 @@ export default async function handler(req, res) {
     const title = m.title || "a meeting report";
     let whenText = "";
     if (m.start_time) { try { whenText = new Date(m.start_time).toLocaleString("en-US", { month: "long", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) {} }
-    const role = body.role === "Editor" ? "Editor" : "Viewer";
+    const role = a.isOwner && body.role === "Editor" ? "Editor" : "Viewer";
 
     // Ensure every recipient has a per-person share entry + token (idempotent), so the email
     // link carries their role. Persist once after building.
     let shares = arr(m.shares);
+    if (!a.isOwner && to.some(email => shares.some(entry => String(entry.email || '').toLowerCase() === email && (entry.revoked || entry.role === 'Editor')))) {
+      return res.status(403).json({ error: "owner only" });
+    }
     const entryFor = (email) => {
       let e = shares.find((s) => (s.email || "").toLowerCase() === email);
       if (!e) { e = { email, role, name: "", token: randomToken(), magic: randomToken() }; shares.push(e); }

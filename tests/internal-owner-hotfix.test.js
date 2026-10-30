@@ -4,17 +4,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
+import { shareProof } from "../api/lib/share-proof.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 Object.assign(process.env, {
   SUPABASE_URL: "https://hotfix-db.test", SUPABASE_SERVICE_ROLE_KEY: "mock-only",
   ANTHROPIC_API_KEY: "mock-only", OPENAI_API_KEY: "",
   APP_INTERNAL_EMAILS: "santiago@octoplusteam.com",
+  BOT_INGEST_SECRET: "share-proof-fixture-secret-for-tests-only",
 });
 const { default: document } = await import(pathToFileURL(path.join(root, "api/document.js")));
 const { default: slides } = await import(pathToFileURL(path.join(root, "api/slides.js")));
 const OWNER = "owner-fixture", FOREIGN = "other-fixture", SHARE = "a".repeat(48);
 const MEETING = { id: "meeting-fixture", user_id: OWNER, title: "Synthetic meeting", shares: [{ token: SHARE, email: "viewer@example.test", role: "Viewer" }], reports: [{ transcript: "Synthetic transcript only" }] };
+const proofCookie = () => `om_v_${SHARE}=${shareProof(SHARE, 'viewer@example.test')}`;
 const json = (data) => new Response(JSON.stringify(data), { headers: { "content-type": "application/json" } });
 const response = () => ({ statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });
 
@@ -49,11 +52,11 @@ function mockNetwork(t, { sessionUid = null, cached = false } = {}) {
 }
 
 for (const [name, handler] of [["document", document], ["slides", slides]]) {
-  test(`${name}: anonymous internal-owner share cannot generate or regenerate`, async (t) => {
+  test(`${name}: verified internal-owner share recipient cannot generate or regenerate`, async (t) => {
     const counts = mockNetwork(t);
     for (const regenerate of [false, true]) {
       const res = response();
-      await handler({ method: "POST", headers: {}, body: { shareToken: SHARE, regenerate, plan: "enterprise", email: "santiago@octoplusteam.com", userId: OWNER } }, res);
+      await handler({ method: "POST", headers: { cookie: proofCookie() }, body: { shareToken: SHARE, regenerate, plan: "enterprise", email: "santiago@octoplusteam.com", userId: OWNER } }, res);
       assert.equal(res.statusCode, 403);
       assert.equal(res.body.error, "owner_required");
     }
@@ -62,14 +65,14 @@ for (const [name, handler] of [["document", document], ["slides", slides]]) {
   test(`${name}: signed-in foreign user cannot spend internal-owner quota via a share`, async (t) => {
     const counts = mockNetwork(t, { sessionUid: FOREIGN });
     const res = response();
-    await handler({ method: "POST", headers: { cookie: "om_session=foreign-fixture" }, body: { meetingId: MEETING.id, shareToken: SHARE, regenerate: true } }, res);
+    await handler({ method: "POST", headers: { cookie: "om_session=foreign-fixture; " + proofCookie() }, body: { meetingId: MEETING.id, shareToken: SHARE, regenerate: true } }, res);
     assert.equal(res.statusCode, 403);
     assert.deepEqual(counts, { provider: 0, quotaLookup: 0, quotaWrite: 0 });
   });
   test(`${name}: an expired owner session plus a share remains unauthorized to generate`, async (t) => {
     const counts = mockNetwork(t);
     const res = response();
-    await handler({ method: "POST", headers: { cookie: "om_session=expired-fixture" }, body: { meetingId: MEETING.id, shareToken: SHARE } }, res);
+    await handler({ method: "POST", headers: { cookie: "om_session=expired-fixture; " + proofCookie() }, body: { meetingId: MEETING.id, shareToken: SHARE } }, res);
     assert.equal(res.statusCode, 403);
     assert.deepEqual(counts, { provider: 0, quotaLookup: 0, quotaWrite: 0 });
   });
@@ -93,7 +96,7 @@ for (const [name, handler] of [["document", document], ["slides", slides]]) {
   test(`${name}: prior shared cache reads remain available without generation`, async (t) => {
     const counts = mockNetwork(t, { cached: true });
     const res = response();
-    await handler({ method: "POST", headers: {}, body: { shareToken: SHARE } }, res);
+    await handler({ method: "POST", headers: { cookie: proofCookie() }, body: { shareToken: SHARE } }, res);
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.cached, true);
     assert.deepEqual(counts, { provider: 0, quotaLookup: 0, quotaWrite: 0 });

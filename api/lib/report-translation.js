@@ -1,8 +1,7 @@
 import crypto from 'node:crypto';
 import { sb } from './supa.js';
 import { parseCookies } from './session.js';
-import { resolveShareToken, isRtmsDeleting } from './share.js';
-import { validRtmsShareProof } from './rtms-media.js';
+import { authorizedShare, resolveShareToken, isRtmsDeleting } from './share.js';
 
 export const REPORT_LANGUAGES = Object.freeze({ en: 'English', es: 'Spanish', pt: 'Portuguese', fr: 'French', hi: 'Hindi', it: 'Italian', ru: 'Russian', de: 'German', zh: 'Chinese', ja: 'Japanese', nl: 'Dutch', da: 'Danish', fi: 'Finnish', sv: 'Swedish', no: 'Norwegian', ca: 'Catalan', ko: 'Korean', pl: 'Polish', uk: 'Ukrainian', he: 'Hebrew' });
 export const TRANSLATION_VERSION = 1;
@@ -15,17 +14,7 @@ const error = (code, status = 502) => Object.assign(new Error(code), { code, sta
 export async function translationMeeting(req, body, { database = sb, resolveShare = resolveShareToken } = {}) {
   const cookies = parseCookies(req);
   if (body.shareToken) {
-    const grant = await resolveShare(body.shareToken);
-    if (grant) {
-      if (grant.meeting?.id !== body.meetingId || isRtmsDeleting(grant.meeting)) return null;
-      const proof = cookies['om_v_' + body.shareToken];
-      if (grant.email && (grant.meeting.capture_mode === 'zoom_rtms'
-        ? !validRtmsShareProof(proof, body.shareToken, grant.email) : proof !== '1')) return null;
-      return grant.meeting;
-    }
-    const rows = await database(`meetings?share_token=eq.${enc(body.shareToken)}&id=eq.${enc(body.meetingId)}&select=*,reports(*)`);
-    const meeting = rows?.[0];
-    return meeting && meeting.id === body.meetingId && meeting.link_access !== 'restricted' && !isRtmsDeleting(meeting) ? meeting : null;
+    return (await authorizedShare(req, body.shareToken, { meetingId: body.meetingId, database, resolveShare }))?.meeting || null;
   }
   if (!cookies.om_session) return null;
   const sessions = await database(`sessions?token=eq.${enc(cookies.om_session)}&expires_at=gt.${enc(new Date().toISOString())}&select=user_id`);

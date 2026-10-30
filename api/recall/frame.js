@@ -2,6 +2,7 @@
 // without tainting it. Forwards Range requests to the fresh S3 URL. Owner session or share token.
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
+import { authorizedShare } from "../lib/share.js";
 import { getBot, videoUrl } from "../lib/recall.js";
 
 const enc = encodeURIComponent;
@@ -18,8 +19,7 @@ export default async function handler(req, res) {
       if (s.length) { const m = await sb(`meetings?bot_id=eq.${enc(botId)}&user_id=eq.${s[0].user_id}&select=id`); if (m.length) ok = true; }
     }
     if (!ok && share) {
-      let m = await sb(`meetings?bot_id=eq.${enc(botId)}&share_token=eq.${enc(share)}&select=id`);
-      if (m.length) ok = true; else { m = await sb(`meetings?bot_id=eq.${enc(botId)}&shares=cs.${enc(JSON.stringify([{ token: share }]))}&select=id`); if (m.length) ok = true; }
+      ok = !!(await authorizedShare(req, share, { botId }));
     }
     if (!ok) { res.statusCode = 401; return res.end(); }
 
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
     res.setHeader("Accept-Ranges", "bytes");
     const ct = upstream.headers.get("content-type"); if (ct) res.setHeader("Content-Type", ct);
     const cr = upstream.headers.get("content-range"); if (cr) res.setHeader("Content-Range", cr);
-    res.setHeader("Cache-Control", "private, max-age=300");
+    res.setHeader("Cache-Control", "private, no-store");
     const buf = Buffer.from(await upstream.arrayBuffer());
     res.end(buf);
   } catch (e) { res.statusCode = 500; res.end(); }

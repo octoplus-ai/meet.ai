@@ -5,8 +5,8 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { sb } from './supa.js';
 import { parseCookies } from './session.js';
-import { resolveShareToken } from './share.js';
-import { MEDIA_CHUNK, rtmsMediaRange, validRtmsShareProof } from './rtms-media.js';
+import { authorizedShare, resolveShareToken } from './share.js';
+import { MEDIA_CHUNK, rtmsMediaRange } from './rtms-media.js';
 
 const enc = encodeURIComponent;
 const ID = /^[a-f0-9-]{36}$/i;
@@ -54,15 +54,7 @@ export async function authorizedLegacyMedia(req, meetingId, share, { database = 
     if (sessions?.[0]) meeting = (await database(`meetings?id=eq.${enc(meetingId)}&user_id=eq.${enc(sessions[0].user_id)}&capture_mode=eq.inhouse_bot&select=*&limit=1`))?.[0];
   }
   if (!meeting && share) {
-    const shared = await resolveShare(share);
-    // Match the existing shared-report verification contract for legacy meetings.
-    // Signed proofs are also accepted so upgraded verification cookies keep working.
-    const proof = cookies[`om_v_${share}`];
-    if (shared?.meeting.id === meetingId && (!shared.email || proof === '1' || validRtmsShareProof(proof, share, shared.email))) meeting = shared.meeting;
-    if (!meeting && !shared) {
-      const rows = await database(`meetings?id=eq.${enc(meetingId)}&share_token=eq.${enc(share)}&capture_mode=eq.inhouse_bot&select=*&limit=1`);
-      if (rows?.[0] && rows[0].link_access !== 'restricted') meeting = rows[0];
-    }
+    meeting = (await authorizedShare(req, share, { meetingId, database, resolveShare }))?.meeting;
   }
   return available(meeting) ? meeting : null;
 }

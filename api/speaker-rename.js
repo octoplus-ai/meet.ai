@@ -3,7 +3,7 @@
 // touched, never quoted mentions inside the dialogue text. Owner or per-person Editor token.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { authorizedShare } from "./lib/share.js";
 
 const enc = encodeURIComponent;
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
       }
     }
     if (!allowed && body.shareToken) {
-      const r = await resolveShareToken(body.shareToken);
+      const r = await authorizedShare(req, body.shareToken, { meetingId, minRole: 'Editor' });
       allowed = !!(r && r.role === "Editor" && r.meeting && r.meeting.id === meetingId);
     }
     if (!allowed) return res.status(403).json({ error: "not allowed" });

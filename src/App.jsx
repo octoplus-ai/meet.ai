@@ -165,7 +165,7 @@ const EXTRA = {
     myReportsOpt: "My reports", ownedOrInvited: "Owned or invited to", recordedByOctomeet: "Recorded by OctoMeet", liveRecordingBanner: "OctoMeet is recording “{title}”{more} - the AI report will appear here automatically.", liveRecMore: " +{n} more",
     processingMeetingBanner: "Processing “{title}”… this updates automatically.", processingMeetingsBanner: "Processing {n} meetings… this updates automatically.",
     delayedProcessingBanner: "“{title}” is taking longer to process than expected. The report is not ready yet.", delayedProcessingMany: "{n} meetings are taking longer to process than expected. Their reports are not ready yet.",
-    failedCapturesTitle: "Meetings that could not be completed", savedRecording: "View saved recording", noCompletedReport: "Report unavailable", showAllFailures: "Show all {n}", showFewerFailures: "Show fewer", refreshBtn: "Refresh", newBadge: "NEW!",
+    failedCapturesTitle: "Meetings that could not be completed", noFailedCapturesMatch: "No failed meetings match the selected filters.", savedRecording: "View saved recording", noCompletedReport: "Report unavailable", showAllFailures: "Show all {n}", showFewerFailures: "Show fewer", refreshBtn: "Refresh", newBadge: "NEW!",
     crmBannerMsg: "Connect your CRM to receive smart recommendations on when to advance your deals to the next stage.", addHubspot: "Add Hubspot", addSalesforce: "Add Salesforce",
     dismiss: "Dismiss", clearFilters: "Clear filters", deselectAll: "Deselect all",
     selectAll2: "Select all", nSelected: "{n} selected", noIncompleteMatch: "No in-progress meetings match “{q}”.",
@@ -276,7 +276,7 @@ const EXTRA = {
     myReportsOpt: "Mis reportes", ownedOrInvited: "Propios o invitado", recordedByOctomeet: "Grabado por OctoMeet", liveRecordingBanner: "OctoMeet está grabando \"{title}\"{more} - el reporte con IA aparecerá acá automáticamente.", liveRecMore: " +{n} más",
     processingMeetingBanner: "Procesando “{title}”… esto se actualiza automáticamente.", processingMeetingsBanner: "Procesando {n} reuniones… esto se actualiza automáticamente.",
     delayedProcessingBanner: "“{title}” está demorando más de lo esperado. El informe todavía no está listo.", delayedProcessingMany: "{n} reuniones están demorando más de lo esperado. Sus informes todavía no están listos.",
-    failedCapturesTitle: "Reuniones que no se pudieron completar", savedRecording: "Ver grabación guardada", noCompletedReport: "Informe no disponible", showAllFailures: "Ver las {n}", showFewerFailures: "Ver menos", refreshBtn: "Actualizar", newBadge: "NUEVO!",
+    failedCapturesTitle: "Reuniones que no se pudieron completar", noFailedCapturesMatch: "No hay reuniones fallidas que coincidan con los filtros seleccionados.", savedRecording: "Ver grabación guardada", noCompletedReport: "Informe no disponible", showAllFailures: "Ver las {n}", showFewerFailures: "Ver menos", refreshBtn: "Actualizar", newBadge: "NUEVO!",
     crmBannerMsg: "Conectá tu CRM para recibir recomendaciones inteligentes sobre cuándo avanzar tus oportunidades a la siguiente etapa.", addHubspot: "Agregar HubSpot", addSalesforce: "Agregar Salesforce",
     dismiss: "Descartar", clearFilters: "Limpiar filtros", deselectAll: "Deseleccionar todo",
     selectAll2: "Seleccionar todo", nSelected: "{n} seleccionados", noIncompleteMatch: "No hay reuniones en progreso que coincidan con \"{q}\".",
@@ -1329,13 +1329,19 @@ export default function App() {
   // Retro-apply analysis improvements to ALL past meetings: re-analyze any report whose
   // version is behind, from its stored transcript (no re-recording). Loops until caught up.
   const catchUpStale = useCallback(async () => {
+    // Recover at most one missing Recall report on load. The POST and webhook
+    // share a durable lease/cooldown; GET /meetings only reads/reconciles evidence.
+    try {
+      const recovery = await fetch('/api/recall/reprocess', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (recovery.ok && (await recovery.json()).processed > 0) loadReal();
+    } catch (e) { /* A later load or provider webhook can retry within the server budget. */ }
     try {
       for (let i = 0; i < 12; i++) {
         const r = await fetch("/api/reprocess-stale", { method: "POST", cache: "no-store" });
         if (!r.ok) break;
         const d = await r.json();
         if (d.updated > 0) loadReal();
-        if (!d.remaining) break;
+        if (!d.remaining || !d.updated || d.pending || d.failed) break;
       }
     } catch (e) { /* best-effort */ }
   }, [loadReal]);
@@ -1708,21 +1714,25 @@ function FilterBtn({ label, icon: Icon, onClick }) {
   );
 }
 // Working filter dropdown used in Reports.
-function FilterDropdown({ label, icon: Icon, value, onChange, options }) {
+function FilterDropdown({ label, icon: Icon, value, onChange, options, constrain = false }) {
   const [open, setOpen] = useState(false);
+  const [menuOffset, setMenuOffset] = useState(0);
   const active = value && value !== "all";
   const cur = options.find((o) => o.value === value);
   return (
-    <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (active ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
-        {Icon && <Icon size={14} className={active ? "text-violet-500" : "text-slate-400"} />}{active ? cur?.label : label}<ChevronDown size={14} className={active ? "text-violet-400" : "text-slate-400"} />
+    <div className={"relative " + (constrain ? "min-w-0 max-w-full" : "")}>
+      <button onClick={event => {
+        if (constrain && !open) setMenuOffset(Math.min(0, window.innerWidth - 24 - event.currentTarget.getBoundingClientRect().left - Math.min(256, window.innerWidth - 48)));
+        setOpen(value => !value);
+      }} aria-expanded={open} className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition " + (constrain ? "min-h-11 max-w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600 " : "") + (active ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+        {Icon && <Icon size={14} className={active ? "text-violet-500" : "text-slate-400"} />}<span className={constrain ? "min-w-0 truncate" : undefined}>{active ? cur?.label : label}</span><ChevronDown size={14} className={"shrink-0 " + (active ? "text-violet-400" : "text-slate-400")} />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 z-20 mt-1 max-h-72 min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+          <div style={constrain ? { left: menuOffset } : undefined} className={"absolute left-0 z-20 mt-1 max-h-72 min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg " + (constrain ? "w-64 max-w-[calc(100vw-3rem)]" : "")}>
             {options.map((o) => (
-              <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} className={"flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 " + (o.value === value ? "text-violet-700" : "text-slate-600")}>
+              <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }} className={"flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 " + (constrain ? "min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600 " : "") + (o.value === value ? "text-violet-700" : "text-slate-600")}>
                 <span className="min-w-0"><span className={"block text-[13px] " + (o.value === value ? "font-semibold" : "")}>{o.label}</span>{o.sub && <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{o.sub}</span>}</span>{o.value === value && <Check size={14} className="shrink-0 text-violet-600" />}
               </button>
             ))}
@@ -2184,7 +2194,6 @@ function ParticipantsCell({ meeting, emailBook }) {
 export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload, onAsk, t, onRefresh, folderFilter, onClearFolder, user, onRename, onDelete }) {
   const [q, setQ] = useState("");
   const [ask, setAsk] = useState("");
-  const [tab, setTab] = useState("reports");
   const [showCrm, setShowCrm] = useState(true);
   const [showAllFailures, setShowAllFailures] = useState(false);
   const [renaming, setRenaming] = useState(null);   // meeting being renamed
@@ -2265,7 +2274,8 @@ export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload,
   const INCOMPLETE = ["scheduled", "joining", "in_call", "recording", "processing"];
   const sourceOpts = useMemo(() => [{ value: "all", label: tr("allSources") }, ...[...new Set(meetings.map((m) => m.source).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
   const folderOpts = useMemo(() => [{ value: "all", label: tr("allFoldersOpt") }, ...[...new Set(meetings.flatMap((m) => m.folders || (m.folder ? [m.folder] : [])).filter(Boolean))].map((s) => ({ value: s, label: s }))], [meetings]);
-  const typeOpts = [{ value: "all", label: tr("allTypes2") }, { value: "completed", label: tr("completed2") }, { value: "processing", label: tr("inProgress") }];
+  const typeOpts = [{ value: "all", label: tr("allTypes2") }, { value: "completed", label: tr("completed2") }, { value: "processing", label: tr("inProgress") }, { value: "failed", label: tr("failedCapturesTitle") }];
+  const changeType = value => { setFType(value); setShowAllFailures(false); setSel(new Set()); setShowAnalytics(false); };
   const dateOpts = [{ value: "all", label: tr("anytimeOpt") }, { value: "today", label: tr("todayOpt") }, { value: "last7", label: "Last 7 days" }, { value: "last30", label: "Last 30 days" }, { value: "last90", label: "Last 90 days" }, { value: "last6mo", label: "Last 6 months" }, { value: "last12mo", label: "Last 12 months" }];
   const ownerOpts = [{ value: "all", label: tr("allReportsOpt") }, { value: "mine", label: tr("myReportsOpt"), sub: tr("ownedOrInvited") }, { value: "real", label: tr("recordedByOctomeet") }];
 
@@ -2292,9 +2302,9 @@ export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload,
       .sort((a, b) => (sortDir === "asc" ? whenMs(a) - whenMs(b) : whenMs(b) - whenMs(a))),
     [meetings, q, folderFilter, fOwner, fDate, fRange, fSource, fFolder, sortDir]
   );
-  const filtered = useMemo(() => matchingMeetings.filter((m) => tab === "incomplete"
-    ? m.real && INCOMPLETE.includes(m.status) : !m.real || m.status === "done"), [matchingMeetings, tab]);
-  const failed = useMemo(() => failedCaptures(matchingMeetings), [matchingMeetings]);
+  const filtered = useMemo(() => fType === "failed" ? [] : matchingMeetings.filter((m) => fType === "processing"
+    ? m.real && INCOMPLETE.includes(m.status) : !m.real || m.status === "done"), [matchingMeetings, fType]);
+  const failed = useMemo(() => fType === "failed" ? failedCaptures(matchingMeetings) : [], [matchingMeetings, fType]);
   const groups = useMemo(() => {
     const order = ["TODAY", "THIS WEEK", "THIS MONTH", "EARLIER"];
     const by = {};
@@ -2391,7 +2401,7 @@ export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload,
                 <button onClick={onRefresh} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600"><RefreshCw size={12} /> {tr("refreshBtn")}</button>
               </div>
             )}
-            {tab === "reports" && showCrm && (
+            {fType !== "processing" && fType !== "failed" && showCrm && (
               <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-100 bg-gradient-to-r from-cyan-50 to-violet-50 px-4 py-3">
                 <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">✨ {tr("newBadge")}</span>
                 <span className="flex-1 text-sm text-slate-700">{tr("crmBannerMsg")}</span>
@@ -2414,11 +2424,13 @@ export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload,
               <DateFilterDropdown label={t("anytime")} value={fDate} range={fRange} onChange={(v, r) => { setFDate(v); setFRange(r); }} options={dateOpts} />
               <FilterDropdown label={t("source")} value={fSource} onChange={setFSource} options={sourceOpts} />
               <FilterDropdown label={t("folder")} value={fFolder} onChange={setFFolder} options={folderOpts} />
-              {(fOwner !== "all" || fDate !== "all" || fSource !== "all" || fFolder !== "all") && (
-                <button onClick={() => { setFOwner("all"); setFDate("all"); setFRange(null); setFSource("all"); setFFolder("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">{tr("clearFilters")}</button>
+              <FilterDropdown label={t("type")} value={fType} onChange={changeType} options={typeOpts} constrain />
+              {(fOwner !== "all" || fDate !== "all" || fSource !== "all" || fFolder !== "all" || fType !== "all") && (
+                <button onClick={() => { setFOwner("all"); setFDate("all"); setFRange(null); setFSource("all"); setFFolder("all"); changeType("all"); }} className="text-[12px] font-semibold text-slate-400 hover:text-slate-600">{tr("clearFilters")}</button>
               )}
               <div className="flex-1" />
               {/* Bulk actions: always visible + active-looking. Hover shows a hint until a selection is made. */}
+              {fType !== "failed" && <>
               <div className="group relative">
                 <button onClick={() => (sel.size ? setShowAnalytics((v) => !v) : toast("Select one or more meetings first"))}
                   className={"flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition " + (showAnalytics && sel.size ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50")}><BarChart3 size={14} /> {tr("analytics")}</button>
@@ -2434,11 +2446,12 @@ export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload,
                   className="flex items-center gap-1.5 rounded-lg border border-violet-300 px-3 py-2 text-[13px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-60">{bulkBusy === "deck" ? <Loader2 size={14} className="animate-spin" /> : <Presentation size={14} />} {tr("presentation")}</button>
                 {sel.size === 0 && <span className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg bg-slate-900 px-3 py-2 text-left text-[11.5px] font-normal leading-snug text-white opacity-0 shadow-xl transition group-hover:opacity-100">{tr("selMeetingsPres")}</span>}
               </div>
+              </>}
             </div>
-            {failed.length > 0 && (
-              <section aria-label={tr("failedCapturesTitle")} className="my-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-900"><AlertTriangle size={16} className="shrink-0" />{tr("failedCapturesTitle")} ({failed.length})</h2>
-                <ul className="mt-2 divide-y divide-amber-200">
+            {fType === "failed" && (
+              <section aria-label={tr("failedCapturesTitle")} className="my-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700"><AlertTriangle size={16} className="shrink-0 text-slate-400" />{tr("failedCapturesTitle")} ({failed.length})</h2>
+                {failed.length ? <ul className="mt-2 divide-y divide-slate-200">
                   {(showAllFailures ? failed : failed.slice(0, 3)).map((m) => (
                     <li key={m.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center">
                       <div className="min-w-0 flex-1">
@@ -2449,8 +2462,8 @@ export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload,
                       {m.savedRecording && <a href={m.savedRecording} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-violet-400 hover:text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600"><Play size={15} />{tr("savedRecording")}</a>}
                     </li>
                   ))}
-                </ul>
-                {failed.length > 3 && <button onClick={() => setShowAllFailures(value => !value)} aria-expanded={showAllFailures} className="min-h-11 rounded-lg px-2 py-2 text-sm font-semibold text-amber-900 underline underline-offset-4 hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-700">{showAllFailures ? tr("showFewerFailures") : tf("showAllFailures", { n: failed.length })}</button>}
+                </ul> : <p className="py-8 text-center text-sm text-slate-500">{tr("noFailedCapturesMatch")}</p>}
+                {failed.length > 3 && <button onClick={() => setShowAllFailures(value => !value)} aria-expanded={showAllFailures} className="min-h-11 rounded-lg px-2 py-2 text-sm font-semibold text-slate-600 underline underline-offset-4 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600">{showAllFailures ? tr("showFewerFailures") : tf("showAllFailures", { n: failed.length })}</button>}
               </section>
             )}
             {/* Select all — right under the search/filters row */}
@@ -2464,7 +2477,7 @@ export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload,
               </div>
             )}
 
-            {showAnalytics ? (
+            {fType !== "failed" && (showAnalytics ? (
               <AnalyticsPanel meetings={selectedMeetings} onOpen={onOpen} onClose={() => setShowAnalytics(false)} />
             ) : (
             <div className="mt-4 overflow-hidden">
@@ -2528,9 +2541,9 @@ export function ReportsList({ meetings, pendingDeletions = [], onOpen, onUpload,
                   ))}
                 </div>
               ))}
-              {!filtered.length && <div className="py-16 text-center text-sm text-slate-400">{tab === "incomplete" ? (q ? tf("noIncompleteMatch", { q }) : tr("noMeetingsInProgress")) : (q ? tf("noReportsMatch", { q }) : tr("noReportsYet2"))}</div>}
+              {!filtered.length && <div className="py-16 text-center text-sm text-slate-400">{fType === "processing" ? (q ? tf("noIncompleteMatch", { q }) : tr("noMeetingsInProgress")) : (q ? tf("noReportsMatch", { q }) : tr("noReportsYet2"))}</div>}
             </div>
-            )}
+            ))}
           </>
       </div>
 

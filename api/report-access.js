@@ -4,7 +4,7 @@
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
 import { randomToken } from "./lib/session.js";
-import { resolveShareToken } from "./lib/share.js";
+import { authorizedShare } from "./lib/share.js";
 
 const arr = (x) => (Array.isArray(x) ? x : []);
 // Public projection: NEVER leak a share entry's secret token/magic to a non-owner - otherwise a
@@ -22,7 +22,7 @@ async function authorize(req, meetingId, shareToken) {
     }
   }
   if (shareToken) {
-    const r = await resolveShareToken(shareToken);
+    const r = await authorizedShare(req, shareToken, { meetingId, minRole: 'Editor' });
     if (r && r.role === "Editor" && r.meeting.id === meetingId) return { shares: arr(r.meeting.shares), ownerId: r.meeting.user_id, isOwner: false };
   }
   return null;

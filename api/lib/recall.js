@@ -25,8 +25,10 @@ export const CAPTIONS_PROVIDER = { meeting_captions: {} };
 export async function getBot(botId) {
   const r = await fetch(`${RECALL_BASE}/api/v1/bot/${botId}/`, {
     headers: { Authorization: `Token ${process.env.RECALL_API_KEY}` },
+    signal: AbortSignal.timeout(10000),
   });
-  if (!r.ok) return null;
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('RECALL_PROVIDER_UNAVAILABLE');
   return r.json();
 }
 
@@ -56,10 +58,11 @@ export async function getTranscript(bot) {
   if (!url) return empty;
   let segs;
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) throw new Error('RECALL_TRANSCRIPT_UNAVAILABLE');
     segs = await r.json();
-  } catch { return empty; }
-  if (!Array.isArray(segs)) return empty;
+  } catch { throw new Error('RECALL_TRANSCRIPT_UNAVAILABLE'); }
+  if (!Array.isArray(segs)) throw new Error('RECALL_TRANSCRIPT_UNAVAILABLE');
 
   const lines = [];
   const turns = [];

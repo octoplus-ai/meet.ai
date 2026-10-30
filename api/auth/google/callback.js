@@ -4,6 +4,8 @@
 import { sb } from "../../lib/supa.js";
 import { randomToken } from "../../lib/session.js";
 import { resolveShareToken } from "../../lib/share.js";
+import { shareProofCookie } from "../../lib/share-proof.js";
+import { consumeGoogleOAuthState, clearGoogleOAuthCookie, googleRedirectUri } from '../../lib/google-oauth-state.js';
 
 // Share mode: verify the visitor's Google identity against the per-person share entry and set
 // the same om_v_<token> cookie the OTP flow sets. NO app session, NO allowlist - an invited
@@ -20,7 +22,7 @@ async function handleShare(req, res, shareTok, code, oauthError) {
         code,
         client_id: process.env.GOOGLE_CLIENT_ID || "540014435995-d8rb5g8a9c4rv82vo4dtak9eoh3e2ufi.apps.googleusercontent.com",
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: process.env.GOOGLE_REDIRECT_URI || "https://meet-ai-three-beige.vercel.app/api/auth/google/callback",
+        redirect_uri: googleRedirectUri(),
         grant_type: "authorization_code",
       }),
     }).then((r) => r.json());
@@ -29,7 +31,7 @@ async function handleShare(req, res, shareTok, code, oauthError) {
     const email = String(ui.email || "").toLowerCase();
     const r = await resolveShareToken(shareTok);
     if (!r || !r.email) return back("&gate=1");
-    if (!email || email !== String(r.email).toLowerCase()) return back("&gate=1&wrong=" + encodeURIComponent(email || "?"));
+    if (ui.email_verified !== true || !email || email !== String(r.email).toLowerCase()) return back("&gate=1&wrong=" + encodeURIComponent(email || "?"));
 
     // Enrich the share entry with the real name/photo so the owner's access list shows them.
     try {
@@ -42,10 +44,10 @@ async function handleShare(req, res, shareTok, code, oauthError) {
       }
     } catch (e) {}
 
-    res.setHeader("Set-Cookie", `om_v_${shareTok}=1; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`);
+    res.setHeader("Set-Cookie", [clearGoogleOAuthCookie(), shareProofCookie(shareTok, email)]);
     return back("");
   } catch (e) {
-    console.error("share callback error:", e && (e.message || e));
+    console.error("share callback failed");
     return back("&gate=1");
   }
 }
@@ -55,12 +57,18 @@ async function handleShare(req, res, shareTok, code, oauthError) {
 const ALLOWLIST = ["santiago@octoplusteam.com", (process.env.BOT_SENDER_EMAIL || "octomeetnotetaker@gmail.com").toLowerCase()];
 
 export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }); return res.end(); }
+  // Consume on every callback, including denial and invalid/expired state. A
+  // second callback in this browser must start a fresh authorization flow.
+  res.setHeader('Set-Cookie', clearGoogleOAuthCookie());
   try {
     const q = new URL(req.url, "http://x").searchParams;
     const code = q.get("code");
-    const state = q.get("state") || "";
-    if (state.startsWith("share:")) return handleShare(req, res, state.slice(6), code, q.get("error"));
-    const isAddon = state === "addon";
+    const context = consumeGoogleOAuthState(req, q);
+    if (context.mode === 'share') return handleShare(req, res, context.shareToken, code, q.get("error"));
+    const isAddon = context.mode === 'addon';
     if (!code) throw new Error("missing code");
     if (!process.env.GOOGLE_CLIENT_SECRET) throw new Error("GOOGLE_CLIENT_SECRET no está configurada en Vercel");
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY no está configurada en Vercel");
@@ -73,11 +81,11 @@ export default async function handler(req, res) {
         code,
         client_id: process.env.GOOGLE_CLIENT_ID || "540014435995-d8rb5g8a9c4rv82vo4dtak9eoh3e2ufi.apps.googleusercontent.com",
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: process.env.GOOGLE_REDIRECT_URI || "https://meet-ai-three-beige.vercel.app/api/auth/google/callback",
+        redirect_uri: googleRedirectUri(),
         grant_type: "authorization_code",
       }),
     }).then((r) => r.json());
-    if (!tok.access_token) throw new Error("token exchange failed: " + JSON.stringify(tok));
+    if (!tok.access_token) throw new Error('oauth_exchange_failed');
 
     // Who is this?
     const ui = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
@@ -85,9 +93,8 @@ export default async function handler(req, res) {
     }).then((r) => r.json());
 
     if (ui.email_verified !== true) throw new Error("Google email is not verified");
-    console.log("OAuth login attempt for:", ui.email);
     if (!ALLOWLIST.includes((ui.email || "").toLowerCase())) {
-      res.writeHead(302, { Location: "/?auth_error=" + encodeURIComponent(`Acceso limitado al usuario de prueba. Entraste con ${ui.email || "?"}; usá santiago@octoplusteam.com.`) });
+      res.writeHead(302, { Location: '/?auth_error=account_not_allowed' });
       return res.end();
     }
 
@@ -129,7 +136,7 @@ export default async function handler(req, res) {
       body: { token: t, user_id: user.id, expires_at: new Date(Date.now() + 30 * 864e5).toISOString() },
     });
 
-    res.setHeader("Set-Cookie", `om_session=${t}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`);
+    res.setHeader("Set-Cookie", [clearGoogleOAuthCookie(), `om_session=${t}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`]);
     if (isAddon) {
       // Meet add-on popup: hand the session token back to the add-on panel and close.
       res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -143,8 +150,8 @@ export default async function handler(req, res) {
     res.writeHead(302, { Location: "/" });
     res.end();
   } catch (e) {
-    console.error("OAuth callback error:", e && (e.stack || e.message || e));
-    res.writeHead(302, { Location: "/?auth_error=" + encodeURIComponent(String(e.message || e)) });
+    console.error('OAuth callback failed');
+    res.writeHead(302, { Location: '/?auth_error=' + (e?.message === 'invalid_oauth_state' ? 'oauth_state_invalid' : 'oauth_failed') });
     res.end();
   }
 }

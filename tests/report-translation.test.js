@@ -66,7 +66,8 @@ test('personal shares require the report verification proof and exact meeting sc
   const grant=async()=>({meeting:meeting(),email:'alex@example.invalid'}), none=async()=>[];
   const read=cookie=>translationMeeting(req({headers:{cookie}}),body(),{database:none,resolveShare:grant});
   assert.equal(await read(''),null);
-  assert.equal((await read(`om_v_${token}=1`)).id,ids.meeting);
+  assert.equal(await read(`om_v_${token}=1`),null);
+  assert.equal((await read(`om_v_${token}=${rtmsShareProof(token,'alex@example.invalid')}`)).id,ids.meeting);
   assert.equal(await translationMeeting(req({headers:{cookie:`om_v_${token}=1`}}),{...body(),meetingId:ids.other},{database:none,resolveShare:grant}),null);
   assert.equal(await translationMeeting(req({headers:{cookie:`om_v_${token}=1`}}),body(),{database:none,resolveShare:async()=>null}),null,'revoked token');
   const rtms={...meeting(),capture_mode:'zoom_rtms'};
@@ -80,7 +81,7 @@ test('personal shares require the report verification proof and exact meeting sc
 test('public shares honor restricted/revoked access and owner sessions are scoped', async () => {
   const noShare=async()=>null;
   assert.equal(await translationMeeting(req(),body(),{database:async()=>[meeting()],resolveShare:noShare}),null);
-  assert.equal((await translationMeeting(req(),body(),{database:async()=>[{...meeting(),link_access:'public'}],resolveShare:noShare})).id,ids.meeting);
+  assert.equal((await translationMeeting(req(),body(),{database:async()=>[{...meeting(),shares:[],link_access:'public'}],resolveShare:noShare})).id,ids.meeting);
   const paths=[];
   const database=async path=>{paths.push(path);return path.startsWith('sessions?')?[{user_id:ids.user}]:[meeting()];};
   assert.equal((await translationMeeting(req({headers:{cookie:'om_session=fixture'}}),{meetingId:ids.meeting,lang:'es'},{database,resolveShare:noShare})).id,ids.meeting);

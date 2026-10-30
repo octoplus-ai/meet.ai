@@ -3,7 +3,7 @@
 // poll status -> stream the dubbed media. Persisted per language in meetings.dubs jsonb.
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
-import { isRtmsDeleting, resolveShareToken } from "./lib/share.js";
+import { authorizedShare, isRtmsDeleting } from "./lib/share.js";
 import { getBot, videoUrl } from "./lib/recall.js";
 import { getPlan, hasFeature } from "./lib/plan.js";
 import { authorizedRtmsMedia, signedRtmsMediaUrl } from "./lib/rtms-media.js";
@@ -28,7 +28,7 @@ async function anyMeeting(req, meetingId, share) {
   if (share) {
     const native = await authorizedRtmsMedia(req, meetingId, share);
     if (native) return native;
-    const r = await resolveShareToken(share);
+    const r = await authorizedShare(req, share, { meetingId });
     if (r?.meeting?.id === meetingId && r.meeting.capture_mode !== "zoom_rtms") {
       const m = await sb(`meetings?id=eq.${enc(meetingId)}&select=id,bot_id,dubs,duration_min,capture_mode`);
       if (m.length && m[0].capture_mode !== "zoom_rtms") return m[0];
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
       res.setHeader("Accept-Ranges", up.headers.get("accept-ranges") || "bytes");
       const cr = up.headers.get("content-range"); if (cr) res.setHeader("Content-Range", cr);
       const cl = up.headers.get("content-length"); if (cl) res.setHeader("Content-Length", cl);
-      res.setHeader("Cache-Control", m.capture_mode === "zoom_rtms" ? "private, no-store" : "private, max-age=3600");
+      res.setHeader("Cache-Control", "private, no-store");
       res.end(Buffer.from(await up.arrayBuffer()));
       return;
     }
