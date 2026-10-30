@@ -12,7 +12,7 @@ export function tokenKey(env = process.env) {
   return key;
 }
 export function encryptZoomSecret(value, binding, env = process.env) {
-  const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', tokenKey(env), iv);
+  const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', tokenKey(env), iv, { authTagLength: 16 });
   cipher.setAAD(Buffer.from(`octomeet:zoom:v1:${binding}`));
   const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
   return ['v1', iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), encrypted.toString('base64url')].join('.');
@@ -21,8 +21,10 @@ export function decryptZoomSecret(value, binding, env = process.env) {
   try {
     const [version, iv, tag, data, extra] = String(value).split('.');
     if (version !== 'v1' || extra || !iv || !tag || !data) throw new Error();
-    const decipher = createDecipheriv('aes-256-gcm', tokenKey(env), Buffer.from(iv, 'base64url'));
-    decipher.setAAD(Buffer.from(`octomeet:zoom:v1:${binding}`)); decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+    const ivBytes = Buffer.from(iv, 'base64url'), tagBytes = Buffer.from(tag, 'base64url');
+    if (ivBytes.length !== 12 || tagBytes.length !== 16 || ivBytes.toString('base64url') !== iv || tagBytes.toString('base64url') !== tag) throw new Error();
+    const decipher = createDecipheriv('aes-256-gcm', tokenKey(env), ivBytes, { authTagLength: 16 });
+    decipher.setAAD(Buffer.from(`octomeet:zoom:v1:${binding}`)); decipher.setAuthTag(tagBytes);
     return JSON.parse(Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8'));
   } catch { throw zoomError('zoom_reconnect_required', 409); }
 }

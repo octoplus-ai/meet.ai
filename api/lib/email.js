@@ -34,7 +34,8 @@ export async function getBotSender(options) {
 // spam-filter signal, and the custom domain serves the same deployment.
 const APP = "https://meet.octoplusteam.com/";
 const LOGO = APP + "email-logo.png";
-const esc = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+// Used in both text nodes and quoted HTML attributes (for example the cover alt).
+const esc = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 let _t;
 function transport() {

@@ -8,9 +8,9 @@
 import { createHmac } from "node:crypto";
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
+import { httpsServiceOrigin } from '../lib/service-url.js';
 
 const enc = encodeURIComponent;
-const APP = (process.env.APP_URL || "https://meet.octoplusteam.com").replace(/\/+$/, "");
 
 async function sessionUser(req, body) {
   const auth = req.headers.authorization || "";
@@ -31,6 +31,8 @@ export default async function handler(req, res) {
     if (!uid) return res.status(401).json({ error: "not authenticated" });
     const OWN = process.env.BOT_ORCHESTRATOR_URL;
     if (!OWN) return res.status(501).json({ error: "orchestrator not configured" });
+    const ownOrigin = httpsServiceOrigin(OWN);
+    const APP = httpsServiceOrigin(process.env.APP_URL || 'https://meet.octoplusteam.com');
 
     const durationMin = Number(body.durationMin) || null;
     const created = await sb("meetings", {
@@ -50,11 +52,12 @@ export default async function handler(req, res) {
     // holds the secret and the pass unlocks nothing but this meeting's upload slot.
     if (!body.audioUrl) {
       const pass = createHmac("sha256", process.env.ORCH_SHARED_SECRET || "").update(String(row.id)).digest("hex");
-      return res.status(200).json({ ok: true, meetingId: row.id, uploadUrl: OWN.replace(/\/$/, "") + "/media/upload", pass });
+      return res.status(200).json({ ok: true, meetingId: row.id, uploadUrl: ownOrigin + "/media/upload", pass });
     }
 
-    const r = await fetch(OWN.replace(/\/$/, "") + "/media/asr", {
+    const r = await fetch(ownOrigin + "/media/asr", {
       method: "POST",
+      redirect: 'error', signal: AbortSignal.timeout(10000),
       headers: { "Content-Type": "application/json", "x-orch-secret": process.env.ORCH_SHARED_SECRET || "" },
       body: JSON.stringify({ audioUrl: body.audioUrl, meetingId: row.id, callbackUrl: APP + "/api/media/ingest", callbackSecret: process.env.BOT_INGEST_SECRET }),
     }).catch(() => null);

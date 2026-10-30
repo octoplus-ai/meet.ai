@@ -5,9 +5,9 @@
 import crypto from "node:crypto";
 import { sb } from "./lib/supa.js";
 import { parseCookies } from "./lib/session.js";
+import { supabaseOrigin } from './lib/service-url.js';
 
 const enc = encodeURIComponent;
-const SUPA = process.env.SUPABASE_URL || "https://xewahhatxhmfjlujitfa.supabase.co";
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const OAI = process.env.OPENAI_API_KEY;
 const MODEL = process.env.OPENAI_TTS_MODEL || "tts-1"; // tts-1 = cheaper; tts-1-hd = higher quality
@@ -25,6 +25,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
   try {
     if (!OAI) return res.status(501).json({ error: "no_tts_key" }); // -> client uses free browser voice
+    const SUPA = supabaseOrigin();
 
     // Logged-in users only (the dub costs OpenAI credits). Shared viewers fall back to the free voice.
     const t = parseCookies(req).om_session;
@@ -41,7 +42,7 @@ export default async function handler(req, res) {
     const publicUrl = `${SUPA}/storage/v1/object/public/tts/${hash}.mp3`;
 
     // Cache hit -> serve stored clip.
-    const cached = await fetch(publicUrl);
+    const cached = await fetch(publicUrl, { redirect: 'error', signal: AbortSignal.timeout(10000) });
     if (cached.ok) {
       res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
@@ -51,6 +52,7 @@ export default async function handler(req, res) {
     // Generate with OpenAI (tts-1 by default = cheaper), one voice per speaker.
     const r = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
+      redirect: 'error', signal: AbortSignal.timeout(20000),
       headers: { Authorization: `Bearer ${OAI}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: MODEL, voice, input: text, response_format: "mp3" }),
     });
@@ -60,6 +62,7 @@ export default async function handler(req, res) {
     // Cache for next time (best-effort, don't block the response).
     fetch(`${SUPA}/storage/v1/object/tts/${hash}.mp3`, {
       method: "POST",
+      redirect: 'error', signal: AbortSignal.timeout(15000),
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "audio/mpeg", "x-upsert": "true", "Cache-Control": "max-age=31536000" },
       body: audio,
     }).catch(() => {});

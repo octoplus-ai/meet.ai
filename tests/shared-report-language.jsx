@@ -39,6 +39,6 @@ window.fetch = async (input, init = {}) => {
 };
 function Fixture() {
   const [lang, setLang] = useState(() => localStorage.getItem('fixture-language') || 'en');
-  return <><output data-request-count className="sr-only" aria-label="Synthetic request count">0</output><SharedReportView token="synthetic-share" lang={lang} setLang={value => { setLang(value); localStorage.setItem('fixture-language', value); }} /></>;
+  return <><output data-request-count hidden aria-label="Synthetic request count">0</output><SharedReportView token="synthetic-share" lang={lang} setLang={value => { setLang(value); localStorage.setItem('fixture-language', value); }} /></>;
 }
 createRoot(document.getElementById('root')).render(<Fixture />);

@@ -7,6 +7,7 @@ import { stopOrchestratorJob } from "./orch.js";
 import { parseMeetingUrl, enabledPlatforms, meetingLimitMinutes } from "../../shared/meeting-platform.js";
 import { resolveZoomCaptureRoute, scheduleRtmsMeeting, expireRtmsIntents } from './zoom-routing.js';
 import { disableRtmsMeeting } from './zoom-rtms.js';
+import { httpsServiceOrigin } from './service-url.js';
 
 // Compatibility entry point for old calendar connections: do not create paid-provider bots.
 export async function syncRecallCalendar() {
@@ -16,7 +17,7 @@ export async function syncRecallCalendar() {
 async function dispatchOwnBot(payload) {
   const signal = AbortSignal.timeout(10000);
   try {
-    const response = await fetch(process.env.BOT_ORCHESTRATOR_URL.replace(/\/$/, "") + "/bots", {
+    const response = await fetch(httpsServiceOrigin(process.env.BOT_ORCHESTRATOR_URL) + "/bots", {
       method: "POST", redirect: "error", signal,
       headers: { "Content-Type": "application/json", "x-orch-secret": process.env.ORCH_SHARED_SECRET || "" },
       body: JSON.stringify(payload),
@@ -64,6 +65,9 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, endAt, ca
   if (captureRoute.mode === 'rtms') return scheduleRtmsMeeting(userId, { meetingUrl, title, joinAt, endAt, calendarEventId, botName, manualRetry }, captureRoute);
   const OWN = process.env.BOT_ORCHESTRATOR_URL;
   if (!OWN) return { error: "bot_backend_unavailable", status: 503 };
+  // Validate before allocating/rearming a meeting or constructing a callback.
+  try { httpsServiceOrigin(OWN); httpsServiceOrigin(process.env.APP_URL || 'https://meet-ai-three-beige.vercel.app'); }
+  catch { return { error: 'bot_backend_unavailable', status: 503 }; }
   if (joinAt && !Number.isFinite(new Date(joinAt).getTime())) return { error: "invalid_join_at", status: 400 };
   const now = Date.now();
   const joinDate = joinAt ? new Date(joinAt) : null;
@@ -135,7 +139,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, endAt, ca
           start_time: startIso, end_time: eventEnd || null, status_synced_at: new Date().toISOString(),
         } });
         if (!updated?.length) return { error: "meeting_not_armed", status: 409, meeting_id: m0.id };
-        const APP0 = (process.env.APP_URL || "https://meet-ai-three-beige.vercel.app").replace(/\/+$/, "");
+        const APP0 = httpsServiceOrigin(process.env.APP_URL || 'https://meet-ai-three-beige.vercel.app');
         const dispatched = await dispatchOwnBot({
           meetingId: m0.id, botId: m0.bot_id, userId, meetingUrl, platform: parsed.platform,
           joinAt: schedOwn ? joinAt : null, botName: botName || "OctoMeet AI", maxMeetingMin: meetingLimitMinutes(gate.maxMeetingMin),
@@ -170,7 +174,7 @@ export async function scheduleBot(userId, { meetingUrl, title, joinAt, endAt, ca
         calendar_event_id: calendarEventId || null,
       },
     });
-    const APP = (process.env.APP_URL || "https://meet-ai-three-beige.vercel.app").replace(/\/+$/, "");
+    const APP = httpsServiceOrigin(process.env.APP_URL || 'https://meet-ai-three-beige.vercel.app');
     const dispatched = await dispatchOwnBot({
       meetingId: m[0].id, botId, userId, meetingUrl, platform: parsed.platform,
       joinAt: scheduledOwn ? joinAt : null, botName: botName || "OctoMeet AI", maxMeetingMin: meetingLimitMinutes(gate.maxMeetingMin),

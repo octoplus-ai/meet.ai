@@ -1,8 +1,8 @@
 // Recall.ai helpers: fetch a bot, map its live status, and pull the recording's
 // transcript + video from the modern media_shortcuts (NOT the legacy transcript endpoint).
-const RECALL_BASE = process.env.RECALL_REGION_URL || "https://us-west-2.recall.ai";
+import { httpsServiceOrigin } from './service-url.js';
 
-export function recallBase() { return RECALL_BASE; }
+export function recallBase() { return httpsServiceOrigin(process.env.RECALL_REGION_URL || 'https://us-west-2.recall.ai'); }
 
 // Single source of truth for the transcript engine (a BOT's recording_config only
 // accepts STREAMING providers — async providers like recallai_async are 400-rejected).
@@ -23,7 +23,8 @@ export function transcriptProvider() {
 export const CAPTIONS_PROVIDER = { meeting_captions: {} };
 
 export async function getBot(botId) {
-  const r = await fetch(`${RECALL_BASE}/api/v1/bot/${botId}/`, {
+  const r = await fetch(`${recallBase()}/api/v1/bot/${encodeURIComponent(botId)}/`, {
+    redirect: 'error',
     headers: { Authorization: `Token ${process.env.RECALL_API_KEY}` },
     signal: AbortSignal.timeout(10000),
   });
@@ -58,7 +59,9 @@ export async function getTranscript(bot) {
   if (!url) return empty;
   let segs;
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    const artifact = new URL(url);
+    if (artifact.protocol !== 'https:' || artifact.username || artifact.password) throw new Error();
+    const r = await fetch(artifact.href, { redirect: 'error', signal: AbortSignal.timeout(20000) });
     if (!r.ok) throw new Error('RECALL_TRANSCRIPT_UNAVAILABLE');
     segs = await r.json();
   } catch { throw new Error('RECALL_TRANSCRIPT_UNAVAILABLE'); }

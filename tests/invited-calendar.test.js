@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { extractMeetingUrl, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes } from '../shared/meeting-platform.js';
+import { httpsServiceOrigin } from '../api/lib/service-url.js';
 
 const source = name => fs.readFileSync(new URL(`../api/${name}`, import.meta.url), 'utf8')
   .replace(/^import .*;\r?\n/gm, '').replace(/\bexport default /g, '')
@@ -51,7 +52,7 @@ function scheduler(events, prior = [], { truncated = false, error, fetchedAt = n
     constructor(...args) { super(...(args.length ? args : [clock()])); }
     static now() { return clock(); }
   }
-  const context = vm.createContext({ Date: FixtureDate, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes, AbortSignal,
+  const context = vm.createContext({ Date: FixtureDate, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes, AbortSignal, httpsServiceOrigin,
     process: { env: { BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test', BOT_ENABLED_PLATFORMS: 'google_meet,zoom,teams' } },
     recordingGate: async () => ({ allow: true, maxMeetingMin: 120 }),
     resolveZoomCaptureRoute: async () => ({ mode: 'browser' }),

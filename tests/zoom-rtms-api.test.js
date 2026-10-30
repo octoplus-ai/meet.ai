@@ -33,6 +33,55 @@ const started=extra=>({event:'meeting.rtms_started',event_ts:Date.now(),payload:
 async function start(){await rtms.handleRtmsEvent(started());const dispatch=requests.find(x=>x.url==='https://rtms.example.invalid/v1/sessions');return JSON.parse(dispatch.options.body);}
 const callback=(body,dispatch)=>({method:'POST',headers:{authorization:`Bearer ${dispatch.callbackToken}`},body:{sessionId:dispatch.sessionId,...body}});
 
+for (const isOriginalHost of [true,false]) test(`Basic Zoom identity completes the offline ${isOriginalHost?'hosted':'invited'} RTMS API flow only after a signed start`,async()=>{
+  // This checks our own authorization/data path, not Zoom's live entitlement.
+  // account_id identifies the app user's account, even for an external host:
+  // https://developers.zoom.us/docs/api/rtms/events/#meetingrtms_started
+  const zoomUser='basic-customer-user',zoomAccount='basic-customer-account';
+  provider=async(url,options)=>{
+    if(url==='https://api.zoom.us/v2/users/me')return Response.json({id:zoomUser,account_id:zoomAccount,email:'customer@example.invalid',type:1});
+    if(url==='https://api.zoom.us/v2/live_meetings/89985000930/rtms_app/status'){
+      assert.equal(options.headers.Authorization,'Bearer access-fixture');
+      assert.deepEqual(JSON.parse(options.body),{action:'start',settings:{client_id:'fixture-client'}});
+      return new Response(null,{status:204});
+    }
+    return null;
+  };
+  const auth=await zoom.createZoomAuthorization(ids.user,'basic-session'),state=new URL(auth.url).searchParams.get('state');
+  const claimed=await zoom.claimZoomState(state,auth.nonce,ids.user,'basic-session');
+  await zoom.connectZoomAccount(ids.user,'basic-code',claimed);
+  assert.equal((await zoom.getRtmsConnectionState(ids.user)).ready,true);
+  const now=Date.now(),title=isOriginalHost?'Basic hosted fixture':'Basic invited fixture';
+  const intent=await scheduleRtmsMeeting(ids.user,{meetingUrl:'https://us06web.zoom.us/j/89985000930',title,
+    joinAt:new Date(now-10000).toISOString(),endAt:new Date(now+180000).toISOString(),calendarEventId:'basic-test',manualRetry:true},
+    {ready:true},{database,gate:async()=>({allow:true,maxMeetingMin:120})});
+  assert.equal(intent.startRequested,true);
+  assert.equal(intent.meeting.status,'scheduled');
+  assert.equal((await db.query('select count(*) from zoom_rtms_sessions')).rows[0].count,0);
+  assert.equal((await db.query('select count(*) from reports')).rows[0].count,0);
+  const event=started({account_id:zoomAccount,operator_id:zoomUser,is_original_host:isOriginalHost});
+  const raw=JSON.stringify(event),timestamp=String(Math.floor(Date.now()/1000));
+  const reply=response();await webhook({method:'POST',body:raw,headers:{'x-zm-request-timestamp':timestamp,
+    'x-zm-signature':'v0='+createHmac('sha256',process.env.ZOOM_WEBHOOK_SECRET_TOKEN).update(`v0:${timestamp}:${raw}`).digest('hex')}},reply);
+  assert.equal(reply.code,200);assert.equal(reply.body.ok,true);
+  const dispatches=requests.filter(request=>request.url==='https://rtms.example.invalid/v1/sessions');assert.equal(dispatches.length,1);
+  const dispatch=JSON.parse(dispatches[0].options.body);
+  assert.equal(dispatch.userId,ids.user);assert.equal(dispatch.meetingId,intent.meeting.id);assert.equal(dispatch.operatorId,zoomUser);
+  const live=response();await status(callback({status:'recording'},dispatch),live);assert.equal(live.body.ok,true);assert.equal(live.body.stop,false);
+  const recordingUrl=`r2:private/${ids.user}/${dispatch.meetingId}/recording.mp4`;let analysisCalls=0,notificationCalls=0;
+  const ingest=createRtmsIngest({database,analyze:async(text,meetingTitle)=>{
+    analysisCalls++;assert.equal(meetingTitle,title);assert.match(text,/captured fixture speech/);
+    return{summary:'A report from captured fixture speech.',speakerMap:{}};
+  },notify:async meeting=>{notificationCalls++;assert.equal(meeting.user_id,ids.user);assert.equal(meeting.status,'done');}});
+  const media=response();await ingest(callback({recordingUrl,durationMin:1,mediaOnly:true},dispatch),media);
+  assert.equal(media.body.mediaSaved,true);assert.equal(analysisCalls,0);
+  await rtms.handleRtmsEvent({event:'meeting.rtms_stopped',event_ts:Date.now(),payload:{meeting_uuid:event.payload.meeting_uuid,rtms_stream_id:event.payload.rtms_stream_id}});
+  const delivered=response();await ingest(callback({recordingUrl,durationMin:1,turns:[{speaker:'Speaker A',text:'captured fixture speech',t:'0:01'}]},dispatch),delivered);
+  assert.equal(delivered.code,200);assert.equal(delivered.body.ok,true);assert.equal(analysisCalls,1);assert.equal(notificationCalls,1);
+  const stored=(await db.query('select m.user_id,m.status,m.recording_url,r.user_id as report_owner from meetings m join reports r on r.meeting_id=m.id where m.id=$1',[dispatch.meetingId])).rows;
+  assert.deepEqual(stored,[{user_id:ids.user,status:'done',recording_url:recordingUrl,report_owner:ids.user}]);
+});
+
 test('service deadline uses canonical UTC even when PostgREST returns microseconds and an offset',async()=>{
   const originalDatabase=database;
   database=async(path,options)=>{const result=await originalDatabase(path,options);return Array.isArray(result)?result.map(row=>row.capture_deadline_at?{...row,capture_deadline_at:new Date(row.capture_deadline_at).toISOString().replace('Z','000+00:00')}:row):result;};

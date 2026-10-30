@@ -5,6 +5,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { parseMeetingUrl, extractMeetingUrl, enabledPlatforms, platformLabel, meetingLimitMinutes } from "../shared/meeting-platform.js";
 import { zoomCaptureErrorMessage } from '../src/media/meeting-capture.js';
+import { httpsServiceOrigin } from '../api/lib/service-url.js';
 
 const urls = {
   google_meet: "https://meet.google.com/abc-defg-hij",
@@ -21,7 +22,7 @@ function scheduler(options = {}) {
   let row = options.prior ? { ...options.prior } : null;
   let beforePatch = options.beforePatch;
   const env = { BOT_ORCHESTRATOR_URL: "https://orchestrator.example.test/", APP_URL: "https://app.example.test", ...options.env };
-  const context = vm.createContext({ Date, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes,
+  const context = vm.createContext({ Date, URL, encodeURIComponent, parseMeetingUrl, enabledPlatforms, meetingLimitMinutes, httpsServiceOrigin,
     process: { env }, AbortSignal: options.AbortSignal || AbortSignal,
     resolveZoomCaptureRoute: async () => ({ mode: 'browser' }),
     recordingGate: async () => options.gate || { allow: true, maxMeetingMin: 120 },
@@ -68,6 +69,24 @@ test("Meet stays enabled by default and accepts production201/id and 202/jobId c
     assert.equal(result.ok, true); assert.equal(result.mode, "inhouse");
     assert.equal(s.calls[0].platform, "google_meet"); assert.equal(s.row.stage_info.platform, "google_meet");
   }
+});
+
+test('unsafe service or callback configuration cannot create a meeting or transmit credentials', async () => {
+  for (const env of [{ BOT_ORCHESTRATOR_URL: 'http://orchestrator.example.test' },
+    { BOT_ORCHESTRATOR_URL: 'https://secret@orchestrator.example.test' }, { APP_URL: 'http://app.example.test' }]) {
+    const s = scheduler({ env });
+    const result = await s.context.scheduleBot('u', { meetingUrl: urls.google_meet });
+    assert.equal(result.error, 'bot_backend_unavailable');
+    assert.equal(s.db.length, 0); assert.equal(s.calls.length, 0);
+  }
+});
+
+test('CLI trailing newlines are normalized in both service destinations and worker callbacks', async () => {
+  const s = scheduler({ env: { BOT_ORCHESTRATOR_URL: 'https://orchestrator.example.test/\n', APP_URL: 'https://app.example.test/\n' } });
+  const result = await s.context.scheduleBot('u', { meetingUrl: urls.google_meet });
+  assert.equal(result.ok, true);
+  assert.equal(s.calls[0].callbackUrl, 'https://app.example.test/api/bot/ingest');
+  assert.equal(s.calls[0].statusUrl, 'https://app.example.test/api/bot/status');
 });
 test("Zoom/Teams are off by default before any DB write or bot request", async () => {
   for (const platform of ["zoom", "teams"]) {

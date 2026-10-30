@@ -10,8 +10,21 @@ test('encrypted OAuth tokens authenticate both ciphertext and owner/generation b
   assert.equal(encrypted.includes('private'),false);assert.deepEqual(decryptZoomSecret(encrypted,'user:connection',env),token);
   assert.notEqual(encrypted,encryptZoomSecret(token,'user:connection',env));
   assert.throws(()=>decryptZoomSecret(encrypted,'other:connection',env),/zoom_reconnect_required/);
-  const parts=encrypted.split('.');parts[3]='A'+parts[3].slice(1);assert.throws(()=>decryptZoomSecret(parts.join('.'),'user:connection',env));
+  // Always change a ciphertext byte: replacing a character with a fixed 'A'
+  // sometimes leaves the random ciphertext unchanged and makes this test flaky.
+  const parts=encrypted.split('.'),tampered=Buffer.from(parts[3],'base64url');tampered[0]^=1;parts[3]=tampered.toString('base64url');
+  assert.throws(()=>decryptZoomSecret(parts.join('.'),'user:connection',env),/zoom_reconnect_required/);
   assert.throws(()=>encryptZoomSecret(token,'x',{ZOOM_TOKEN_ENCRYPTION_KEY:'short'}),/zoom_not_configured/);
+});
+
+test('encrypted OAuth tokens reject shortened GCM tags even when they match a valid ciphertext prefix',()=>{
+  const encrypted=encryptZoomSecret({accessToken:'fixture'},'user:connection',env), original=encrypted.split('.');
+  for(const length of [4,8,12,13,14,15]) {
+    const parts=[...original];parts[2]=Buffer.from(parts[2],'base64url').subarray(0,length).toString('base64url');
+    assert.throws(()=>decryptZoomSecret(parts.join('.'),'user:connection',env),/zoom_reconnect_required/);
+  }
+  const iv=[...original];iv[1]=Buffer.alloc(8).toString('base64url');
+  assert.throws(()=>decryptZoomSecret(iv.join('.'),'user:connection',env),/zoom_reconnect_required/);
 });
 test('webhook signature authenticates raw bytes and rejects old/future timestamps and parsed objects',async()=>{
   const raw=Buffer.from('{ "event": "meeting.rtms_started" }'),ts=String(Math.floor(Date.now()/1000)),secret='fixture-webhook';

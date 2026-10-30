@@ -7,7 +7,7 @@ process.env.ZOOM_APP_ORIGINS = 'https://app.example.test';
 const { default: pretranslate } = await import('../api/pretranslate.js');
 const { default: reprocess } = await import('../api/reprocess-stale.js');
 const { default: followup } = await import('../api/followup.js');
-const { default: push } = await import('../api/push.js');
+const { createPushHandler } = await import('../api/push.js');
 const { default: sendShare } = await import('../api/send-share.js');
 after(() => { globalThis.fetch = originalFetch; process.env = previousEnv; });
 const id = '33333333-3333-4333-8333-333333333333', owner = '11111111-1111-4111-8111-111111111111';
@@ -35,7 +35,13 @@ function fixture(mode) {
     if (address === 'https://fixture.example.invalid/hook' || address.startsWith('https://gmail.googleapis.com/')) return Response.json({ id: 'fixture-delivery' });
     throw new Error('External network is unavailable in this fixture: ' + address);
   };
-  return { row, providerCalls, databaseCalls };
+  // Injection stops at the delivery boundary: authentication, ownership and
+  // deletion checks still run through the actual route before this is reached.
+  const push = createPushHandler({ deliver: async (target, config, report) => {
+    providerCalls.push({ target, config, report });
+    return { ok: true };
+  } });
+  return { row, providerCalls, databaseCalls, push };
 }
 function response() { return { code: 200, setHeader() {}, status(code) { this.code = code; return this; }, json(value) { this.body = value; return this; } }; }
 const request = (body, cookie = 'om_session=owner') => ({ method: 'POST', headers: { cookie }, body });
@@ -72,7 +78,7 @@ test('follow-up draft and send deny deleting RTMS before AI or email; existing d
 
 test('integration push denies pending deletion but retains active RTMS and legacy delivery', async () => {
   for (const mode of ['deleting', 'active', 'legacy']) {
-    const f = fixture(mode), res = response(); await push(request({ meetingId: id, target: 'webhook' }), res);
+    const f = fixture(mode), res = response(); await f.push(request({ meetingId: id, target: 'webhook' }), res);
     assert.equal(res.code, mode === 'deleting' ? 404 : 200);
     assert.equal(f.providerCalls.length, mode === 'deleting' ? 0 : 1);
     if (mode !== 'deleting') assert.equal(res.body.ok, true);

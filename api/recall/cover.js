@@ -3,14 +3,15 @@
 // POST { botId, image: dataURL }. Owner session only. Idempotent (skips if a cover exists).
 import { sb } from "../lib/supa.js";
 import { parseCookies } from "../lib/session.js";
+import { supabaseOrigin } from '../lib/service-url.js';
 
 const enc = encodeURIComponent;
-const SUPA = process.env.SUPABASE_URL || "https://xewahhatxhmfjlujitfa.supabase.co";
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
   try {
+    const SUPA = supabaseOrigin();
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const botId = String(body.botId || "");
     if (!botId) return res.status(400).json({ error: "no botId" });
@@ -29,6 +30,7 @@ export default async function handler(req, res) {
     const path = `${botId}.jpg`;
     const up = await fetch(`${SUPA}/storage/v1/object/covers/${enc(path)}`, {
       method: "POST",
+      redirect: 'error', signal: AbortSignal.timeout(15000),
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "image/jpeg", "x-upsert": "true", "Cache-Control": "max-age=31536000" },
       body: bytes,
     });

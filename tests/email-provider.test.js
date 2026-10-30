@@ -2,7 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
-import {sendViaGmail} from '../api/lib/email.js';
+import {reportEmail, sendViaGmail} from '../api/lib/email.js';
+
+test('meeting titles remain literal text inside the recap cover attribute',()=>{
+  const title = `Planning " onerror="alert('fixture')" <draft> & review`;
+  const report = reportEmail({title, coverUrl:'https://meet.example.invalid/cover.png'});
+  const cover = report.html.match(/<img src="https:\/\/meet\.example\.invalid\/cover\.png"[^>]*>/)?.[0];
+  assert.ok(cover);
+  assert.ok(cover.includes('alt="Planning &quot; onerror=&quot;alert(&#39;fixture&#39;)&quot; &lt;draft&gt; &amp; review"'));
+  assert.equal(/\sonerror="/.test(cover),false);
+  assert.ok(report.text.includes(title));
+  assert.ok(report.subject.includes(title));
+});
 
 const message={to:'recipient@example.invalid',fromAddress:'owner@example.invalid',subject:'Fixture',text:'Fixture',html:'Fixture'};
 test('Gmail preserves confirmed provider ID and classifies auth versus quota rejections',async(t)=>{

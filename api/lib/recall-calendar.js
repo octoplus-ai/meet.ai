@@ -15,6 +15,7 @@ function authHeaders() {
 export async function createRecallCalendar(refreshToken, oauthEmail) {
   const r = await fetch(`${BASE}/api/v2/calendars/`, {
     method: "POST",
+    redirect: 'error', signal: AbortSignal.timeout(10000),
     headers: authHeaders(),
     body: JSON.stringify({
       platform: "google_calendar",
@@ -29,7 +30,7 @@ export async function createRecallCalendar(refreshToken, oauthEmail) {
 }
 
 export async function getRecallCalendar(calendarId) {
-  const r = await fetch(`${BASE}/api/v2/calendars/${calendarId}/`, { headers: authHeaders() });
+  const r = await fetch(`${BASE}/api/v2/calendars/${encodeURIComponent(calendarId)}/`, { headers: authHeaders(), redirect: 'error', signal: AbortSignal.timeout(10000) });
   if (!r.ok) return null;
   return r.json();
 }
@@ -41,7 +42,10 @@ export async function listCalendarEvents(calendarId, sinceTs) {
   const out = [];
   let url = `${BASE}/api/v2/calendar-events/?${qs.toString()}`;
   for (let i = 0; i < 5 && url; i++) {
-    const r = await fetch(url, { headers: authHeaders() });
+    // A provider pagination URL must never send the API key to another origin.
+    const next = new URL(url, BASE);
+    if (next.origin !== BASE || next.username || next.password || next.hash || next.pathname !== '/api/v2/calendar-events/') throw new Error('INVALID_RECALL_PAGE');
+    const r = await fetch(next.href, { headers: authHeaders(), redirect: 'error', signal: AbortSignal.timeout(10000) });
     if (!r.ok) break;
     const d = await r.json();
     (d.results || []).forEach((e) => out.push(e));
@@ -63,7 +67,7 @@ export async function scheduleBotForEvent(eventId, { dedupKey, botName }) {
   };
   const withAvatar = JSON.parse(JSON.stringify(base));
   withAvatar.bot_config.automatic_video_output = { in_call_recording: { kind: "jpeg", b64_data: OCTO_AVATAR_JPEG_B64 } };
-  const post = (body) => fetch(`${BASE}/api/v2/calendar-events/${eventId}/bot/`, { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+  const post = (body) => fetch(`${BASE}/api/v2/calendar-events/${encodeURIComponent(eventId)}/bot/`, { method: "POST", redirect: 'error', signal: AbortSignal.timeout(10000), headers: authHeaders(), body: JSON.stringify(body) });
 
   let r = await post(withAvatar);
   if (!r.ok) r = await post(base);
