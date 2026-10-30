@@ -14,6 +14,7 @@ import {
 import { THEME_LIST, getTheme, customTheme, coerceDeck, deckHTML } from "./slides/deck.js";
 import { exportPptx } from "./slides/pptx.js";
 import { EXTRA_LANGS } from "./i18n-extra.js";
+import { translatedMeeting, requestReportTranslation } from "./report-translation.js";
 import { parseMeetingUrl, platformLabel } from "../shared/meeting-platform.js";
 import { captureFailureMessage, delayedProcessingCount, failedCaptures, savedRecordingUrl } from "./media/meeting-activity.js";
 import { captureDisplayStatus, captureDispatchMessage, dispatchAccepted, meetingCaptureMode, recordingPlaybackUrl, zoomAuthorizationLabel, zoomAuthorizationSummary, zoomCaptureErrorMessage } from "./media/meeting-capture.js";
@@ -128,6 +129,24 @@ const EXTRA = {
     badgeInCall: "In call", badgeRecording: "Recording", badgeProcessing: "Processing report…",
     badgeFailed: "Failed", signInToViewReport: "Sign in to view this report", reportRestrictedContinue: "This report is restricted. Continue with the account it was shared with",
     redirecting: "Redirecting…", emailMeCodeInstead: "Email me a code instead", enter6DigitCode: "Enter the 6-digit code we emailed to",
+    shareInvitedEmail: "the invited email", shareYourEmail: "your email", shareCodeSent: "We sent a 6-digit code to {email}", shareCodeSendFailed: "Could not send the code. Try again.",
+    shareCodeRequired: "Enter the 6-digit code", shareCodeExpired: "Code expired. Tap Resend code.", shareCodeIncorrect: "Incorrect code", shareVerificationFailed: "Could not verify the code. Try again.",
+    shareWrongAccount: "{account} does not have access. This report was shared with {invited}. Switch accounts or use the email code below.", or: "or",
+    reportSuggestedAnswer: "Suggested answer:", reportTranscriptProcessing: "Transcript is still being processed…", reportNoTranscript: "No transcript available for this meeting.", reportSearchTranscript: "Search the transcript…",
+    reportNoHighlights: "No highlights detected for this meeting.", reportNoChapters: "No chapters detected.", reportDescriptions: "Descriptions", reportDownloadPdf: "PDF (print / save)", reportPlainText: "Plain text (.txt)", downloaded: "Downloaded",
+    reportSpeaker: "Speaker", reportParticipant: "Participant", reportTalk: "talk", reportTone: "tone", reportWordsPerMinute: "wpm", reportPaceRecommended: "wpm · recommended range 130–175", reportNoPace: "No pace data for this meeting",
+    reportFillerWords: "Filler words", reportClarityScore: "Clarity score", reportQuestionsAsked: "Questions asked", reportTalkBalance: "Talk-time balance",
+    reportScoreGood: "Good", reportScoreOkay: "Okay", reportScoreFair: "Fair", reportScoreLow: "Low",
+    translateReport: "Translate report", translatingReport: "Translating report…", reportTranslationFailed: "The translation could not be completed. The original report is still available.",
+    showOriginalReport: "View original", translatedReportNotice: "Report translated into {language}", originalReportNotice: "Original report", pageLanguage: "Page language",
+    reportSentimentPositive: "Positive", reportSentimentNeutral: "Neutral", reportSentimentNegative: "Negative",
+    reportTimeLeft: "{time} left",
+    editLabel: "Edit",
+    kpiReadScore: "Overall meeting effectiveness: a blend of engagement and sentiment across the whole call. Higher is better.", kpiEngagement: "How actively people were involved: talking, asking and responding versus passively listening.",
+    kpiSentiment: "The overall emotional tone of the conversation, from the positive versus negative language used.", kpiBalance: "How evenly talk time was shared between participants (100 = perfectly balanced).",
+    kpiClarity: "How clearly people spoke: few filler words, a steady pace and easy-to-follow delivery.", kpiCharisma: "Speaker presence and persuasiveness: energy, confidence and delivery.",
+    kpiFillerWords: "Share of words that are fillers (um, uh, you know). Lower is better.", kpiTalkingPace: "Average speaking speed in words per minute. 130–175 wpm is easiest to follow.",
+    kpiQuestionsAsked: "How many real questions were asked: a sign of engagement and discovery.", kpiTalkBalance: "How evenly talk time was shared between participants (higher = more balanced).",
     viewReport: "View report", resendCode: "Resend code", backToGoogle: "Back to Google",
     sharedLinkUnavailable: "This shared report link is no longer available", linkInvalidOrRevoked: "The link may be invalid or was revoked by the owner.", loadingSharedReport: "Loading shared report…",
     sharedReportBadge: "Shared report · {role}", viewOnly: "view only", getOctoMeet: "Get OctoMeet",
@@ -221,9 +240,27 @@ const EXTRA = {
     badgeInCall: "En llamada", badgeRecording: "Grabando", badgeProcessing: "Procesando reporte…",
     badgeFailed: "Falló", signInToViewReport: "Iniciá sesión para ver este reporte", reportRestrictedContinue: "Este reporte es restringido. Continuá con la cuenta con la que se compartió",
     redirecting: "Redirigiendo…", emailMeCodeInstead: "Enviame un código por email", enter6DigitCode: "Ingresá el código de 6 dígitos que enviamos a",
+    shareInvitedEmail: "el correo invitado", shareYourEmail: "tu correo", shareCodeSent: "Enviamos un código de 6 dígitos a {email}", shareCodeSendFailed: "No se pudo enviar el código. Intentá nuevamente.",
+    shareCodeRequired: "Ingresá el código de 6 dígitos", shareCodeExpired: "El código venció. Pulsá Reenviar código.", shareCodeIncorrect: "Código incorrecto", shareVerificationFailed: "No se pudo verificar el código. Intentá nuevamente.",
+    shareWrongAccount: "{account} no tiene acceso. Este reporte se compartió con {invited}. Cambiá de cuenta o usá el código por correo de abajo.", or: "o",
+    reportSuggestedAnswer: "Respuesta sugerida:", reportTranscriptProcessing: "La transcripción todavía se está procesando…", reportNoTranscript: "No hay transcripción disponible para esta reunión.", reportSearchTranscript: "Buscar en la transcripción…",
+    reportNoHighlights: "No se detectaron momentos destacados en esta reunión.", reportNoChapters: "No se detectaron capítulos.", reportDescriptions: "Descripciones", reportDownloadPdf: "PDF (imprimir / guardar)", reportPlainText: "Texto sin formato (.txt)", downloaded: "Descargado",
+    reportSpeaker: "Orador", reportParticipant: "Participante", reportTalk: "participación", reportTone: "tono", reportWordsPerMinute: "ppm", reportPaceRecommended: "ppm · rango recomendado de 130 a 175", reportNoPace: "No hay datos de ritmo de habla para esta reunión",
+    reportFillerWords: "Muletillas", reportClarityScore: "Puntuación de claridad", reportQuestionsAsked: "Preguntas realizadas", reportTalkBalance: "Equilibrio del tiempo de habla",
+    reportScoreGood: "Bueno", reportScoreOkay: "Aceptable", reportScoreFair: "Regular", reportScoreLow: "Bajo",
+    translateReport: "Traducir reporte", translatingReport: "Traduciendo reporte…", reportTranslationFailed: "No se pudo completar la traducción. El reporte original sigue disponible.",
+    showOriginalReport: "Ver original", translatedReportNotice: "Reporte traducido al {language}", originalReportNotice: "Reporte original", pageLanguage: "Idioma de la página",
+    reportSentimentPositive: "Positivo", reportSentimentNeutral: "Neutral", reportSentimentNegative: "Negativo",
+    reportTimeLeft: "Quedan {time}",
+    editLabel: "Editar",
+    kpiReadScore: "Efectividad general de la reunión: combina la participación y el tono de toda la conversación. Cuanto más alto, mejor.", kpiEngagement: "Qué tan activamente participaron las personas: hablar, preguntar y responder, en lugar de escuchar pasivamente.",
+    kpiSentiment: "El tono emocional general de la conversación, según el lenguaje positivo o negativo utilizado.", kpiBalance: "Qué tan equitativamente se repartió el tiempo de habla entre los participantes (100 = equilibrio perfecto).",
+    kpiClarity: "Qué tan claramente hablaron las personas: pocas muletillas, un ritmo constante y una exposición fácil de seguir.", kpiCharisma: "Presencia y capacidad de persuasión del orador: energía, confianza y forma de expresarse.",
+    kpiFillerWords: "Proporción de palabras de relleno o muletillas (eh, em, este). Cuanto más bajo, mejor.", kpiTalkingPace: "Velocidad media del habla en palabras por minuto. Entre 130 y 175 ppm resulta más fácil de seguir.",
+    kpiQuestionsAsked: "Cuántas preguntas reales se hicieron: una señal de participación y exploración.", kpiTalkBalance: "Qué tan equitativamente se repartió el tiempo de habla entre los participantes (más alto = mayor equilibrio).",
     viewReport: "Ver reporte", resendCode: "Reenviar código", backToGoogle: "Volver a Google",
     sharedLinkUnavailable: "Este link de reporte compartido ya no está disponible", linkInvalidOrRevoked: "El link puede ser inválido o fue revocado por el dueño.", loadingSharedReport: "Cargando reporte compartido…",
-    sharedReportBadge: "Reporte compartido ·", viewOnly: "solo lectura", getOctoMeet: "Obtené OctoMeet",
+    sharedReportBadge: "Reporte compartido · {role}", viewOnly: "solo lectura", getOctoMeet: "Obtené OctoMeet",
     gmailNudgeMsg: "Activá el envío de reportes por email: reconectá tu cuenta de Google para conceder el permiso de Gmail (un solo click).", reconnectGoogle: "Reconectar Google", accountSettings: "Configuración de la cuenta",
     planBilling: "Plan y facturación", addPeople2: "Agregar personas", support: "Soporte",
     logOut: "Cerrar sesión", sendingBotToMeeting: "Enviando OctoMeet a la reunión…", botJoiningMeeting: "OctoMeet se está uniendo a la reunión 🎥",
@@ -971,16 +1008,16 @@ function TalkRibbon({ participants }) {
 
 // Short "how is this measured?" explainer per KPI, shown on hover.
 const KPI_INFO = {
-  readScore: "Overall meeting effectiveness - a blend of engagement and sentiment across the whole call. Higher is better.",
-  engagement: "How actively people were involved: talking, asking and responding vs. passively listening.",
-  sentiment: "The overall emotional tone of the conversation, from the positive vs. negative language used.",
-  balance: "How evenly talk time was shared between participants (100 = perfectly balanced).",
-  clarity: "How clearly people spoke: few filler words, a steady pace and easy-to-follow delivery.",
-  charisma: "Speaker presence and persuasiveness: energy, confidence and delivery.",
-  fillerWords: "Share of words that are fillers (um, uh, you know). Lower is better.",
-  talkingPace: "Average speaking speed in words per minute. 130-175 wpm is easiest to follow.",
-  questionsAsked: "How many real questions were asked - a sign of engagement and discovery.",
-  talkBalance: "How evenly talk time was shared between participants (higher = more balanced).",
+  get readScore() { return tr("kpiReadScore"); },
+  get engagement() { return tr("kpiEngagement"); },
+  get sentiment() { return tr("kpiSentiment"); },
+  get balance() { return tr("kpiBalance"); },
+  get clarity() { return tr("kpiClarity"); },
+  get charisma() { return tr("kpiCharisma"); },
+  get fillerWords() { return tr("kpiFillerWords"); },
+  get talkingPace() { return tr("kpiTalkingPace"); },
+  get questionsAsked() { return tr("kpiQuestionsAsked"); },
+  get talkBalance() { return tr("kpiTalkBalance"); },
 };
 // Grey, semi-transparent hover tooltip (lighter/translucent version of the app's dark tooltips).
 // Render inside a container that has `group/tip relative`.
@@ -1032,14 +1069,14 @@ function ShareSignInGate({ token, emailHint, wrongAccount, onVerified }) {
   const [msg, setMsg] = useState("");
   const [hint, setHint] = useState(emailHint || "");
   const [mode, setMode] = useState("google"); // "google" | "code"
-  const denied = wrongAccount ? { account: wrongAccount, invited: emailHint || "the invited email" } : null;
+  const denied = wrongAccount ? { account: wrongAccount, invited: emailHint || tr("shareInvitedEmail") } : null;
   const googleSignIn = () => {
     setBusy(true);
     window.location.href = "/api/auth/google/start?share=" + encodeURIComponent(token);
   };
 
-  const request = async () => { setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "request" }) }); const d = await r.json(); if (r.ok) { if (d.emailHint) setHint(d.emailHint); setMsg("We sent a 6-digit code to " + (d.emailHint || hint)); } else setMsg("Couldn't send the code - try again"); } catch (e) { setMsg("Couldn't send the code"); } setBusy(false); };
-  const verify = async () => { if (!/^\d{6}$/.test(code)) { setMsg("Enter the 6-digit code"); return; } setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "verify", code }) }); if (r.ok) { onVerified(); return; } const d = await r.json().catch(() => ({})); setMsg(d.error === "expired" ? "Code expired - tap Resend" : "Incorrect code"); } catch (e) { setMsg("Something went wrong"); } setBusy(false); };
+  const request = async () => { setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "request" }) }); const d = await r.json(); if (r.ok) { if (d.emailHint) setHint(d.emailHint); setMsg({ key: "shareCodeSent", values: { email: d.emailHint || hint } }); } else setMsg({ key: "shareCodeSendFailed" }); } catch (e) { setMsg({ key: "shareCodeSendFailed" }); } setBusy(false); };
+  const verify = async () => { if (!/^\d{6}$/.test(code)) { setMsg({ key: "shareCodeRequired" }); return; } setBusy(true); setMsg(""); try { const r = await fetch("/api/share-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, action: "verify", code }) }); if (r.ok) { onVerified(); return; } const d = await r.json().catch(() => ({})); setMsg({ key: d.error === "expired" ? "shareCodeExpired" : "shareCodeIncorrect" }); } catch (e) { setMsg({ key: "shareVerificationFailed" }); } setBusy(false); };
 
   return (
     <div className="rai-body flex h-screen items-center justify-center bg-[#F4F5FA] p-4">
@@ -1048,39 +1085,120 @@ function ShareSignInGate({ token, emailHint, wrongAccount, onVerified }) {
         <OctoLogo size={40} />
         <h2 className="mt-3 text-lg font-bold text-slate-900">{tr("signInToViewReport")}</h2>
         <p className="mt-1 text-[13px] text-slate-500">{tr("reportRestrictedContinue")}{hint ? <> (<b className="text-slate-700">{hint}</b>)</> : ""}.</p>
-        {denied && <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-left text-[12px] text-amber-700"><b>{denied.account}</b> doesn't have access. This report was shared with {denied.invited}. Switch accounts or use the email code below.</div>}
+        {denied && <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-left text-[12px] text-amber-700">{tf("shareWrongAccount", denied)}</div>}
         {mode === "google" ? (
           <>
             <button onClick={googleSignIn} disabled={busy} className="mt-4 inline-flex w-full items-center justify-center gap-2.5 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60">
               <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-              {busy ? tr("redirecting") : "Continuar con Google"}
+              {busy ? tr("redirecting") : tr("continueWithGoogle")}
             </button>
-            <div className="my-4 flex items-center gap-3 text-[11px] text-slate-300"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div>
+            <div className="my-4 flex items-center gap-3 text-[11px] text-slate-300"><span className="h-px flex-1 bg-slate-200" />{tr("or")}<span className="h-px flex-1 bg-slate-200" /></div>
             <button onClick={() => { setMode("code"); setMsg(""); request(); }} disabled={busy} className="text-[13px] font-medium text-violet-600 hover:text-violet-700">{tr("emailMeCodeInstead")}</button>
           </>
         ) : (
           <>
-            <p className="mt-3 text-[13px] text-slate-500">{tr("enter6DigitCode")} <b className="text-slate-700">{hint || "your email"}</b>.</p>
-            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(e) => e.key === "Enter" && verify()} inputMode="numeric" placeholder="••••••" autoFocus className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-center text-xl font-bold tracking-[0.4em] outline-none focus:border-violet-400" />
+            <p className="mt-3 text-[13px] text-slate-500">{tr("enter6DigitCode")} <b className="text-slate-700">{hint || tr("shareYourEmail")}</b>.</p>
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(e) => e.key === "Enter" && verify()} inputMode="numeric" aria-label={tr("shareCodeRequired")} placeholder="••••••" autoFocus className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-center text-xl font-bold tracking-[0.4em] outline-none focus:border-violet-400" />
             <button onClick={verify} disabled={busy} className="mt-3 w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-60">{tr("viewReport")}</button>
             <div className="mt-2 flex justify-center gap-4 text-[13px]"><button onClick={request} disabled={busy} className="font-medium text-violet-600 hover:text-violet-700">{tr("resendCode")}</button><button onClick={() => { setMode("google"); setMsg(""); }} className="font-medium text-slate-500 hover:text-slate-700">{tr("backToGoogle")}</button></div>
           </>
         )}
-        {msg && <p className="mt-3 text-[12px] text-slate-500">{msg}</p>}
+        {msg && <p role="status" className="mt-3 text-[12px] text-slate-500">{tf(msg.key, msg.values || {})}</p>}
       </div>
     </div>
   );
 }
 
+export function LanguageSelector({ lang, onChange, compact = false, open, onOpenChange }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const selectedIndex = Math.max(0, LANGS.findIndex(language => language.code === lang));
+  const selected = LANGS[selectedIndex];
+  const [activeIndex, setActiveIndex] = useState(selectedIndex);
+  const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const optionRefs = useRef([]);
+  const menuId = useId();
+  const isOpen = open ?? internalOpen;
+  const setOpen = useCallback(value => {
+    setInternalOpen(value);
+    onOpenChange?.(value);
+  }, [onOpenChange]);
+  const close = (restoreFocus = false) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (isOpen) optionRefs.current[activeIndex]?.focus();
+  }, [isOpen, activeIndex]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const outside = event => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [isOpen, setOpen]);
+
+  const openMenu = () => {
+    setActiveIndex(selectedIndex);
+    setOpen(true);
+  };
+  const handleMenuKey = event => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+    } else if (event.key === "Tab") {
+      // Let the browser continue to the next control after restoring the trigger.
+      close(true);
+    } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      setActiveIndex(index => event.key === "Home" ? 0 : event.key === "End" ? LANGS.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + LANGS.length) % LANGS.length);
+    }
+  };
+
+  return <div ref={rootRef} className={compact ? "shrink-0" : "relative shrink-0"} onBlur={event => {
+    if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+  }}>
+    <button ref={triggerRef} type="button" id={`${menuId}-trigger`} aria-label={`${tr("pageLanguage")}: ${selected.label}`} aria-haspopup="menu" aria-expanded={isOpen} aria-controls={isOpen ? menuId : undefined}
+      title={compact ? tr("pageLanguage") : undefined}
+      onClick={() => isOpen ? close() : openMenu()}
+      onKeyDown={event => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); openMenu(); } }}
+      className={"flex min-h-11 min-w-11 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 " + (compact ? "gap-0.5 px-1 text-[11px] font-semibold text-slate-300 hover:bg-white/10 hover:text-white focus-visible:ring-offset-slate-900" : "gap-2 border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50")}>
+      {!compact && <Languages size={18} className="shrink-0 text-violet-600" aria-hidden="true" />}
+      <span lang={compact ? undefined : selected.code} dir={compact ? undefined : selected.rtl ? "rtl" : "ltr"} className="max-w-36 truncate">{compact ? LCODE[selected.code] : selected.label}</span>
+      <ChevronDown size={compact ? 11 : 14} className="shrink-0" aria-hidden="true" />
+    </button>
+    {isOpen && <div id={menuId} role="menu" aria-labelledby={`${menuId}-trigger`} onKeyDown={handleMenuKey}
+      className={"absolute z-[60] mt-1 max-h-[70vh] w-52 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl " + (compact ? "left-3 top-[4.5rem]" : "end-0 top-full")}>
+      {LANGS.map((language, index) => <button key={language.code} ref={element => { optionRefs.current[index] = element; }} type="button" role="menuitemradio" aria-checked={lang === language.code} tabIndex={activeIndex === index ? 0 : -1}
+        onFocus={() => setActiveIndex(index)}
+        onClick={() => { if (language.code !== lang) onChange(language.code); close(true); }}
+        className={"flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2 text-start text-sm outline-none hover:bg-slate-50 focus-visible:bg-violet-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 " + (lang === language.code ? "font-semibold text-violet-700" : "text-slate-700")}>
+        <span lang={language.code} dir={language.rtl ? "rtl" : "ltr"}>{language.label}</span>
+        {lang === language.code && <Check size={15} className="shrink-0 text-violet-600" aria-hidden="true" />}
+      </button>)}
+    </div>}
+  </div>;
+}
+
 // PUBLIC read-only report view (opened via ?share=token). No login, no sidebar - shows
 // ONLY the one shared report. Restricted (per-person) links require an email code first.
-function SharedReportView({ token }) {
+export function SharedReportView({ token, lang, setLang }) {
+  CUR_LANG = lang;
   const [meeting, setMeeting] = useState(null);
+  const [rawMeeting, setRawMeeting] = useState(null);
+  const [translationRequest, setTranslationRequest] = useState(null);
+  const [translation, setTranslation] = useState(null);
+  const [translationBusy, setTranslationBusy] = useState(false);
+  const [translationError, setTranslationError] = useState(false);
   const [role, setRole] = useState("Viewer");
   const [err, setErr] = useState(false);
   const [otp, setOtp] = useState(null); // { emailHint } when a code is required
   const loadReport = () => {
     setOtp(null);
+    setErr(false);
     fetch("/api/shared-report?token=" + encodeURIComponent(token))
       .then(async (r) => {
         if (r.ok) {
@@ -1090,6 +1208,7 @@ function SharedReportView({ token }) {
           // R2 presigned URL corrupts the SigV4 signature and breaks video playback entirely.
           if (m.video && m.video.startsWith("/api/")) m.video += (m.video.includes("?") ? "&" : "?") + "share=" + encodeURIComponent(token);
           setRole(d.role === "Editor" ? "Editor" : "Viewer");
+          setRawMeeting(d.meeting);
           setMeeting(m);
           return;
         }
@@ -1118,33 +1237,69 @@ function SharedReportView({ token }) {
   };
   useEffect(() => { loadReport(); /* eslint-disable-next-line */ }, [token]);
 
-  if (otp) return <ShareSignInGate token={token} emailHint={otp.emailHint} wrongAccount={otp.wrong} onVerified={() => { setMeeting(null); loadReport(); }} />;
+  useEffect(() => {
+    if (!translationRequest || !meeting) {
+      setTranslation(null); setTranslationBusy(false); setTranslationError(false);
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    const deadline = setTimeout(() => controller.abort(), 250000);
+    setTranslation(null); setTranslationBusy(true); setTranslationError(false);
+    requestReportTranslation({ meetingId: meeting.id, shareToken: token, lang: translationRequest.lang, signal: controller.signal })
+      .then(result => { if (active) setTranslation(result); })
+      .catch(() => { if (active) setTranslationError(true); })
+      .finally(() => { clearTimeout(deadline); if (active) setTranslationBusy(false); });
+    return () => { active = false; clearTimeout(deadline); controller.abort(); };
+  }, [translationRequest, meeting?.id, token]);
+
+  const chooseLanguage = (value) => {
+    if (!LANGS.some(language => language.code === value)) return;
+    setLang(value);
+    if (meeting) setTranslationRequest({ lang: value });
+  };
+  const shownMeeting = useMemo(() => translatedMeeting(meeting, rawMeeting, translation?.translation, adaptReal), [meeting, rawMeeting, translation]);
+  const languageSelector = <LanguageSelector lang={lang} onChange={chooseLanguage} />;
+  const accessLanguage = <div className="fixed end-4 top-4 z-50">{languageSelector}</div>;
+
+  if (otp) return <div lang={lang} dir={isRTL(lang) ? "rtl" : "ltr"}>{accessLanguage}<ShareSignInGate token={token} emailHint={otp.emailHint} wrongAccount={otp.wrong} onVerified={() => { setMeeting(null); loadReport(); }} /></div>;
   if (err) return (
-    <div className="rai-body flex h-screen flex-col items-center justify-center gap-3 bg-[#F4F5FA] text-center text-slate-500">
+    <div lang={lang} dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body flex h-screen flex-col items-center justify-center gap-3 bg-[#F4F5FA] p-4 pt-20 text-center text-slate-500">
+      {accessLanguage}
       <StyleInject /><OctoLogo size={40} />
       <div className="text-lg font-semibold text-slate-700">{tr("sharedLinkUnavailable")}</div>
       <div className="text-sm">{tr("linkInvalidOrRevoked")}</div>
     </div>
   );
   if (!meeting) return (
-    <div className="rai-body flex h-screen items-center justify-center bg-[#F4F5FA] text-slate-400">
+    <div lang={lang} dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body flex h-screen items-center justify-center bg-[#F4F5FA] p-4 pt-20 text-slate-400">
+      {accessLanguage}
       <StyleInject /><Loader2 className="mr-2 animate-spin" size={18} /> {tr("loadingSharedReport")}
     </div>
   );
   return (
-    <div className="rai-body flex h-screen w-full flex-col overflow-hidden bg-[#F4F5FA] text-slate-800">
+    <div lang={lang} dir={isRTL(lang) ? "rtl" : "ltr"} className="rai-body flex h-screen w-full flex-col overflow-hidden bg-[#F4F5FA] text-slate-800">
       <StyleInject />
       <Toaster />
-      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-5 py-2.5">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 sm:px-5">
         <OctoLogo size={26} />
         <span className="text-[15px] font-bold text-slate-900">OctoMeet</span>
-        <span className="ml-3 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">{tf("sharedReportBadge", { role: role === "Editor" ? "Editor" : tr("viewOnly") })}</span>
-        <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noreferrer" className="ml-auto rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-violet-500">{tr("getOctoMeet")}</a>
+        <span className="hidden rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 md:inline">{tf("sharedReportBadge", { role: role === "Editor" ? "Editor" : tr("viewOnly") })}</span>
+        <div className="ms-auto">{languageSelector}</div>
+        <a href="https://meet-ai-three-beige.vercel.app/" target="_blank" rel="noreferrer" className="hidden min-h-11 items-center rounded-lg bg-violet-600 px-3 text-[12px] font-semibold text-white transition hover:bg-violet-500 sm:inline-flex">{tr("getOctoMeet")}</a>
+      </header>
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-violet-100 bg-violet-50 px-4 py-2 text-sm text-slate-600 sm:px-5">
+        <span role="status" aria-live="polite" className="flex items-center gap-2">
+          {translationBusy && <Loader2 size={16} className="shrink-0 animate-spin" aria-hidden="true" />}
+          {translationBusy ? tr("translatingReport") : translationError ? tr("reportTranslationFailed") : translation ? tf("translatedReportNotice", { language: LANGS.find(language => language.code === translation.lang)?.label || translation.lang }) : tr("originalReportNotice")}
+        </span>
+        {translation || translationBusy ? <button onClick={() => setTranslationRequest(null)} className="min-h-11 rounded-lg px-2 font-semibold text-violet-700 hover:bg-violet-100 focus-visible:outline-violet-500">{tr("showOriginalReport")}</button>
+          : <button onClick={() => setTranslationRequest({ lang })} className="min-h-11 rounded-lg px-2 font-semibold text-violet-700 hover:bg-violet-100 focus-visible:outline-violet-500">{tr("translateReport")}</button>}
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Real updater: Editor mutations (action-item toggles, speaker rename) must reflect in
             this view too - a no-op left the UI stale and made unchecking items impossible. */}
-        <MeetingDetail meeting={meeting} meetings={[meeting]} shared role={role} shareTok={token} onBack={null} onUpdate={(list) => { const next = Array.isArray(list) && list.find((x) => x && x.id === meeting.id); if (next) setMeeting(next); }} />
+        <MeetingDetail key={translation ? "translated" : "original"} meeting={shownMeeting} meetings={[shownMeeting]} shared role={translation ? "Viewer" : role} shareTok={token} onBack={null} onUpdate={(list) => { if (translation) return; const next = Array.isArray(list) && list.find((x) => x && x.id === meeting.id); if (next) setMeeting(next); }} />
       </div>
     </div>
   );
@@ -1308,7 +1463,7 @@ export default function App() {
   // Public shared-report link (?share=token): a login-free, read-only view of ONE report.
   // Bypasses the auth gate entirely so invited people never hit Google sign-in.
   const shareToken = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("share") : null;
-  if (shareToken) return <SharedReportView token={shareToken} />;
+  if (shareToken) return <SharedReportView token={shareToken} lang={lang} setLang={setLang} />;
 
   if (authed === null || !meetings) {
     return (
@@ -1426,26 +1581,11 @@ function Sidebar({ view, setView, t, lang, setLang, openScheduling, user, pinned
         {!collapsed && <span className="whitespace-nowrap text-[15px] font-bold text-white">OctoMeet AI</span>}
         {!collapsed && (
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            <button onClick={() => setLangOpen((v) => !v)} className="flex items-center gap-0.5 rounded px-1 text-[11px] font-semibold text-slate-300 hover:text-white">{LCODE[lang]}<ChevronDown size={11} /></button>
+            <LanguageSelector lang={lang} onChange={setLang} compact open={langOpen} onOpenChange={setLangOpen} />
             <button onClick={() => setPinned((v) => !v)} title={pinned ? "Unpin (auto-collapse)" : "Keep open"}><PanelRightClose size={16} className={"hover:text-white " + (pinned ? "text-violet-300" : "text-slate-400")} /></button>
           </div>
         )}
       </div>
-
-      {/* language dropdown */}
-      {langOpen && !collapsed && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setLangOpen(false)} />
-          <div className="absolute left-3 top-14 z-50 max-h-[70vh] w-52 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl">
-            {LANGS.map((l) => (
-              <button key={l.code} onClick={() => { setLang(l.code); setLangOpen(false); }}
-                className="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
-                <span>{l.label}</span>{lang === l.code && <Check size={15} className="text-violet-600" />}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
 
       {/* enterprise */}
       <div className={"mx-3 mb-3 flex items-center rounded-lg px-1 " + (collapsed ? "justify-center" : "justify-between")}>
@@ -4719,10 +4859,10 @@ function fmtClock(s) {
 const MARKER_STYLE = {
   // Soft pastel palette (per the reference); each type's color is reused for its report section.
   // Yellow + violet aren't in the reference palette, so they're generated in the same pastel key.
-  chapter: { color: "#8E7BD6", label: "Chapter" },       // violet
-  question: { color: "#5FC4A0", label: "Key Question" }, // green
-  action: { color: "#6E9BD6", label: "Action Item" },    // blue
-  highlight: { color: "#E3BE55", label: "Highlight" },   // yellow (generated)
+  chapter: { color: "#8E7BD6", get label() { return tr("chaptersTopics"); } }, // violet
+  question: { color: "#5FC4A0", get label() { return tr("keyQuestions"); } }, // green
+  action: { color: "#6E9BD6", get label() { return tr("actionItems"); } }, // blue
+  highlight: { color: "#E3BE55", get label() { return tr("highlightsTab"); } }, // yellow (generated)
 };
 
 // Custom video player with a marker timeline (chapters / questions / action items /
@@ -5043,7 +5183,7 @@ export function MeetingVideo({ videoRef, src, coverAt, markers, turns, subtitles
   const effDur = dur > 0 ? dur : (durationMin ? durationMin * 60 : 0);
   const MENU = [
     started
-      ? { k: "full", label: tr("play"), sub: mins(Math.max(0, effDur - cur)) + " left", primary: true, resume: true }
+      ? { k: "full", label: tr("play"), sub: tf("reportTimeLeft", { time: mins(Math.max(0, effDur - cur)) }), primary: true, resume: true }
       : { k: "full", label: tr("recording"), sub: effDur ? mins(effDur) : "", primary: true },
     { k: "trailer", label: tr("trailer"), sub: dur ? mins(segTotal(buildSegments("trailer", dur))) : "<1m" },
     { k: "highlights", label: tr("highlights"), sub: uniqAts.length ? mins(segTotal(buildSegments("highlights", dur))) : "-" },
@@ -5938,15 +6078,15 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
     else if (kind === "video") { if (meeting.video) { const a = document.createElement("a"); a.href = meeting.video; a.download = base + ".mp4"; a.target = "_blank"; a.click(); } else toast("No recording to download"); return; }
     else if (kind.startsWith("dubvid:")) { const lang = kind.slice(7); const a = document.createElement("a"); a.href = `/api/dub?meetingId=${encodeURIComponent(meeting.id)}&lang=${encodeURIComponent(lang)}${shared && shareTok ? "&share=" + encodeURIComponent(shareTok) : ""}`; a.download = base + "_" + lang + ".mp4"; a.target = "_blank"; a.click(); return; }
     else if (kind === "pdf") { const w = window.open("", "_blank"); if (w) { w.document.write(reportHtml()); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350); } toast("Opening printable report - choose 'Save as PDF'"); return; }
-    toast("Downloaded");
+    toast(tr("downloaded"));
   };
   // Video downloads: Original plus any dubbed language (so a user can grab one or several versions).
   const DUB_DL_LABELS = { es: "Español", en: "English", pt: "Português", fr: "Français", de: "Deutsch", it: "Italiano", ja: "日本語", ko: "한국어", zh: "中文", hi: "हिन्दी", ru: "Русский", ar: "العربية" };
   const readyDubs = Object.keys(meeting.dubs || {}).filter((k) => meeting.dubs[k] && meeting.dubs[k].status === "dubbed");
   const DOWNLOAD_OPTS = [
-    { k: "pdf", label: "PDF (print / save)" }, { k: "doc", label: "Word (.doc)" }, { k: "md", label: "Markdown (.md)" },
-    { k: "txt", label: "Plain text (.txt)" }, { k: "transcript", label: "Transcript (.txt)" },
-    { k: "video", label: readyDubs.length ? "Video - Original (.mp4)" : "Video (.mp4)" },
+    { k: "pdf", label: tr("reportDownloadPdf") }, { k: "doc", label: "Word (.doc)" }, { k: "md", label: "Markdown (.md)" },
+    { k: "txt", label: tr("reportPlainText") }, { k: "transcript", label: tr("transcript") + " (.txt)" },
+    { k: "video", label: readyDubs.length ? "Video - " + tr("original") + " (.mp4)" : "Video (.mp4)" },
     ...readyDubs.map((code) => ({ k: "dubvid:" + code, label: "Video - " + (DUB_DL_LABELS[code] || code.toUpperCase()) + " (.mp4)" })),
   ];
   const PUSH_OPTS = [
@@ -5986,7 +6126,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             {!shared && <button onClick={genFollowup} disabled={fupBusy} title="Draft a follow-up email from this meeting" className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">{fupBusy ? <><Loader2 size={14} className="animate-spin" /> Drafting…</> : <><Mail size={14} /> Follow-up</>}</button>}
             {/* Download dropdown - everyone with access (incl. Viewer) can download */}
             <div className="relative">
-              <button onClick={() => setMenu(menu === "download" ? null : "download")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> Download <ChevronDown size={13} /></button>
+              <button onClick={() => setMenu(menu === "download" ? null : "download")} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> {tr("download")} <ChevronDown size={13} /></button>
               {menu === "download" && (<>
                 <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
                 <div className="absolute right-0 z-50 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl">
@@ -6010,7 +6150,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                   ))}
                 </div></>)}
             </div>}
-            {canShare && <button onClick={() => { setShareOpen(true); setShareStep(1); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Share2 size={14} /> Share</button>}
+            {canShare && <button onClick={() => { setShareOpen(true); setShareStep(1); }} className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500"><Share2 size={14} /> {tr("share")}</button>}
             {/* 3-dots: Rename / Remove Report - Owner only */}
             {!shared && <div className="relative">
               <button onClick={() => setMenu(menu === "more" ? null : "more")} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><MoreVertical size={18} /></button>
@@ -6219,18 +6359,18 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
           </div>
         ) : (
           <div className="mb-5 flex aspect-video w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-50 text-center text-sm text-slate-500">
-            <div className="px-6">{meeting.status && meeting.status !== "done" ? <span className="inline-flex items-center gap-2"><StatusBadge status={meeting.status} captureMode={meeting.captureMode} /> {statusSummary(meeting.status, meeting.captureMode)}</span> : <><Video size={28} className="mx-auto mb-2 text-violet-300" />Recording will appear here once processed.</>}</div>
+            <div className="px-6">{meeting.status && meeting.status !== "done" ? <span className="inline-flex items-center gap-2"><StatusBadge status={meeting.status} captureMode={meeting.captureMode} /> {statusSummary(meeting.status, meeting.captureMode)}</span> : <><Video size={28} className="mx-auto mb-2 text-violet-300" />{tr("recordingWillAppear")}</>}</div>
           </div>
         )}
 
         <div className="mb-5 grid grid-cols-3 gap-3">
           {[
-            { l: "Octo Score", v: meeting.scores.overall, series: metricSeries("readScore", meeting), info: KPI_INFO.readScore },
-            { l: "Engagement", v: meeting.scores.engagement, series: metricSeries("engagement", meeting), info: KPI_INFO.engagement },
-            { l: "Sentiment", v: meeting.scores.sentiment, series: metricSeries("sentiment", meeting), info: KPI_INFO.sentiment },
+            { l: tr("readScore"), v: meeting.scores.overall, series: metricSeries("readScore", meeting), info: KPI_INFO.readScore },
+            { l: tr("engagement"), v: meeting.scores.engagement, series: metricSeries("engagement", meeting), info: KPI_INFO.engagement },
+            { l: tr("sentiment"), v: meeting.scores.sentiment, series: metricSeries("sentiment", meeting), info: KPI_INFO.sentiment },
           ].map((s) => {
             const has = Number.isFinite(s.v) && s.v > 0;
-            const lab = s.v >= 70 ? "GOOD" : s.v >= 40 ? "OKAY" : s.v >= 20 ? "FAIR" : "LOW";
+            const lab = tr(s.v >= 70 ? "reportScoreGood" : s.v >= 40 ? "reportScoreOkay" : s.v >= 20 ? "reportScoreFair" : "reportScoreLow");
             const col = scoreColor(s.v);
             return (
             <div key={s.l} className="group/tip relative rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -6260,11 +6400,11 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
 
         {tab === "notes" && (
           <div className="space-y-5">
-            <Card title="Summary" icon={Sparkles}
+            <Card title={tr("summary")} icon={Sparkles}
               copyText={meeting.summary} editText={meeting.summary} onSaveEdit={canEdit ? (v) => editField("summary", v) : undefined}
               right={meeting.summary ? (
                 <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12px]">
-                  {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-violet-700 shadow-sm" : "text-slate-500")}>{m}</button>)}
+                  {["standard", "short"].map((m) => <button key={m} onClick={() => setSummaryMode(m)} className={"rounded-md px-2 py-0.5 capitalize transition " + (summaryMode === m ? "bg-white font-semibold text-violet-700 shadow-sm" : "text-slate-500")}>{tr(m)}</button>)}
                 </div>) : null}>
               {meeting.summary ? <p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{summaryMode === "short" ? shortSummary : meeting.summary}</p> : <p className="text-sm text-slate-400">{tr("noSummary")}</p>}
             </Card>
@@ -6308,7 +6448,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                       : <span className="mt-0.5 font-mono text-[12px] text-violet-400">{String(i + 1).padStart(2, "0")}</span>}
                     <div className="flex-1">
                       <div className="font-medium text-slate-700">{qq.q}</div>
-                      {qq.a && <div className="mt-0.5 text-[13px] text-slate-500"><span className="font-semibold text-emerald-600">Suggested answer:</span> {qq.a}</div>}
+                      {qq.a && <div className="mt-0.5 text-[13px] text-slate-500"><span className="font-semibold text-emerald-600">{tr("reportSuggestedAnswer")}</span> {qq.a}</div>}
                     </div>
                   </li>
                 ))}
@@ -6320,12 +6460,12 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
 
         {tab === "transcript" && (
           meeting.transcript.length === 0 ? (
-            <div className="py-16 text-center text-sm text-slate-400">{meeting.status && meeting.status !== "done" ? "Transcript is still being processed…" : "No transcript available for this meeting."}</div>
+            <div className="py-16 text-center text-sm text-slate-400">{tr(meeting.status && meeting.status !== "done" ? "reportTranscriptProcessing" : "reportNoTranscript")}</div>
           ) : (
           <div>
             <div className="relative mb-4">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the transcript…"
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("reportSearchTranscript")} aria-label={tr("reportSearchTranscript")}
                 className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-violet-400" />
             </div>
             <div className="space-y-3">
@@ -6383,11 +6523,11 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             </Card>
             <Card title={tr("scores")} icon={BarChart3}>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <ScorePill label="Read Score" value={meeting.scores.overall} info={KPI_INFO.readScore} />
-                <ScorePill label="Engagement" value={meeting.scores.engagement} info={KPI_INFO.engagement} />
-                <ScorePill label="Sentiment" value={meeting.scores.sentiment} info={KPI_INFO.sentiment} />
-                <ScorePill label="Balance" value={meeting.scores.balance} info={KPI_INFO.balance} />
-                <ScorePill label="Clarity" value={meeting.scores.clarity} info={KPI_INFO.clarity} />
+                <ScorePill label={tr("readScore")} value={meeting.scores.overall} info={KPI_INFO.readScore} />
+                <ScorePill label={tr("engagement")} value={meeting.scores.engagement} info={KPI_INFO.engagement} />
+                <ScorePill label={tr("sentiment")} value={meeting.scores.sentiment} info={KPI_INFO.sentiment} />
+                <ScorePill label={tr("balance")} value={meeting.scores.balance} info={KPI_INFO.balance} />
+                <ScorePill label={tr("clarity")} value={meeting.scores.clarity} info={KPI_INFO.clarity} />
               </div>
             </Card>
             <Card title={tr("sentimentOverTime")} icon={Activity}>
@@ -6418,7 +6558,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
             )}
             {(meeting.pitchAnalysis && Array.isArray(meeting.pitchAnalysis.speakers) && meeting.pitchAnalysis.speakers.length) ? (
               meeting.pitchAnalysis.speakers.map((sp, i) => (
-                <Card key={i} title={sp.name || ("Speaker " + (i + 1))} icon={MessageSquareText}
+                <Card key={i} title={sp.name || (tr("reportSpeaker") + " " + (i + 1))} icon={MessageSquareText}
                   right={typeof sp.score === "number" ? <span className={"rounded-full px-2.5 py-0.5 text-[12px] font-bold " + (sp.score >= 75 ? "bg-emerald-100 text-emerald-700" : sp.score >= 50 ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700")}>{sp.score}/100</span> : null}>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
@@ -6452,36 +6592,36 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 </Card>
               </div>
             )}
-            <Card title="Talking Pace" icon={Activity}>
+            <Card title={tr("talkingPace")} icon={Activity}>
               <div className="flex items-center gap-4">
                 <span className="text-3xl font-bold text-slate-900">{avgWpm != null ? avgWpm : "-"}</span>
-                <span className="text-sm text-slate-400">{avgWpm != null ? "wpm · recommended range 130-175" : "No pace data for this meeting"}</span>
+                <span className="text-sm text-slate-400">{tr(avgWpm != null ? "reportPaceRecommended" : "reportNoPace")}</span>
               </div>
             </Card>
             <div className="grid gap-5 md:grid-cols-2">
-              <Card title="Clarity" icon={Sparkles}>
-                <Metric label="Filler words" value={fillerPct + "%"} ok={fillerPct < 5} info={KPI_INFO.fillerWords} />
-                <Metric label="Talking pace" value={avgWpm != null ? avgWpm + " wpm" : "-"} ok={avgWpm != null && avgWpm >= 130 && avgWpm <= 175} info={KPI_INFO.talkingPace} />
-                <Metric label="Clarity score" value={meeting.scores.clarity || "-"} ok={meeting.scores.clarity >= 80} info={KPI_INFO.clarity} />
+              <Card title={tr("clarity")} icon={Sparkles}>
+                <Metric label={tr("reportFillerWords")} value={fillerPct + "%"} ok={fillerPct < 5} info={KPI_INFO.fillerWords} />
+                <Metric label={tr("talkingPace")} value={avgWpm != null ? avgWpm + " " + tr("reportWordsPerMinute") : "-"} ok={avgWpm != null && avgWpm >= 130 && avgWpm <= 175} info={KPI_INFO.talkingPace} />
+                <Metric label={tr("reportClarityScore")} value={meeting.scores.clarity || "-"} ok={meeting.scores.clarity >= 80} info={KPI_INFO.clarity} />
               </Card>
-              <Card title="Impact" icon={Target}>
-                <Metric label="Charisma" value={meeting.scores.charisma || "-"} ok={meeting.scores.charisma >= 80} info={KPI_INFO.charisma} />
-                <Metric label="Sentiment" value={meeting.scores.sentiment || "-"} ok={meeting.scores.sentiment >= 70} info={KPI_INFO.sentiment} />
-                <Metric label="Questions asked" value={questionsAsked} ok={questionsAsked > 0} info={KPI_INFO.questionsAsked} />
-                <Metric label="Talk-time balance" value={meeting.scores.balance} ok={meeting.scores.balance >= 60} info={KPI_INFO.talkBalance} />
+              <Card title={tr("impact")} icon={Target}>
+                <Metric label={tr("charisma")} value={meeting.scores.charisma || "-"} ok={meeting.scores.charisma >= 80} info={KPI_INFO.charisma} />
+                <Metric label={tr("sentiment")} value={meeting.scores.sentiment || "-"} ok={meeting.scores.sentiment >= 70} info={KPI_INFO.sentiment} />
+                <Metric label={tr("reportQuestionsAsked")} value={questionsAsked} ok={questionsAsked > 0} info={KPI_INFO.questionsAsked} />
+                <Metric label={tr("reportTalkBalance")} value={meeting.scores.balance} ok={meeting.scores.balance >= 60} info={KPI_INFO.talkBalance} />
               </Card>
             </div>
             {meeting.participants && meeting.participants.length > 0 && (
-              <Card title="Per-speaker breakdown" icon={Users}>
+              <Card title={tr("perSpeaker")} icon={Users}>
                 <div className="space-y-2">
                   {displayParts.map((p, i) => (
                     <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3">
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: SPEAKER_COLORS[i % SPEAKER_COLORS.length] }}>{p.initials || initialsOf(p.name)}</span>
-                      <div className="min-w-0 flex-1"><div className="text-sm font-semibold text-slate-700">{p.name}</div><div className="text-[11px] text-slate-400">{p.role || "Participant"}</div></div>
+                      <div className="min-w-0 flex-1"><div className="text-sm font-semibold text-slate-700">{p.name}</div><div className="text-[11px] text-slate-400">{p.role || tr("reportParticipant")}</div></div>
                       <div className="flex gap-4 text-right text-[12px]">
-                        <div><div className="font-semibold text-slate-700">{p.talkPct}%</div><div className="text-[10px] text-slate-400">talk</div></div>
-                        <div><div className="font-semibold text-slate-700">{p.wpm || "-"}</div><div className="text-[10px] text-slate-400">wpm</div></div>
-                        <div><div className="font-semibold" style={{ color: p.sentiment === "Positive" ? "#10B981" : p.sentiment === "Negative" ? "#F43F5E" : "#64748B" }}>{p.sentiment || "Neutral"}</div><div className="text-[10px] text-slate-400">tone</div></div>
+                        <div><div className="font-semibold text-slate-700">{p.talkPct}%</div><div className="text-[10px] text-slate-400">{tr("reportTalk")}</div></div>
+                        <div><div className="font-semibold text-slate-700">{p.wpm || "-"}</div><div className="text-[10px] text-slate-400">{tr("reportWordsPerMinute")}</div></div>
+                        <div><div className="font-semibold" style={{ color: p.sentiment === "Positive" ? "#10B981" : p.sentiment === "Negative" ? "#F43F5E" : "#64748B" }}>{tr(p.sentiment === "Positive" ? "reportSentimentPositive" : p.sentiment === "Negative" ? "reportSentimentNegative" : "reportSentimentNeutral")}</div><div className="text-[10px] text-slate-400">{tr("reportTone")}</div></div>
                       </div>
                     </div>
                   ))}
@@ -6498,22 +6638,22 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
                 <VideoThumb src={meeting.video} source={meeting.source} size={56} showBadge={false} at={h.at} hoverPlay={false} poster={meeting.cover_url} onClick={h.at != null ? () => seekTo(h.at) : undefined} />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-md px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: MARKER_STYLE.highlight.color + "26", color: "#8a6d12" }}>Highlight</span>
+                    <span className="rounded-md px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: MARKER_STYLE.highlight.color + "26", color: "#8a6d12" }}>{tr("highlightsTab")}</span>
                     {h.at != null ? <TimeChip t={h.t} onClick={() => seekTo(h.at)} /> : (h.t && <span className="font-mono text-[11px] text-slate-400">{h.t}</span>)}
                   </div>
                   <p className="mt-1 text-sm text-slate-700">{h.text}</p>
                 </div>
               </div>
             ))}
-            {!(meeting.highlights && meeting.highlights.length) && <p className="text-sm text-slate-400">No highlights detected for this meeting.</p>}
+            {!(meeting.highlights && meeting.highlights.length) && <p className="text-sm text-slate-400">{tr("reportNoHighlights")}</p>}
           </div>
         )}
 
         {tab === "chapters" && (
-          <Card title="Chapters & Topics" icon={ListChecks} iconColor={MARKER_STYLE.chapter.color} right={
+          <Card title={tr("chaptersTopics")} icon={ListChecks} iconColor={MARKER_STYLE.chapter.color} right={
             (meeting.chapters && meeting.chapters.some((c) => c.summary)) ? (
               <button onClick={() => setShowDesc((v) => !v)} className="flex items-center gap-2 text-[12px] font-medium text-slate-500">
-                Descriptions
+                {tr("reportDescriptions")}
                 <span className={"relative h-4 w-7 rounded-full transition " + (showDesc ? "bg-emerald-500" : "bg-slate-300")}>
                   <span className={"absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all " + (showDesc ? "left-3.5" : "left-0.5")} />
                 </span>
@@ -6543,7 +6683,7 @@ function MeetingDetail({ meeting, onBack, onUpdate, meetings, initialShare, shar
               <div className="flex flex-wrap gap-2">
                 {meeting.topics.map((t, i) => (<span key={i} className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">{t}</span>))}
               </div>
-            ) : <p className="text-sm text-slate-400">No chapters detected.</p>}
+            ) : <p className="text-sm text-slate-400">{tr("reportNoChapters")}</p>}
           </Card>
         )}
       </div>
@@ -6572,7 +6712,7 @@ function Metric({ label, value, ok, info }) {
 function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEdit, iconColor }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
-  const copy = () => { try { navigator.clipboard.writeText(copyText || ""); toast("Copied"); } catch (e) {} };
+  const copy = () => { try { navigator.clipboard.writeText(copyText || ""); toast(tr("copied")); } catch (e) {} };
   const start = () => { setVal(editText || ""); setEditing(true); };
   const save = () => { if (onSaveEdit) onSaveEdit(val); setEditing(false); };
   return (
@@ -6582,8 +6722,8 @@ function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEd
         <h3 className="text-sm font-bold text-slate-900">{title}</h3>
         {!editing && (copyText != null || onSaveEdit) && (
           <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-            {copyText != null && <button onClick={copy} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100"><Copy size={12} /> Copy</button>}
-            {onSaveEdit && <button onClick={start} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100"><Pencil size={12} /> Edit</button>}
+            {copyText != null && <button onClick={copy} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100"><Copy size={12} /> {tr("copy")}</button>}
+            {onSaveEdit && <button onClick={start} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100"><Pencil size={12} /> {tr("editLabel")}</button>}
           </div>
         )}
         {right && <div className="ml-auto">{right}</div>}
@@ -6593,8 +6733,8 @@ function Card({ title, icon: Icon, children, right, copyText, editText, onSaveEd
           <textarea value={val} onChange={(e) => setVal(e.target.value)} autoFocus rows={Math.min(16, Math.max(3, val.split("\n").length + 1))}
             className="w-full rounded-lg border border-slate-200 p-2.5 text-sm leading-relaxed text-slate-700 outline-none focus:border-violet-400" />
           <div className="mt-2 flex gap-2">
-            <button onClick={save} className="rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500">Save</button>
-            <button onClick={() => setEditing(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button onClick={save} className="rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-violet-500">{tr("save")}</button>
+            <button onClick={() => setEditing(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50">{tr("cancel")}</button>
           </div>
           {onSaveEdit && <p className="mt-1.5 text-[11px] text-slate-400">One item per line.</p>}
         </div>
